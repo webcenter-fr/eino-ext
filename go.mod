@@ -6,7 +6,6 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/cloudwego/eino v0.8.5
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
-	github.com/eleztian/type2md v1.2.3
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/goccy/go-json v0.10.6
 	github.com/google/go-cmp v0.7.0
@@ -14,11 +13,11 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/thoas/go-funk v0.9.3
 	go.yaml.in/yaml/v3 v3.0.4
-	k8s.io/api v0.35.0
-	k8s.io/apimachinery v0.35.0
-	k8s.io/client-go v0.35.0
-	k8s.io/kubernetes v1.35.3
-	sigs.k8s.io/controller-runtime v0.23.3
+	k8s.io/api v0.34.0
+	k8s.io/apimachinery v0.34.0
+	k8s.io/client-go v0.34.0
+	k8s.io/kubernetes v1.34.0
+	sigs.k8s.io/controller-runtime v0.22.1
 )
 
 require (
@@ -47,6 +46,7 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -96,7 +96,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.35.0 // indirect
+	k8s.io/apiextensions-apiserver v0.34.0 // indirect
 	k8s.io/cli-runtime v0.32.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
