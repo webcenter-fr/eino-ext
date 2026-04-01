@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -66,6 +67,13 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 		Kind:       kind.Kind,
 		APIVersion: kind.Version,
 	})
+
+	// Special filter for secret content.
+	if resource, ok := any(o).(*corev1.Secret); ok {
+		for k := range resource.Data {
+			resource.Data[k] = []byte("REDACTED")
+		}
+	}
 
 	output := objectToDescribeOutput(o)
 

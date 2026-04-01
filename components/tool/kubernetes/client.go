@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"emperror.dev/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -55,4 +56,35 @@ func BuildClientsFromKubeconfig(configsWithKubeconfigPath map[string]string, s *
 		configs[clusterName] = config
 	}
 	return BuildClients(configs, s)
+}
+
+// NewClientSet creates a new Kubernetes clientset using the provided configuration. It returns the clientset and any error encountered during the creation process.
+func NewClientSet(config *rest.Config, s *runtime.Scheme) (c *kubernetes.Clientset, err error) {
+
+	if s == nil {
+		s = scheme.Scheme
+	}
+
+	// clientset
+	c, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kubernetes clientset")
+	}
+
+	return c, nil
+}
+
+// BuildClientSets creates Kubernetes clientsets for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes clientsets, or an error if any clientset creation fails.
+func BuildClientSets(configs Configs, s *runtime.Scheme) (clients map[string]*kubernetes.Clientset, err error) {
+	clients = make(map[string]*kubernetes.Clientset)
+
+	for clusterName, config := range configs {
+		client, err := NewClientSet(config, s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create clientset for cluster %s", clusterName)
+		}
+		clients[clusterName] = client
+	}
+
+	return clients, nil
 }
