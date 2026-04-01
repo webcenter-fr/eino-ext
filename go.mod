@@ -11,16 +11,16 @@ require (
 	github.com/goccy/go-json v0.10.6
 	github.com/google/go-cmp v0.7.0
 	github.com/kubeflow/spark-operator v0.0.0-20250528053318-61510642af54
-	github.com/operator-framework/api v0.41.0
+	github.com/operator-framework/api v0.34.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
 	github.com/thoas/go-funk v0.9.3
 	go.yaml.in/yaml/v3 v3.0.4
-	k8s.io/api v0.35.1
-	k8s.io/apimachinery v0.35.1
-	k8s.io/client-go v0.35.1
+	k8s.io/api v0.34.0
+	k8s.io/apimachinery v0.34.0
+	k8s.io/client-go v0.34.0
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
-	sigs.k8s.io/controller-runtime v0.23.1
+	sigs.k8s.io/controller-runtime v0.22.1
 )
 
 require (
@@ -62,6 +62,7 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
@@ -75,7 +76,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -119,7 +120,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.35.1 // indirect
+	k8s.io/apiextensions-apiserver v0.34.0 // indirect
 	k8s.io/cli-runtime v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260127142750-a19766b6e2d4 // indirect
