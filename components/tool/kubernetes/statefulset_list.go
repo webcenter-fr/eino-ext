@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
-	"k8s.io/kubernetes/pkg/apis/apps"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const statefulSetListDescription = `
@@ -36,7 +36,7 @@ type StatefulSetListOutput struct {
 }
 
 // ToJson returns the JSON representation of the StatefulSetListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *StatefulSetListOutput) ToJson(o *apps.StatefulSet) json.RawMessage {
+func (h *StatefulSetListOutput) ToJson(o *appsv1.StatefulSet) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)
@@ -62,5 +62,5 @@ func (h *StatefulSetListOutput) ToJson(o *apps.StatefulSet) json.RawMessage {
 
 // NewStatefulSetListTool creates a new instance of the StatefulSetListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
 func NewStatefulSetListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	return NewListTool(ctx, configs, "kubernetes_list_statefulsets", statefulSetListDescription, &apps.StatefulSetList{}, &StatefulSetListOutput{}, nil)
+	return NewListTool(ctx, configs, "kubernetes_list_statefulsets", statefulSetListDescription, &appsv1.StatefulSetList{}, &StatefulSetListOutput{}, nil)
 }

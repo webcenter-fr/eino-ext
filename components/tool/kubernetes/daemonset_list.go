@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
-	"k8s.io/kubernetes/pkg/apis/apps"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const daemonSetListDescription = `
@@ -36,7 +36,7 @@ type DaemonSetListOutput struct {
 }
 
 // ToJson returns the JSON representation of the DaemonSetListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *DaemonSetListOutput) ToJson(o *apps.DaemonSet) json.RawMessage {
+func (h *DaemonSetListOutput) ToJson(o *appsv1.DaemonSet) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)
@@ -62,5 +62,5 @@ func (h *DaemonSetListOutput) ToJson(o *apps.DaemonSet) json.RawMessage {
 
 // NewDaemonSetListTool creates a new instance of the DaemonSetListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
 func NewDaemonSetListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	return NewListTool(ctx, configs, "kubernetes_list_daemonsets", daemonSetListDescription, &apps.DaemonSetList{}, &DaemonSetListOutput{}, nil)
+	return NewListTool(ctx, configs, "kubernetes_list_daemonsets", daemonSetListDescription, &appsv1.DaemonSetList{}, &DaemonSetListOutput{}, nil)
 }

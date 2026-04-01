@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/components/tool"
-	"k8s.io/kubernetes/pkg/apis/apps"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const statefulsetDescribeDescription = `
@@ -17,5 +17,5 @@ It return a JSON object representing the kubernetes statefulset
 
 // NewStatefulsetDescribeTool creates a new instance of the StatefulsetDescribeTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
 func NewStatefulsetDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	return NewDescribeTool(ctx, configs, "kubernetes_describe_statefulset", statefulsetDescribeDescription, &apps.StatefulSet{}, nil)
+	return NewDescribeTool(ctx, configs, "kubernetes_describe_statefulset", statefulsetDescribeDescription, &appsv1.StatefulSet{}, nil)
 }

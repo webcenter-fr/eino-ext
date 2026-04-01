@@ -2,15 +2,12 @@ package kubernetes
 
 import (
 	"emperror.dev/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-var restMapper meta.RESTMapper
 
 // NewClient creates a new Kubernetes client using the provided configuration. It returns the client and any error encountered during the creation process.
 func NewClient(config *rest.Config, s *runtime.Scheme) (c client.Client, err error) {
@@ -24,7 +21,6 @@ func NewClient(config *rest.Config, s *runtime.Scheme) (c client.Client, err err
 		config,
 		client.Options{
 			Scheme: s,
-			Mapper: restMapper,
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kubernetes client")

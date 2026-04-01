@@ -67,8 +67,6 @@ func (t *ToolTestSuite) SetupSuite() {
 	k8sClient := k8sManager.GetClient()
 	t.k8sClient = k8sClient
 
-	restMapper = k8sManager.GetRESTMapper()
-
 	go func() {
 		err = k8sManager.Start(ctrl.SetupSignalHandler())
 		if err != nil {

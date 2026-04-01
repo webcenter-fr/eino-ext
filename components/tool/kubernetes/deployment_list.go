@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
-	"k8s.io/kubernetes/pkg/apis/apps"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const deploymentListDescription = `
@@ -36,7 +36,7 @@ type DeploymentListOutput struct {
 }
 
 // ToJson returns the JSON representation of the DeploymentListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *DeploymentListOutput) ToJson(o *apps.Deployment) json.RawMessage {
+func (h *DeploymentListOutput) ToJson(o *appsv1.Deployment) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)
@@ -62,5 +62,5 @@ func (h *DeploymentListOutput) ToJson(o *apps.Deployment) json.RawMessage {
 
 // NewDeploymentListTool creates a new instance of the DeploymentListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
 func NewDeploymentListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	return NewListTool(ctx, configs, "kubernetes_list_deployments", deploymentListDescription, &apps.DeploymentList{}, &DeploymentListOutput{}, nil)
+	return NewListTool(ctx, configs, "kubernetes_list_deployments", deploymentListDescription, &appsv1.DeploymentList{}, &DeploymentListOutput{}, nil)
 }
