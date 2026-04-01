@@ -21,7 +21,7 @@ type DescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace           string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
-	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', and 'status'."`
+	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
 // DescribeOutput defines the structure of the output returned by the Describe function. It represents a resource with its metadata, spec, and status.
@@ -30,6 +30,7 @@ type DescribeOutput struct {
 	Metadata        *metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec            any                `json:"spec,omitempty"`
 	Status          any                `json:"status,omitempty"`
+	Data            any                `json:"data,omitempty"`
 }
 
 // DescribeTool is a tool that gets the details of a specific resource in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
@@ -76,6 +77,8 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 			output.Spec = nil
 		case "status":
 			output.Status = nil
+		case "data":
+			output.Data = nil
 		default:
 			return "", errors.Errorf("invalid exclude field: %s", excludeField)
 		}
@@ -141,6 +144,20 @@ func GetObjectSpec(r client.Object) any {
 	return om.Interface()
 }
 
+// GetDataSpec retrieves the Data field from a Kubernetes resource object. It uses reflection to access the Data field and returns its value. The resource object must be a pointer and must have a Data field for this function to work correctly.
+func GetDataSpec(r client.Object) any {
+	rt := reflect.TypeOf(r)
+	if rt.Kind() != reflect.Ptr {
+		panic("Resource must be pointer")
+	}
+	rv := reflect.ValueOf(r).Elem()
+	om := rv.FieldByName("Data")
+	if !om.IsValid() {
+		return nil
+	}
+	return om.Interface()
+}
+
 func SetObjectTypeMeta(o client.Object, typeMeta v1.TypeMeta) {
 	rt := reflect.TypeOf(o)
 	if rt.Kind() != reflect.Ptr {
@@ -176,5 +193,6 @@ func objectToDescribeOutput[resource client.Object](r resource) DescribeOutput {
 		},
 		Spec:   GetObjectSpec(r),
 		Status: GetObjectStatus(r),
+		Data:   GetDataSpec(r),
 	}
 }
