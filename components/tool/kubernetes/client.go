@@ -2,11 +2,14 @@ package kubernetes
 
 import (
 	"emperror.dev/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/kubernetes/pkg/apis/apps"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -17,6 +20,9 @@ func NewClient(config *rest.Config, s *runtime.Scheme) (c client.Client, err err
 
 	if s == nil {
 		s = scheme.Scheme
+		utilruntime.Must(scheme.AddToScheme(s))
+		utilruntime.Must(corev1.AddToScheme(s))
+		utilruntime.Must(apps.AddToScheme(s))
 	}
 
 	// client
