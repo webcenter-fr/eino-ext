@@ -205,6 +205,7 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 func NewPodExecTool(ctx context.Context, configs Configs) (*PodExecTool, error) {
 	podExecTool := &PodExecTool{
 		knownClusters: configs.GetClusterNames(),
+		configs:       configs,
 	}
 
 	clients, err := BuildClientSets(configs, nil)
