@@ -32,7 +32,7 @@ type PodLogParams struct {
 	Namespace     string `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the pod."`
 	Name          string `json:"name" validate:"required" jsonschema:"(required) The pod name."`
 	Container     string `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, logs from the first container will be returned."`
-	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500,default=100" jsonschema:"(optional) The maximum number of log lines to return. Default to 100."`
+	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of log lines to return. Default to 100."`
 	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A regex pattern to filter log lines. Only log lines matching the pattern will be returned."`
 }
 
@@ -49,6 +49,9 @@ type PodLogTool struct {
 
 // validate validates the given PodLogParams.
 func (t *PodLogTool) validate(params *PodLogParams) (*kubernetes.Clientset, error) {
+	if params.MaxLines == 0 {
+		params.MaxLines = 100
+	}
 	v := validator.New()
 	if err := v.Struct(params); err != nil {
 		return nil, errors.Wrap(err, "invalid parameters for PodLogTool")

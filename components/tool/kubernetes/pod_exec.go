@@ -38,7 +38,7 @@ type PodExecParams struct {
 	Name          string `json:"name" validate:"required" jsonschema:"(required) The pod name."`
 	Container     string `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, the command will be executed in the first container."`
 	Command       string `json:"command" validate:"required" jsonschema:"(required) The command to execute in the pod."`
-	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500,default=100" jsonschema:"(optional) The maximum number of output lines to return. Default to 100."`
+	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of output lines to return. Default to 100."`
 	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A regex pattern to filter output lines. Only lines matching the pattern will be returned."`
 }
 
@@ -56,6 +56,9 @@ type PodExecTool struct {
 
 // validate validates the given PodExecParams.
 func (t *PodExecTool) validate(params *PodExecParams) (*kubernetes.Clientset, *rest.Config, error) {
+	if params.MaxLines == 0 {
+		params.MaxLines = 100
+	}
 	v := validator.New()
 	if err := v.Struct(params); err != nil {
 		return nil, nil, errors.Wrap(err, "invalid parameters for PodExecTool")
