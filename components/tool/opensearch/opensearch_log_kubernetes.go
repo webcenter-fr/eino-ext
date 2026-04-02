@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/disaster37/opensearch/v3"
+	"github.com/disaster37/opensearch/v3/config"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -41,7 +42,7 @@ type OpensearchLogKubernetesParams struct {
 type OpensearchLogKubernetesTool struct {
 	tool.InvokableTool
 	tool.StreamableTool
-	client opensearch.Client
+	client *opensearch.Client
 }
 
 // Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
@@ -166,9 +167,16 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 }
 
 // NewOpensearchLogKubernetesTool creates a new instance of the OpensearchLogKubernetesTool.
-func NewOpensearchLogKubernetesTool(ctx context.Context) (*OpensearchLogKubernetesTool, error) {
+func NewOpensearchLogKubernetesTool(ctx context.Context, cfg *config.Config) (*OpensearchLogKubernetesTool, error) {
 
-	opensearchLogKubernetesTool := &OpensearchLogKubernetesTool{}
+	c, err := NewClient(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Opensearch client")
+	}
+
+	opensearchLogKubernetesTool := &OpensearchLogKubernetesTool{
+		client: c,
+	}
 
 	// Infer tool
 	t, err := utils.InferTool("opensearch_log_kubernetes_tool", opensearchLogKubernetesDescription, opensearchLogKubernetesTool.Invoke)
