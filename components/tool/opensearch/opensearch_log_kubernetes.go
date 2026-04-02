@@ -23,6 +23,7 @@ It usefull to filter logs with lucene query syntax.
 
 ** Parameters *
 You need to provide podName and or containerName.
+Never put on luceneQuery the cluster, namespace, podName or containerName, because they are already filter by dedicated parameters, and put them in luceneQuery can cause issue with query performance.
 
 ** Output **
 It returns the logs in string format.
