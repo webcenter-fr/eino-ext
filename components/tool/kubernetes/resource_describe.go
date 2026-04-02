@@ -25,11 +25,13 @@ It return a JSON object representing the kubernetes resource.
 
 // ResourceDescribeParams defines the parameters for the ResourceDescribe function, which gets the details of a specific resource in a specified Kubernetes cluster. It includes the cluster name, namespace, and resource name.
 type ResourceDescribeParams struct {
-	Cluster                  string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace                string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
-	Name                     string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
-	ResourceGroupVersionKind string   `json:"resourceGroupVersionKind" validate:"required" jsonschema:"(required) The group, version and kind of the resource, in the format of 'group/version/kind'. For example, 'apps/v1/Deployment'."`
-	ExcludeFieldsOutput      []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
+	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace           string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
+	Name                string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
+	ResourceVersion     string   `json:"resourceVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
+	ResourceGroup       string   `json:"resourceGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
+	ResourceKind        string   `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
+	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
 // ResourceDescribeOutput defines the structure of the output returned by the ResourceDescribe function. It represents a resource with its metadata, spec, and status.
@@ -61,22 +63,21 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 		return "", errors.Errorf("Kubernetes cluster not found: %s. Cluster must be one of: %s", params.Cluster, strings.Join(t.knownClusters, ", "))
 	}
 
-	gvk := strings.Split(params.ResourceGroupVersionKind, "/")
-	if len(gvk) != 3 {
-		return "", errors.Errorf("invalid resourceGroupVersionKind: %s. It should be in the format of 'group/version/kind'. For example, 'apps/v1/Deployment'.", params.ResourceGroupVersionKind)
-	}
 	namespaceResource := schema.GroupVersionResource{
-		Group:    gvk[0],
-		Version:  gvk[1],
-		Resource: gvk[2],
+		Group:    params.ResourceGroup,
+		Version:  params.ResourceVersion,
+		Resource: strings.ToLower(params.ResourceKind),
 	}
 
 	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get resource %s/%s of type %s", params.Namespace, params.Name, params.ResourceGroupVersionKind)
+		return "", errors.Wrapf(err, "failed to get resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.ResourceKind, params.ResourceGroup, params.ResourceVersion)
 	}
 
 	output := objectToDescribeOutput(o)
+	output.Spec = o.Object["spec"]
+	output.Status = o.Object["status"]
+	output.Data = o.Object["data"]
 
 	for _, excludeField := range params.ExcludeFieldsOutput {
 		switch excludeField {
