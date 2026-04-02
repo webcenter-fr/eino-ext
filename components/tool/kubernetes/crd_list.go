@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
@@ -39,7 +40,7 @@ func (h *CustomResourceDefinitionListOutput) ToJson(o *apiextensionsv1.CustomRes
 	output.Name = o.Name
 	output.Namespace = o.Namespace
 	output.Group = o.Spec.Group
-	output.Kind = o.Spec.Names.Kind
+	output.Kind = strings.ToLower(o.Spec.Names.Plural)
 	for _, version := range o.Spec.Versions {
 		output.Versions = append(output.Versions, version.Name)
 	}
