@@ -69,10 +69,11 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	if params.ContainerName != "" {
 		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
 	}
-	if params.LuceneQuery != "" {
-		stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
-		boolQuery.Must(stringQuery)
+	if params.LuceneQuery == "" {
+		params.LuceneQuery = "*"
 	}
+	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
+	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search("logs-*").
 		Query(boolQuery).
