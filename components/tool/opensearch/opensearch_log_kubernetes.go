@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-json"
+	"github.com/sirupsen/logrus"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -76,7 +77,6 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search("logs-*").
-		ExpandWildcards("open").
 		Query(boolQuery).
 		FetchSource(false).
 		DocvalueFields(
@@ -90,11 +90,14 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	}
 
 	if res.Hits.TotalHits.Value == 0 {
+		logrus.Debug("No result found")
 		return "No result found", nil
 	}
 
 	source := map[string]any{}
 	logs := make([]string, 0, len(res.Hits.Hits))
+
+	logrus.Debugf("Found %d logs", res.Hits.TotalHits.Value)
 	for _, hit := range res.Hits.Hits {
 		if err = json.Unmarshal(hit.Source, source); err != nil {
 			return "", errors.Wrap(err, "failed to unmarshal log source")
