@@ -6,6 +6,7 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
 	github.com/cloudwego/eino v0.8.5
+	github.com/disaster37/opensearch/v3 v3.4.0
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/goccy/go-json v0.10.6
@@ -18,6 +19,7 @@ require (
 	github.com/thoas/go-funk v0.9.3
 	go.yaml.in/yaml/v3 v3.0.4
 	k8s.io/api v0.34.1
+	k8s.io/apiextensions-apiserver v0.34.0
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.0
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
@@ -64,7 +66,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
-	github.com/mailru/easyjson v0.9.0 // indirect
+	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -104,7 +106,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.34.0 // indirect
 	k8s.io/cli-runtime v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
