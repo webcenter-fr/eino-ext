@@ -41,13 +41,14 @@ type ResourceListOutput struct {
 
 // ResourceListParams defines the parameters for the List function, which lists all the resources in a specified Kubernetes cluster. It includes the cluster name, an optional namespace to filter resources, and an optional regex pattern to further filter the output.
 type ResourceListParams struct {
-	Cluster              string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace            string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
-	LabelsSelector       string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, sepaeted by comma. For example: 'app=nginx,env=prod'."`
-	ResourceGroupVersion string              `json:"resourceGroupVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
-	ResourceKind         string              `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
-	Filter               string              `json:"filter,omitempty" jsonschema:"(optional) A regex pattern to filter output. Keep only the resources that match the pattern. The filter is applied on each resource JSON output."`
-	Paginate             *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
+	Cluster         string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace       string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
+	LabelsSelector  string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, sepaeted by comma. For example: 'app=nginx,env=prod'."`
+	ResourceVersion string              `json:"resourceVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
+	ResourceGroup   string              `json:"resourceGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
+	ResourceKind    string              `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
+	Filter          string              `json:"filter,omitempty" jsonschema:"(optional) A regex pattern to filter output. Keep only the resources that match the pattern. The filter is applied on each resource JSON output."`
+	Paginate        *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
 // ResourceListTool is a tool that lists all the resources in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
@@ -129,18 +130,15 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 		}
 	}
 
-	gv := strings.Split(params.ResourceGroupVersion, "/")
-	if len(gv) != 2 {
-		return "", errors.Errorf("invalid resourceGroupVersion: %s. It should be in the format of 'group/version'. For example, 'apps/v1'.", params.ResourceGroupVersion)
-	}
 	namespaceResource := schema.GroupVersionResource{
-		Group:    gv[0],
-		Version:  gv[1],
+		Group:    params.ResourceGroup,
+		Version:  params.ResourceVersion,
 		Resource: params.ResourceKind,
 	}
 
-	listOpts := v1.ListOptions{
-		LabelSelector: ls.String(),
+	listOpts := v1.ListOptions{}
+	if ls != nil {
+		listOpts.LabelSelector = ls.String()
 	}
 	if params.Paginate != nil {
 		listOpts.Limit = int64(params.Paginate.PageSize)
