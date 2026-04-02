@@ -76,6 +76,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search("logs-*").
+		ExpandWildcards("open").
 		Query(boolQuery).
 		FetchSource(false).
 		DocvalueFields(
