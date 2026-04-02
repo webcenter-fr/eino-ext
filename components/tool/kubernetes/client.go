@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"emperror.dev/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -82,6 +83,37 @@ func BuildClientSets(configs Configs, s *runtime.Scheme) (clients map[string]*ku
 		client, err := NewClientSet(config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create clientset for cluster %s", clusterName)
+		}
+		clients[clusterName] = client
+	}
+
+	return clients, nil
+}
+
+// NewClientDynamic creates a new Kubernetes dynamic client using the provided configuration. It returns the dynamic client and any error encountered during the creation process.
+func NewClientDynamic(config *rest.Config, s *runtime.Scheme) (c dynamic.Interface, err error) {
+
+	if s == nil {
+		s = scheme.Scheme
+	}
+
+	// clientset
+	c, err = dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kubernetes dynamic client")
+	}
+
+	return c, nil
+}
+
+// BuildClientDynamic creates Kubernetes dynamic clients for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes dynamic clients, or an error if any client creation fails.
+func BuildClientDynamics(configs Configs, s *runtime.Scheme) (clients map[string]dynamic.Interface, err error) {
+	clients = make(map[string]dynamic.Interface)
+
+	for clusterName, config := range configs {
+		client, err := NewClientDynamic(config, s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create dynamic client for cluster %s", clusterName)
 		}
 		clients[clusterName] = client
 	}
