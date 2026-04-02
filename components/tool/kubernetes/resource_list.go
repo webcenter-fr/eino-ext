@@ -179,6 +179,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 	listTool := &ResourceListTool{
 		knownClusters: configs.GetClusterNames(),
+		output:        &ResourceListOutput{},
 	}
 	clients, err := BuildClientDynamics(configs, nil)
 	if err != nil {
