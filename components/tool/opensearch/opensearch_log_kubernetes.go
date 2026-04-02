@@ -99,9 +99,12 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 
 	logrus.Debugf("Found %d logs", res.Hits.TotalHits.Value)
 	for _, hit := range res.Hits.Hits {
+		logrus.Debugf("Processing log hit with ID: %s", hit.Id)
 		if err = json.Unmarshal(hit.Source, &source); err != nil {
 			return "", errors.Wrap(err, "failed to unmarshal log source")
 		}
+
+		logrus.Debugf("Extracted log source: %v", source)
 		logs = append(logs, source["event.original"].(string))
 
 	}
