@@ -26,6 +26,9 @@ It executes a command in a specific pod in a specified Kubernetes cluster.
 
 The command output can be filtered using a regex pattern, and the number of output lines can be limited using the maxLines parameter.
 
+** IMPORTANT RULLES**
+Never use this tool to execute commands that may have side effects any where, such as creating, modifying or deleting resources. It should only be used for read-only commands, such as "cat /etc/os-release" or "ls /app". Always ensure that the command being executed does not violate the security policies of the cluster.
+
 ** Output **
 It return a Raw string representing the command output of the pod. Each output line is separated by a newline character.
 
