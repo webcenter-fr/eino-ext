@@ -99,7 +99,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 
 	logrus.Debugf("Found %d logs", res.Hits.TotalHits.Value)
 	for _, hit := range res.Hits.Hits {
-		if err = json.Unmarshal(hit.Source, source); err != nil {
+		if err = json.Unmarshal(hit.Source, &source); err != nil {
 			return "", errors.Wrap(err, "failed to unmarshal log source")
 		}
 		logs = append(logs, source["event.original"].(string))
@@ -161,7 +161,7 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 
 		source := map[string]any{}
 		for _, hit := range res.Hits.Hits {
-			if err = json.Unmarshal(hit.Source, source); err != nil {
+			if err = json.Unmarshal(hit.Source, &source); err != nil {
 				sw.Send("", errors.Wrap(err, "failed to unmarshal log source"))
 				return
 			}
