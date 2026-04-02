@@ -20,6 +20,7 @@ It return a JSON array of objects, where each object represents a CustomResource
 - name: the name of the CustomResourceDefinition.
 - namespace: the namespace of the CustomResourceDefinition.
 - group: the API group of the CustomResourceDefinition.
+- kind: the kind plural of the CustomResourceDefinition.
 - versions: the list of versions of the CustomResourceDefinition.
 `
 
