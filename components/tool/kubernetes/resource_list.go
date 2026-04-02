@@ -15,7 +15,6 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -178,11 +177,11 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 }
 
 // NewResourceListTool creates a new instance of the ResourceListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
-func NewResourceListTool(ctx context.Context, configs Configs, s *runtime.Scheme) (tool.InvokableTool, error) {
+func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 	listTool := &ResourceListTool{
 		knownClusters: configs.GetClusterNames(),
 	}
-	clients, err := BuildClientDynamics(configs, s)
+	clients, err := BuildClientDynamics(configs, nil)
 	if err != nil {
 		return nil, err
 	}

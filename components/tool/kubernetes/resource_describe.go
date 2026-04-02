@@ -10,7 +10,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
@@ -28,8 +27,8 @@ It return a JSON object representing the kubernetes resource.
 type ResourceDescribeParams struct {
 	Cluster                  string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace                string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
-	Name                   ResourceGroupVersionKind string   `json:"resourceGroupVersionKind" validate:"required" jsonschema:"(required) The group, version and kind of the resource, in the format of 'group/version/kind'. For example, 'apps/v1/Deployment'."`  string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
-	
+	Name                     string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
+	ResourceGroupVersionKind string   `json:"resourceGroupVersionKind" validate:"required" jsonschema:"(required) The group, version and kind of the resource, in the format of 'group/version/kind'. For example, 'apps/v1/Deployment'."`
 	ExcludeFieldsOutput      []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
@@ -104,12 +103,12 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 }
 
 // NewResourceDescribeTool creates a new instance of the ResourceDescribeTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
-func NewResourceDescribeTool(ctx context.Context, configs Configs, s *runtime.Scheme) (tool.InvokableTool, error) {
+func NewResourceDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
 	describeTool := &ResourceDescribeTool{
 		knownClusters: configs.GetClusterNames(),
 	}
-	clients, err := BuildClientDynamics(configs, s)
+	clients, err := BuildClientDynamics(configs, nil)
 	if err != nil {
 		return nil, err
 	}
