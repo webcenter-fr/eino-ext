@@ -98,6 +98,8 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	logs := make([]string, 0, len(res.Hits.Hits))
 
 	logrus.Debugf("Found %d logs", res.Hits.TotalHits.Value)
+	logrus.Debugf("Found %d logs", len(res.Hits.Hits))
+	logrus.Debugf("Processing log hits: %v", res.Hits)
 	for _, hit := range res.Hits.Hits {
 		logrus.Debugf("Processing log hit with ID: %s", hit.Id)
 		if err = json.Unmarshal(hit.Source, &source); err != nil {
