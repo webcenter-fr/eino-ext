@@ -146,7 +146,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	}
 	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).List(ctx, listOpts)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to list resources on namespace %s of type %s.%s", params.Namespace, params.ResourceKind, params.ResourceGroupVersion)
+		return "", errors.Wrapf(err, "failed to list resources on namespace %s of type %s.%s/%s", params.Namespace, params.ResourceKind, params.ResourceGroup, params.ResourceVersion)
 	}
 
 	outputs := make([]json.RawMessage, 0, len(o.Items))
