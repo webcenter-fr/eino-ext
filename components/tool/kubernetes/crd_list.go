@@ -27,6 +27,7 @@ type CustomResourceDefinitionListOutput struct {
 	Name      string   `json:"name"`
 	Namespace string   `json:"namespace"`
 	Group     string   `json:"group"`
+	Kind      string   `json:"kind"`
 	Versions  []string `json:"versions"`
 }
 
@@ -38,6 +39,7 @@ func (h *CustomResourceDefinitionListOutput) ToJson(o *apiextensionsv1.CustomRes
 	output.Name = o.Name
 	output.Namespace = o.Namespace
 	output.Group = o.Spec.Group
+	output.Kind = o.Spec.Names.Kind
 	for _, version := range o.Spec.Versions {
 		output.Versions = append(output.Versions, version.Name)
 	}
