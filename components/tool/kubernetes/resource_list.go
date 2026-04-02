@@ -13,11 +13,11 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/sirupsen/logrus"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const resourceListDescription = `
@@ -138,14 +138,14 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 		Resource: gvk[2],
 	}
 
-	listOpts := &client.ListOptions{
-		LabelSelector: ls,
+	listOpts := v1.ListOptions{
+		LabelSelector: ls.String(),
 	}
 	if params.Paginate != nil {
 		listOpts.Limit = int64(params.Paginate.PageSize)
 		listOpts.Continue = params.Paginate.PaginateToken
 	}
-	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).List(ctx, *listOpts.Raw)
+	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).List(ctx, listOpts)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to list resources on namespace %s of type %s", params.Namespace, params.ResourceGroupVersionKind)
 	}
