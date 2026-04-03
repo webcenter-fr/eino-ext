@@ -88,7 +88,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 
 	res, err := t.client.Search("logs-*").
 		Query(boolQuery).
-		StoredFields(
+		DocvalueFields(
 			"@timestamp",
 			"event.original",
 		).
