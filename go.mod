@@ -7,7 +7,7 @@ require (
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
 	github.com/cloudwego/eino v0.8.5
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/disaster37/opensearch/v3 v3.4.0
+	github.com/disaster37/opensearch/v3 v3.4.1
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/goccy/go-json v0.10.6

@@ -43,8 +43,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/disaster37/k8s-objectmatcher v1.8.8 h1:W6BN4Rkx2NCWOZaWGGEHjE3xaN6ur6mwL/V7wK9jf5Y=
 github.com/disaster37/k8s-objectmatcher v1.8.8/go.mod h1:2nRtPBxwgkwCBjerqlRF4oV9pqAVC1bxtl6Y4/iAt3U=
-github.com/disaster37/opensearch/v3 v3.4.0 h1:ga7Y9jWDL/FdFM9jGkLmHwmLQ/mYfTx91SCT64+0jyw=
-github.com/disaster37/opensearch/v3 v3.4.0/go.mod h1:ZtcyXRPQiTD6oCdB5xu+mYUWQ0aLI+/J7A7YAQ0qr4w=
+github.com/disaster37/opensearch/v3 v3.4.1 h1:L3OicdfIJZXb5Qq4JwtLRWqMVnSvLhqmjxudp4v0xIw=
+github.com/disaster37/opensearch/v3 v3.4.1/go.mod h1:ZtcyXRPQiTD6oCdB5xu+mYUWQ0aLI+/J7A7YAQ0qr4w=
 github.com/disaster37/operator-sdk-extra/v2 v2.0.10 h1:FZv5YTW3QWkOBkSuJ3Wh6vb1W09Eb2mUAViEKCRfFIo=
 github.com/disaster37/operator-sdk-extra/v2 v2.0.10/go.mod h1:GPxPKtui34jK/QHqLJGYIIlhmWLT0UOFzVuI9a0L+mk=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

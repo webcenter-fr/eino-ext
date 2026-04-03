@@ -90,7 +90,8 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 		Query(boolQuery).
 		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
-		FetchSourceContext(opensearch.NewFetchSourceContext(true).Include("@timestamp", "event.original")).
+		Fields("event.original").
+		FetchSource(false).
 		TrackTotalHits(true).
 		Do(ctx)
 
