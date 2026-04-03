@@ -2,9 +2,9 @@ package opensearch
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
-	"github.com/goccy/go-json"
 	"github.com/sirupsen/logrus"
 
 	"emperror.dev/errors"
@@ -36,6 +36,8 @@ type OpensearchLogKubernetesParams struct {
 	Namespace     string `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the pods to retrieve logs from."`
 	PodName       string `json:"podName" jsonschema:"(optional) The name of the pod to retrieve logs from."`
 	ContainerName string `json:"containerName" jsonschema:"(optional) The name of the container to retrieve logs from."`
+	From          string `json:"from" jsonschema:"(optional) The start time to retrieve logs from. Relative format like 'now-1h' or absolute format in RFC3339 format. Default to 'now-24h'."`
+	To            string `json:"to" jsonschema:"(optional) The end time to retrieve logs to. Relative format like 'now' or absolute format in RFC3339 format. Default to 'now'."`
 	LuceneQuery   string `json:"luceneQuery" jsonschema:"(optional) The Lucene query to filter logs."`
 	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of log lines to return. Default to 100."`
 }
@@ -53,6 +55,12 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	if params.MaxLines == 0 {
 		params.MaxLines = 100
 	}
+	if params.From == "" {
+		params.From = "now-24h"
+	}
+	if params.To == "" {
+		params.To = "now"
+	}
 	validator := validator.New()
 	if err := validator.Struct(params); err != nil {
 		return "", errors.Wrap(err, "invalid parameters for OpensearchLogKubernetesTool")
@@ -62,6 +70,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	}
 
 	boolQuery := opensearch.NewBoolQuery()
+	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
 	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
 	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
 	if params.PodName != "" {
@@ -78,7 +87,12 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 
 	res, err := t.client.Search("logs-*").
 		Query(boolQuery).
-		FetchSource(true).
+		FetchSource(false).
+		DocvalueFields(
+			"@timestamp",
+			"event.original",
+		).
+		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
 		Do(ctx)
 
@@ -86,29 +100,23 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 		return "", errors.Wrap(err, "failed to search logs in Opensearch")
 	}
 
-	if res.Hits.TotalHits.Value == 0 {
+	if len(res.Hits.Hits) == 0 {
 		logrus.Debug("No result found")
 		return "No result found", nil
 	}
 
-	source := map[string]any{}
 	logs := make([]string, 0, len(res.Hits.Hits))
 
-	logrus.Debugf("Found %d logs", res.Hits.TotalHits.Value)
-	logrus.Debugf("Found %d logs", len(res.Hits.Hits))
-	logrus.Debugf("Processing log hits: %v", res.Hits)
+	logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
+	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 	for _, hit := range res.Hits.Hits {
-		logrus.Debugf("Processing log hit with ID: %s", hit.Id)
-		if err = json.Unmarshal(hit.Source, &source); err != nil {
-			return "", errors.Wrap(err, "failed to unmarshal log source")
+		if hit.Fields["event.original"] != nil && hit.Fields["event.original"].(string) != "" {
+			logs = append(logs, hit.Fields["event.original"].(string))
 		}
-
-		logrus.Debugf("Extracted log source: %v", source)
-		logs = append(logs, source["event.original"].(string))
-
 	}
+	logs = append(logs, fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))))
 
-	return strings.Join(logs, "\n\n"), nil
+	return strings.Join(logs, "\n"), nil
 }
 
 // Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
@@ -126,6 +134,7 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 	}
 
 	boolQuery := opensearch.NewBoolQuery()
+	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
 	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
 	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
 	if params.PodName != "" {
@@ -143,8 +152,10 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 		Query(boolQuery).
 		FetchSource(false).
 		DocvalueFields(
+			"@timestamp",
 			"event.original",
 		).
+		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).Do(ctx)
 
 	if err != nil {
@@ -156,19 +167,18 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 	go func() {
 		defer sw.Close()
 
-		if res.Hits.TotalHits.Value == 0 {
+		if len(res.Hits.Hits) == 0 {
+			logrus.Debug("No result found")
 			sw.Send("No result found", nil)
 			return
 		}
 
-		source := map[string]any{}
 		for _, hit := range res.Hits.Hits {
-			if err = json.Unmarshal(hit.Source, &source); err != nil {
-				sw.Send("", errors.Wrap(err, "failed to unmarshal log source"))
-				return
+			if hit.Fields["event.original"] != nil && hit.Fields["event.original"].(string) != "" {
+				sw.Send(hit.Fields["event.original"].(string), nil)
 			}
-			sw.Send(source["event.original"].(string), nil)
 		}
+		sw.Send(fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))), nil)
 	}()
 
 	return sr, nil
