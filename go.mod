@@ -6,6 +6,7 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
 	github.com/cloudwego/eino v0.8.5
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/disaster37/opensearch/v3 v3.4.0
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
 	github.com/go-playground/validator/v10 v10.30.1
@@ -38,7 +39,6 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect

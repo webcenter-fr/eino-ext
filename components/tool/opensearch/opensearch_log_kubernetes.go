@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/sirupsen/logrus"
 
 	"emperror.dev/errors"
@@ -109,6 +110,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
 	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 	for _, hit := range res.Hits.Hits {
+		logrus.Debugf("%s", spew.Sdump(hit))
 		if hit.Fields["event.original"] != nil && hit.Fields["event.original"].(string) != "" {
 			logs = append(logs, hit.Fields["event.original"].(string))
 		}
