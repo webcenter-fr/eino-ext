@@ -110,8 +110,10 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 	for _, hit := range res.Hits.Hits {
 		logrus.Debugf("%s", spew.Sdump(hit))
-		if _, ok := hit.Fields["event.original"]; ok && hit.Fields["event.original"].(string) != "" {
-			logs = append(logs, hit.Fields["event.original"].(string))
+		if v, ok := hit.Fields["event.original"]; ok {
+			if s := fieldAsString(v); s != "" {
+				logs = append(logs, s)
+			}
 		}
 	}
 	logs = append(logs, fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))))
@@ -174,14 +176,32 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 		}
 
 		for _, hit := range res.Hits.Hits {
-			if hit.Fields["event.original"] != nil && hit.Fields["event.original"].(string) != "" {
-				sw.Send(hit.Fields["event.original"].(string), nil)
+			if v, ok := hit.Fields["event.original"]; ok {
+				if s := fieldAsString(v); s != "" {
+					sw.Send(s, nil)
+				}
 			}
 		}
 		sw.Send(fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))), nil)
 	}()
 
 	return sr, nil
+}
+
+// fieldAsString extracts a string value from an OpenSearch field, which may be
+// returned as a plain string or as a []interface{} slice (the common wire format).
+func fieldAsString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case []interface{}:
+		if len(val) > 0 {
+			if s, ok := val[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // NewOpensearchLogKubernetesTool creates a new instance of the OpensearchLogKubernetesTool.
