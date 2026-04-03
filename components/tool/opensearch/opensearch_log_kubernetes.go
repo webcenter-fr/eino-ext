@@ -110,7 +110,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 	for _, hit := range res.Hits.Hits {
 		logrus.Debugf("%s", spew.Sdump(hit))
-		if hit.Fields["event.original"] != nil && hit.Fields["event.original"].(string) != "" {
+		if _, ok := hit.Fields["event.original"]; ok && hit.Fields["event.original"].(string) != "" {
 			logs = append(logs, hit.Fields["event.original"].(string))
 		}
 	}
