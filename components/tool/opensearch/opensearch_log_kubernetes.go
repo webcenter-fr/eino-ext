@@ -88,12 +88,10 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 
 	res, err := t.client.Search("logs-*").
 		Query(boolQuery).
-		DocvalueFields(
-			"@timestamp",
-			"event.original",
-		).
 		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
+		FetchSourceContext(opensearch.NewFetchSourceContext(true).Include("@timestamp", "event.original")).
+		TrackTotalHits(true).
 		Do(ctx)
 
 	if err != nil {
