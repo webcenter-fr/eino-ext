@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/sirupsen/logrus"
 
 	"emperror.dev/errors"
@@ -109,7 +108,6 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
 	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 	for _, hit := range res.Hits.Hits {
-		logrus.Debugf("%s", spew.Sdump(hit))
 		if v, ok := hit.Fields["event.original"]; ok {
 			if s := fieldAsString(v); s != "" {
 				logs = append(logs, s)
@@ -152,13 +150,12 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 
 	res, err := t.client.Search("logs-*").
 		Query(boolQuery).
-		FetchSource(false).
-		StoredFields(
-			"@timestamp",
-			"event.original",
-		).
 		Sort("@timestamp", false).
-		Size(int(params.MaxLines)).Do(ctx)
+		Size(int(params.MaxLines)).
+		Fields("event.original").
+		FetchSource(false).
+		TrackTotalHits(true).
+		Do(ctx)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to search logs in Opensearch")
@@ -175,6 +172,8 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 			return
 		}
 
+		logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
+		logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
 		for _, hit := range res.Hits.Hits {
 			if v, ok := hit.Fields["event.original"]; ok {
 				if s := fieldAsString(v); s != "" {
@@ -182,6 +181,7 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 				}
 			}
 		}
+
 		sw.Send(fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))), nil)
 	}()
 
