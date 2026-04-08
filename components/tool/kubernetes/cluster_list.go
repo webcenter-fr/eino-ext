@@ -26,7 +26,7 @@ type ClusterListTool struct {
 }
 
 // Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
-func (t *ClusterListTool) Invoke(ctx context.Context, params any) (string, error) {
+func (t *ClusterListTool) Invoke(ctx context.Context, params map[string]any) (string, error) {
 
 	b, err := json.Marshal(t.knownClusters)
 	if err != nil {
