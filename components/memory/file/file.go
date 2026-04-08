@@ -81,16 +81,20 @@ func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.conversations[id]
-
 	filePath := filepath.Join(m.dir, userId, id+".jsonl")
 
+	_, ok := m.conversations[userId]
 	if !ok {
 		if _, err := os.Stat(filepath.Dir(filePath)); os.IsNotExist(err) {
 			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
 				return nil, errors.Wrap(err, "failed to create directory for conversation")
 			}
 		}
+		m.conversations[userId] = make(map[string]*FileConversation)
+	}
+
+	_, ok = m.conversations[userId][id]
+	if !ok {
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			if createIfNotExist {
 				if err := os.WriteFile(filePath, []byte(""), 0o644); err != nil {
