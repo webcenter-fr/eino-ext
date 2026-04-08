@@ -1,4 +1,4 @@
-package simple
+package file
 
 /*
  * Copyright 2025 CloudWeGo Authors
