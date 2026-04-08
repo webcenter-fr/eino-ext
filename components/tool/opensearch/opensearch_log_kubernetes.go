@@ -85,7 +85,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
 	boolQuery.Must(stringQuery)
 
-	res, err := t.client.Search("logs-*").
+	res, err := t.client.Search().
 		Query(boolQuery).
 		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
@@ -148,7 +148,7 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 		boolQuery.Must(stringQuery)
 	}
 
-	res, err := t.client.Search("logs-*").
+	res, err := t.client.Search().
 		Query(boolQuery).
 		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
