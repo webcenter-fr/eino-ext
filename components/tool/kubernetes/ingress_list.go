@@ -44,7 +44,7 @@ func (h *IngressListOutput) ToJson(o *networkingv1.Ingress) json.RawMessage {
 
 	tls := make([]string, 0, len(o.Spec.TLS))
 	for _, t := range o.Spec.TLS {
-		tls = append(tls, t.SecretName)
+		tls = append(tls, t.Hosts...)
 	}
 	output.TLS = tls
 
