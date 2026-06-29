@@ -24,6 +24,32 @@ correcte.
 En revanche, le **découpage lib/projet est sous-optimal** : une grande part du cycle de vie est
 générique et réimplémentable à l'identique dans tout projet eino, mais vit dans le projet.
 
+### Relation avec le middleware officiel `adk/middlewares/summarization` (eino PR #729)
+
+eino v0.8.5 fournit désormais un middleware officiel de summarization (PR #729) :
+`summarization.New(ctx, &summarization.Config{Model, TokenCounter, Trigger.MaxTokens, Instruction,
+TranscriptFilePath, PreserveUserMessages, Finalize, Callback, EmitInternalEvents})`. Comme
+`contextopt`, il est **intra-run** (`BeforeModelRewriteState`, réécrit `state.Messages`, ne persiste
+rien). Il expose `Finalize`/`Callback`/`ActionTypeAfterSummary` qui permettraient de **capter** le
+résumé produit intra-run pour le persister (« Design A », un seul appel LLM).
+
+**Décision retenue : Design B — condenser cross-request séparé.** Justification :
+- **Cadence indépendante** : la persistance doit pouvoir se déclencher selon un seuil cross-request
+  propre, et non être asservie au seuil d'overflow intra-run du middleware (qui ne fire que pendant
+  un `runner.Run`). Le hook `Finalize` ne couvre pas une cadence de persistance autonome.
+- **Découplage** : la persistance ne doit pas dépendre du fait qu'un run a overflow, ni du format de
+  marqueur interne de #729 (`_eino_summarization_content_type`), distinct de `memory.SummaryMarkerKey`.
+- **Coût LLM maîtrisé sans #729** : l'invariant anti-double-coût (même `TokenCounter`, budget
+  `Window ≤ usable`, marqueurs partagés — voir tâche 3) garantit déjà qu'un tour ne summarize pas
+  deux fois la même frontière.
+
+**Conséquence à assumer (duplication consciente)** : le condenser persistant réimplémente la
+mécanique « count tokens → appel LLM → message résumé » que #729 (et `contextopt`) réalisent aussi.
+On limite cette duplication en **réutilisant le `Summarizer` de `contextopt`** (tâche 3) plutôt que
+d'écrire un nouveau prompt, et en gardant le condenser réduit à l'orchestration de persistance.
+Le middleware intra-run (`contextopt` et/ou #729) reste le filet de sécurité du run ; le condenser
+cross-request reste l'autorité de persistance.
+
 ## Décisions retenues
 
 - **Périmètre lib** : remonter le lifecycle générique + le Summarizer dans la lib. La lecture du
@@ -46,9 +72,45 @@ générique et réimplémentable à l'identique dans tout projet eino, mais vit 
      handle.
    - `Window(budget)` → fenêtre `[dernier résumé + messages récents]`.
    - `CommitAssistant(msg)` → append + unlock, avec garde contre double-unlock.
-3. `Summarizer` : interface `{ Model; Prompt }` (prompt par défaut surchargeable, repris de
-   `summarySystemPrompt`) + `Condense(ctx, threshold)` qui compte les tokens, déclenche au seuil et
-   `AppendSummary`. Reprend la logique de `generateConversationSummary`.
+3. **Condensation persistante — réutiliser le Summarizer de `contextopt`** (pas de
+   réimplémentation LLM). `contextopt` expose déjà :
+   - `type Summarizer interface { Summarize(ctx, history []*schema.Message, previousSummary string) (string, error) }`
+   - `NewModelSummarizer(model, opts...)` avec le template ancré (`DefaultSummaryTemplate`), la
+     gestion du `<previous-summary>` incrémental et le rendu de l'historique (tool-calls inclus).
+
+   Décisions :
+   - Le paquet `session` définit **sa propre interface minimale** de même signature
+     (`Summarize(ctx, history, previousSummary) (string, error)`) afin d'éviter toute dépendance
+     `memory/session → middleware/contextopt` (typage structurel Go : une instance
+     `contextopt.NewModelSummarizer(...)` la satisfait directement). Le projet construit **une
+     seule** instance partagée entre le middleware et le condenser → prompt = source unique.
+   - `Condense(ctx, threshold)` ne contient plus que l'orchestration spécifique à la persistance :
+     compter les tokens de la fenêtre (`CountTokens`/`GetWindow`), déclencher au seuil, appeler
+     `Summarize(window, lastSummaryText(window))`, puis `AppendSummary(NewSummaryMessage(text))`
+     (persisté). Remplace `generateConversationSummary` ; le prompt `summarySystemPrompt` est
+     abandonné au profit de `DefaultSummaryTemplate`.
+   - Marqueurs partagés (`memory.SummaryMarkerKey`/`IsSummary`/`NewSummaryMessage`) : les résumés
+     persistés sont reconnus par `contextopt` (`trimBeforeLastSummary`, `lastSummaryText`) et
+     réciproquement → interopérabilité native.
+   - **Invariant anti-double-coût LLM (garantie, pas un réglage).** Le middleware ne ré-appelle le
+     LLM que si `IsOverflow(window) && Summarizer != nil` (`optimizer.go:392`). Pour qu'un tour ne
+     paie **jamais** deux fois le résumé de l'historique déjà persisté, garantir les 3 conditions
+     ensemble :
+     1. **Même `TokenCounter`** injecté côté `session` et côté `contextopt.Config` (sinon les
+        estimations divergent et la garantie tombe).
+     2. **Budget de `Window(budget)` ≤ `usable()` du middleware** (`MaxInputTokens`, sinon
+        `ContextLimit − ReservedTokens`) : après `Condense`, la fenêtre `[résumé + tail]` ne peut
+        pas déclencher l'overflow au premier appel modèle.
+     3. Marqueurs de résumé partagés (déjà acquis) : `trimBeforeLastSummary` du middleware démarre
+        exactement au résumé que `Condense` vient de persister.
+     ⇒ Le résumé de frontière de tour est calculé **une seule fois** (dans `Condense`). Une
+     éventuelle summarization du middleware ne survient qu'en cas d'overflow **intra-run** (history
+     qui grossit pendant un run à tool-calls), incrémentale via `previousSummary` — ce n'est pas un
+     doublon du résumé de frontière.
+   - **Option garantie « un seul appelant LLM »** (si le rescue intra-run par LLM n'est pas requis) :
+     configurer `contextopt.Config.Summarizer = nil`. Le middleware ne fait alors que du travail pur
+     sans LLM (`trimBeforeLastSummary` + `pruneToolOutputs`) ; l'unique summarizer LLM vit dans le
+     condenser persistant. Compromis : l'overflow intra-run est géré par trim/prune, pas par résumé.
 4. Ajuster les interfaces `Memory` / `Conversation` si cela simplifie (breaking acceptable) ; sinon
    rester additif.
 5. Tests unitaires lib : lifecycle, condensation au seuil, nettoyage des mutex, concurrence.
@@ -94,6 +156,9 @@ générique et réimplémentable à l'identique dans tout projet eino, mais vit 
   - Message provoquant une erreur → recharger l'historique : aucune erreur persistée.
   - Supprimer une conversation → vérifier la suppression de l'entrée mutex.
   - Atteindre le seuil de tokens → vérifier la condensation et la fenêtre `[résumé + récents]`.
+  - **Anti-double-coût LLM** : avec persistance + middleware actifs, instrumenter/mock le modèle de
+    résumé et vérifier qu'un tour franchissant le seuil ne déclenche **qu'un seul** appel LLM de
+    summarization (le middleware ne re-summarize pas la fenêtre `[résumé + tail]` déjà condensée).
   - Disconnect client pendant le streaming → vérifier l'état persisté (complet vs marqué incomplet).
 
 ## Hors scope
