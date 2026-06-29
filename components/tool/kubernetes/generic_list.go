@@ -27,13 +27,13 @@ type OutputObject[resource client.Object] interface {
 type ListParams struct {
 	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace      string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
-	LabelsSelector string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, sepaeted by comma. For example: 'app=nginx,env=prod'."`
-	Filter         string              `json:"filter,omitempty" jsonschema:"(optional) A regex pattern to filter output. Keep only the resources that match the pattern. The filter is applied on each resource JSON output."`
+	LabelsSelector string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
+	Filter         string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
 	Paginate       *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
 type ListParamsPaginate struct {
-	PageSize      int    `json:"pageSize,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The number of resources to return per page. Default is 500."`
+	PageSize      int    `json:"pageSize,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The number of resources to return per page. Default is 50."`
 	PaginateToken string `json:"paginateToken,omitempty" jsonschema:"(optional) The token to retrieve the next page of results. This token is returned in the response when there are more results available than can fit in a single page."`
 }
 
@@ -46,15 +46,14 @@ type ListTool[resourceList client.ObjectList, resource client.Object, outputObje
 	knownClusters []string
 }
 
-// IsMatch checks if the Object matches the provided regex filter. If the filter is empty, it returns true.
-func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessage, filter string) bool {
-	if filter == "" {
+// IsMatch checks if the Object matches the provided compiled regex filter. If the filter is nil, it returns true.
+func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessage, filter *regexp.Regexp) bool {
+	if filter == nil {
 		return true
 	}
 
-	r := regexp.MustCompile(filter)
-	if r.Match(o) {
-		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter)
+	if filter.Match(o) {
+		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter.String())
 		return true
 	}
 	return false
@@ -65,12 +64,17 @@ func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessa
 func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Context, params *ListParams) (result string, err error) {
 
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
-		params.Paginate.PageSize = 500
+		params.Paginate.PageSize = 50
 	}
 
 	validator := validator.New()
 	if err := validator.Struct(params); err != nil {
 		return "", errors.Wrap(err, "invalid parameters for PodListTool")
+	}
+
+	filter, err := CompileFilter(params.Filter)
+	if err != nil {
+		return "", errors.Wrap(err, "error when compile regex")
 	}
 
 	c, ok := t.clients[params.Cluster]
@@ -104,7 +108,7 @@ func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Cont
 	outputs := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
 		output := t.output.ToJson(item)
-		if !t.IsMatch(output, params.Filter) {
+		if !t.IsMatch(output, filter) {
 			continue
 		}
 		outputs = append(outputs, output)
@@ -141,7 +145,7 @@ func NewListTool[resourceList client.ObjectList, resource client.Object, outputO
 	listTool.clients = clients
 
 	// Infer tool
-	t, err := utils.InferTool(toolsName, toolsDescription, listTool.Invoke)
+	t, err := utils.InferTool(toolsName, fmt.Sprintf("%s\n%s", toolsDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

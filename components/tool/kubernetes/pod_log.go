@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"bufio"
 	"context"
-	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
@@ -33,7 +32,7 @@ type PodLogParams struct {
 	Name          string `json:"name" validate:"required" jsonschema:"(required) The pod name."`
 	Container     string `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, logs from the first container will be returned."`
 	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of log lines to return. Default to 100."`
-	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A regex pattern to filter log lines. Only log lines matching the pattern will be returned."`
+	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each log line. Only matching lines are returned. Example: 'error|panic'. Invalid regex returns an error."`
 }
 
 // PodLogTool is a tool that gets the logs of a specific pod in a specified Kubernetes cluster.
@@ -72,7 +71,10 @@ func (t *PodLogTool) Invoke(ctx context.Context, params *PodLogParams) (string, 
 		return "", err
 	}
 
-	re := regexp.MustCompile(params.FilterPattern)
+	re, err := CompileFilter(params.FilterPattern)
+	if err != nil {
+		return "", err
+	}
 
 	req := c.CoreV1().Pods(params.Namespace).GetLogs(params.Name, &corev1.PodLogOptions{
 		Container: params.Container,
@@ -88,7 +90,7 @@ func (t *PodLogTool) Invoke(ctx context.Context, params *PodLogParams) (string, 
 	buf := bufio.NewScanner(podLogs)
 	var logs []string
 	for buf.Scan() {
-		if re.MatchString(buf.Text()) {
+		if re == nil || re.MatchString(buf.Text()) {
 			logs = append(logs, buf.Text())
 		}
 	}
@@ -118,7 +120,10 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 		return nil, errors.Wrap(err, "failed to get pod logs")
 	}
 
-	re := regexp.MustCompile(params.FilterPattern)
+	re, err := CompileFilter(params.FilterPattern)
+	if err != nil {
+		return nil, err
+	}
 
 	sr, sw := schema.Pipe[string](100)
 
@@ -128,7 +133,7 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 
 		scanner := bufio.NewScanner(podLogs)
 		for scanner.Scan() {
-			if re.MatchString(scanner.Text()) {
+			if re == nil || re.MatchString(scanner.Text()) {
 				if closed := sw.Send(scanner.Text(), nil); closed {
 					return
 				}

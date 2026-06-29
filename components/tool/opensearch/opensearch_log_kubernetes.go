@@ -34,11 +34,11 @@ It returns the logs in string format.
 type OpensearchLogKubernetesParams struct {
 	Cluster       string `json:"cluster" validate:"required" jsonschema:"(required) The Kubernetes cluster to retrieve logs from."`
 	Namespace     string `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the pods to retrieve logs from."`
-	PodName       string `json:"podName" jsonschema:"(optional) The name of the pod to retrieve logs from."`
-	ContainerName string `json:"containerName" jsonschema:"(optional) The name of the container to retrieve logs from."`
-	From          string `json:"from" jsonschema:"(optional) The start time to retrieve logs from. Relative format like 'now-1h' or absolute format in RFC3339 format. Default to 'now-24h'."`
-	To            string `json:"to" jsonschema:"(optional) The end time to retrieve logs to. Relative format like 'now' or absolute format in RFC3339 format. Default to 'now'."`
-	LuceneQuery   string `json:"luceneQuery" jsonschema:"(optional) The Lucene query to filter logs."`
+	PodName       string `json:"podName,omitempty" jsonschema:"(optional) The name of the pod to retrieve logs from."`
+	ContainerName string `json:"containerName,omitempty" jsonschema:"(optional) The name of the container to retrieve logs from."`
+	From          string `json:"from,omitempty" jsonschema:"(optional) The start time to retrieve logs from. Relative format like 'now-1h' or absolute format in RFC3339 format. Default to 'now-24h'."`
+	To            string `json:"to,omitempty" jsonschema:"(optional) The end time to retrieve logs to. Relative format like 'now' or absolute format in RFC3339 format. Default to 'now'."`
+	LuceneQuery   string `json:"luceneQuery,omitempty" jsonschema:"(optional) The Lucene query to filter logs."`
 	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of log lines to return. Default to 100."`
 }
 
@@ -49,9 +49,8 @@ type OpensearchLogKubernetesTool struct {
 	client *opensearch.Client
 }
 
-// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
-func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *OpensearchLogKubernetesParams) (result string, err error) {
-
+// applyDefaults applies the default values to the optional parameters when they are not set.
+func (params *OpensearchLogKubernetesParams) applyDefaults() {
 	if params.MaxLines == 0 {
 		params.MaxLines = 100
 	}
@@ -61,6 +60,12 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	if params.To == "" {
 		params.To = "now"
 	}
+}
+
+// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *OpensearchLogKubernetesParams) (result string, err error) {
+
+	params.applyDefaults()
 	validator := validator.New()
 	if err := validator.Struct(params); err != nil {
 		return "", errors.Wrap(err, "invalid parameters for OpensearchLogKubernetesTool")
@@ -122,9 +127,7 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 // Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
 func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params *OpensearchLogKubernetesParams) (stream *schema.StreamReader[string], err error) {
 
-	if params.MaxLines == 0 {
-		params.MaxLines = 100
-	}
+	params.applyDefaults()
 	validator := validator.New()
 	if err := validator.Struct(params); err != nil {
 		return nil, errors.Wrap(err, "invalid parameters for OpensearchLogKubernetesTool")
@@ -143,10 +146,11 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 	if params.ContainerName != "" {
 		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
 	}
-	if params.LuceneQuery != "" {
-		stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
-		boolQuery.Must(stringQuery)
+	if params.LuceneQuery == "" {
+		params.LuceneQuery = "*"
 	}
+	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
+	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search().
 		Query(boolQuery).
@@ -216,12 +220,19 @@ func NewOpensearchLogKubernetesTool(ctx context.Context, cfg *config.Config) (*O
 		client: c,
 	}
 
-	// Infer tool
+	// Infer tool (non-streaming)
 	t, err := utils.InferTool("opensearch_log_kubernetes_tool", opensearchLogKubernetesDescription, opensearchLogKubernetesTool.Invoke)
 	if err != nil {
 		return nil, err
 	}
 	opensearchLogKubernetesTool.InvokableTool = t
+
+	// Wire the streaming path.
+	streamable, err := utils.InferStreamTool("opensearch_log_kubernetes_tool", opensearchLogKubernetesDescription, opensearchLogKubernetesTool.InvokeAsStream)
+	if err != nil {
+		return nil, err
+	}
+	opensearchLogKubernetesTool.StreamableTool = streamable
 
 	return opensearchLogKubernetesTool, nil
 }

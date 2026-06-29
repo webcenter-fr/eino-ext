@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
@@ -42,7 +41,7 @@ type PodExecParams struct {
 	Container     string `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, the command will be executed in the first container."`
 	Command       string `json:"command" validate:"required" jsonschema:"(required) The command to execute in the pod."`
 	MaxLines      int64  `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of output lines to return. Default to 100."`
-	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A regex pattern to filter output lines. Only lines matching the pattern will be returned."`
+	FilterPattern string `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. Only matching lines are returned. Example: 'error|panic'. Invalid regex returns an error."`
 }
 
 // PodExecTool is a tool that executes a command in a specific pod in a specified Kubernetes cluster.
@@ -82,7 +81,10 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 		return "", err
 	}
 
-	re := regexp.MustCompile(params.FilterPattern)
+	re, err := CompileFilter(params.FilterPattern)
+	if err != nil {
+		return "", err
+	}
 
 	req := c.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -119,7 +121,7 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 	bufStdout := bufio.NewScanner(&stdout)
 	var logs []string
 	for bufStdout.Scan() {
-		if re.MatchString(bufStdout.Text()) {
+		if re == nil || re.MatchString(bufStdout.Text()) {
 			logs = append(logs, bufStdout.Text())
 		}
 	}
@@ -141,7 +143,10 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		return nil, err
 	}
 
-	re := regexp.MustCompile(params.FilterPattern)
+	re, err := CompileFilter(params.FilterPattern)
+	if err != nil {
+		return nil, err
+	}
 
 	req := c.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -182,7 +187,7 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 
 		scannerStdout := bufio.NewScanner(&stdout)
 		for scannerStdout.Scan() {
-			if re.MatchString(scannerStdout.Text()) {
+			if re == nil || re.MatchString(scannerStdout.Text()) {
 				if closed := sw.Send(scannerStdout.Text(), nil); closed {
 					return
 				}

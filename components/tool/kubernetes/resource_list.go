@@ -43,11 +43,11 @@ type ResourceListOutput struct {
 type ResourceListParams struct {
 	Cluster         string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace       string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
-	LabelsSelector  string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, sepaeted by comma. For example: 'app=nginx,env=prod'."`
+	LabelsSelector  string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
 	ResourceVersion string              `json:"resourceVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
 	ResourceGroup   string              `json:"resourceGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
 	ResourceKind    string              `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
-	Filter          string              `json:"filter,omitempty" jsonschema:"(optional) A regex pattern to filter output. Keep only the resources that match the pattern. The filter is applied on each resource JSON output."`
+	Filter          string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
 	Paginate        *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
@@ -59,15 +59,14 @@ type ResourceListTool struct {
 	output        *ResourceListOutput
 }
 
-// IsMatch checks if the Object matches the provided regex filter. If the filter is empty, it returns true.
-func (t *ResourceListTool) IsMatch(o json.RawMessage, filter string) bool {
-	if filter == "" {
+// IsMatch checks if the Object matches the provided compiled regex filter. If the filter is nil, it returns true.
+func (t *ResourceListTool) IsMatch(o json.RawMessage, filter *regexp.Regexp) bool {
+	if filter == nil {
 		return true
 	}
 
-	r := regexp.MustCompile(filter)
-	if r.Match(o) {
-		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter)
+	if filter.Match(o) {
+		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter.String())
 		return true
 	}
 	return false
@@ -109,12 +108,17 @@ func (h *ResourceListOutput) ToJson(o *unstructured.Unstructured) json.RawMessag
 func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParams) (result string, err error) {
 
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
-		params.Paginate.PageSize = 500
+		params.Paginate.PageSize = 50
 	}
 
 	validator := validator.New()
 	if err := validator.Struct(params); err != nil {
 		return "", errors.Wrap(err, "invalid parameters for PodListTool")
+	}
+
+	filter, err := CompileFilter(params.Filter)
+	if err != nil {
+		return "", err
 	}
 
 	c, ok := t.clients[params.Cluster]
@@ -152,7 +156,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	outputs := make([]json.RawMessage, 0, len(o.Items))
 	for _, item := range o.Items {
 		output := t.output.ToJson(&item)
-		if !t.IsMatch(output, params.Filter) {
+		if !t.IsMatch(output, filter) {
 			continue
 		}
 		outputs = append(outputs, output)
@@ -188,7 +192,7 @@ func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTo
 	listTool.clients = clients
 
 	// Infer tool
-	t, err := utils.InferTool("kubernetes_resources_list", resourceListDescription, listTool.Invoke)
+	t, err := utils.InferTool("kubernetes_resources_list", resourceListDescription+"\n"+listOutputGuidance, listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

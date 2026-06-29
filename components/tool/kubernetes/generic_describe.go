@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -115,7 +116,7 @@ func NewDescribeTool[resource client.Object](ctx context.Context, configs Config
 	describeTool.clients = clients
 
 	// Infer tool
-	t, err := utils.InferTool(toolsName, toolsDescription, describeTool.Invoke)
+	t, err := utils.InferTool(toolsName, fmt.Sprintf("%s\n%s", toolsDescription, describeOutputGuidance), describeTool.Invoke)
 	if err != nil {
 		return nil, err
 	}
