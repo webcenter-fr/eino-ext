@@ -43,12 +43,12 @@ type FileMemoryConfig struct {
 
 // FileMemory can store messages of each conversation
 type FileMemory struct {
-	mu            sync.Mutex
-	dir           string
-	maxWindowSize int
-	tokenCounter  memory.TokenCounter
+	mu              sync.Mutex
+	dir             string
+	maxWindowSize   int
+	tokenCounter    memory.TokenCounter
 	maxWindowTokens int
-	conversations map[string]map[string]*FileConversation
+	conversations   map[string]map[string]*FileConversation
 }
 
 // FileConversation represents a conversation stored in a file.

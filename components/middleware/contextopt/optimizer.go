@@ -21,6 +21,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/go-playground/validator/v10"
 
+	"github.com/webcenter-fr/eino-ext/components/contentcomp"
 	"github.com/webcenter-fr/eino-ext/components/memory"
 )
 
@@ -28,6 +29,18 @@ import (
 // whose output has already been pruned/truncated. It guarantees idempotence when
 // Optimize is called repeatedly (e.g. once per turn).
 const PruneMarkerKey = "__eino_ext_contextopt_pruned"
+
+// PruneRefKey is the key used in schema.Message.Extra to store the
+// content-addressed handle (contentcomp.Ref.Key) of a pruned tool output whose
+// original was offloaded to Config.Backend. When present, the original content is
+// recoverable via Optimizer.RestorePruned (reversible prune).
+const PruneRefKey = "__eino_ext_contextopt_pruned_ref"
+
+// CompressedMarkerKey marks a tool message whose content has already been run
+// through Config.ContentCompressors. Because the compressors are deterministic
+// and idempotent, the marker lets Optimize skip re-compressing the same message
+// on every turn (the per-turn cost stays O(new tool outputs)).
+const CompressedMarkerKey = "__eino_ext_contextopt_compressed"
 
 // Default configuration values (ported from kilocode).
 const (
@@ -85,6 +98,30 @@ type Config struct {
 	// When nil, Optimize never returns an error on overflow: it simply returns
 	// the trimmed/pruned history.
 	Summarizer Summarizer
+
+	// Backend, when non-nil, makes tool-output pruning reversible: instead of
+	// destructively truncating a stale tool output, the original is offloaded to
+	// the Store (content-addressed) and the message keeps a handle (PruneRefKey)
+	// so the original can be recovered via RestorePruned.
+	Backend contentcomp.Store
+	// ContentCompressors are deterministic per-message compressors applied to
+	// tool outputs BEFORE any truncation/pruning. They are reversible/lossless
+	// (e.g. jsoncrush) or Store-backed (e.g. shellout), reducing tokens without
+	// the destructive cost of a hard truncation. Applied in order.
+	ContentCompressors []contentcomp.Compressor
+
+	// VolatileCheck enables warn-only detection of volatile tokens (ISO-8601
+	// timestamps, UUIDs, *_id fields) in the cached prefix. It never mutates any
+	// message; findings are reported via VolatileObserver.
+	VolatileCheck bool
+	// VolatileObserver receives VolatileCheck findings. Required for VolatileCheck
+	// to have any effect.
+	VolatileObserver func(context.Context, VolatileFinding)
+
+	// VerbositySteer, when non-empty, is appended (append-only) to the END of the
+	// first system message to steer the model toward concise output. The prefix
+	// before the append is unchanged (cache-safe). Disabled by default.
+	VerbositySteer string
 }
 
 // Optimizer applies context-window optimization strategies to a message history.
@@ -274,11 +311,21 @@ func isPruned(msg *schema.Message) bool {
 	return ok && b
 }
 
+// isCompressed reports whether a message's content has already been processed by
+// the content compressors (see CompressedMarkerKey).
+func isCompressed(msg *schema.Message) bool {
+	if msg == nil || msg.Extra == nil {
+		return false
+	}
+	b, ok := msg.Extra[CompressedMarkerKey].(bool)
+	return ok && b
+}
+
 // pruneToolOutputs erases (truncates) outputs of older tool calls beyond the
 // protected window when the eligible total exceeds PruneMinimum (port of
 // compaction.ts:prune). It never mutates input messages: pruned entries are
 // replaced by copies marked with PruneMarkerKey for idempotence.
-func (o *Optimizer) pruneToolOutputs(msgs []*schema.Message) []*schema.Message {
+func (o *Optimizer) pruneToolOutputs(ctx context.Context, msgs []*schema.Message) ([]*schema.Message, error) {
 	protected := make(map[string]struct{}, len(o.cfg.ProtectedTools))
 	for _, name := range o.cfg.ProtectedTools {
 		protected[name] = struct{}{}
@@ -328,23 +375,100 @@ loop:
 	}
 
 	if pruned <= o.cfg.PruneMinimum || len(toPrune) == 0 {
-		return msgs
+		return msgs, nil
 	}
 
 	out := make([]*schema.Message, len(msgs))
 	copy(out, msgs)
 	for i := range toPrune {
 		clone := *out[i]
-		clone.Content = o.truncateToolOutput(clone.Content)
-		extra := make(map[string]any, len(clone.Extra)+1)
+		extra := make(map[string]any, len(clone.Extra)+2)
 		for k, v := range clone.Extra {
 			extra[k] = v
+		}
+		if o.cfg.Backend != nil {
+			// Reversible prune: offload the original, keep a handle.
+			ref, err := o.cfg.Backend.Put(ctx, clone.Content)
+			if err != nil {
+				return nil, errors.Wrap(err, "contextopt: offload pruned tool output")
+			}
+			extra[PruneRefKey] = ref.Key
+			clone.Content = fmt.Sprintf("[output offloaded to backend: %s (%d bytes)]", ref.Key, ref.Size)
+		} else {
+			// Legacy destructive truncation (no Backend configured).
+			clone.Content = o.truncateToolOutput(clone.Content)
 		}
 		extra[PruneMarkerKey] = true
 		clone.Extra = extra
 		out[i] = &clone
 	}
-	return out
+	return out, nil
+}
+
+// RestorePruned returns the original content of a tool message whose output was
+// offloaded by a reversible prune (Config.Backend set). When the message was not
+// offloaded, its current content is returned. Requires the same Backend that
+// performed the prune.
+func (o *Optimizer) RestorePruned(ctx context.Context, msg *schema.Message) (string, error) {
+	if msg == nil || msg.Extra == nil || o.cfg.Backend == nil {
+		if msg == nil {
+			return "", nil
+		}
+		return msg.Content, nil
+	}
+	key, ok := msg.Extra[PruneRefKey].(string)
+	if !ok || key == "" {
+		return msg.Content, nil
+	}
+	content, err := o.cfg.Backend.Get(ctx, contentcomp.Ref{Key: key})
+	if err != nil {
+		return "", errors.Wrap(err, "contextopt: restore pruned tool output")
+	}
+	return content, nil
+}
+
+// applyContentCompressors runs the configured deterministic compressors over tool
+// outputs, before any truncation/pruning. It never mutates input messages: only
+// changed messages are cloned. Idempotent (compressors are idempotent).
+func (o *Optimizer) applyContentCompressors(ctx context.Context, msgs []*schema.Message) ([]*schema.Message, error) {
+	if len(o.cfg.ContentCompressors) == 0 {
+		return msgs, nil
+	}
+	var out []*schema.Message
+	for i, msg := range msgs {
+		if msg == nil || msg.Role != schema.Tool || isPruned(msg) || isCompressed(msg) || msg.Content == "" {
+			continue
+		}
+		content := msg.Content
+		for _, c := range o.cfg.ContentCompressors {
+			next, ch, err := c.Compress(ctx, content)
+			if err != nil {
+				return nil, errors.Wrapf(err, "contextopt: compressor %s", c.Name())
+			}
+			if ch {
+				content = next
+			}
+		}
+		if out == nil {
+			out = make([]*schema.Message, len(msgs))
+			copy(out, msgs)
+		}
+		// Mark as compressed even when no compressor changed the content, so the
+		// (deterministic) compressors are not re-evaluated on every subsequent turn.
+		clone := *msg
+		clone.Content = content
+		extra := make(map[string]any, len(clone.Extra)+1)
+		for k, v := range clone.Extra {
+			extra[k] = v
+		}
+		extra[CompressedMarkerKey] = true
+		clone.Extra = extra
+		out[i] = &clone
+	}
+	if out == nil {
+		return msgs, nil
+	}
+	return out, nil
 }
 
 // trimBeforeLastSummary returns the suffix of msgs starting at the last summary
@@ -385,12 +509,22 @@ func lastSummaryText(msgs []*schema.Message) string {
 func (o *Optimizer) Optimize(ctx context.Context, msgs []*schema.Message) ([]*schema.Message, error) {
 	out := trimBeforeLastSummary(msgs)
 
+	o.runVolatileCheck(ctx, msgs)
+
+	out, err := o.applyContentCompressors(ctx, out)
+	if err != nil {
+		return nil, err
+	}
+
 	if o.cfg.PruneToolOutputs {
-		out = o.pruneToolOutputs(out)
+		out, err = o.pruneToolOutputs(ctx, out)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !o.IsOverflow(out) || o.cfg.Summarizer == nil {
-		return out, nil
+		return o.applyVerbositySteer(out), nil
 	}
 
 	head, tailStart := o.selectTail(out)
@@ -400,11 +534,10 @@ func (o *Optimizer) Optimize(ctx context.Context, msgs []*schema.Message) ([]*sc
 	if err != nil {
 		return nil, errors.Wrap(err, "contextopt: summarize failed")
 	}
-
 	result := make([]*schema.Message, 0, 1+len(out)-tailStart)
 	result = append(result, memory.NewSummaryMessage(text))
 	result = append(result, out[tailStart:]...)
-	return result, nil
+	return o.applyVerbositySteer(result), nil
 }
 
 func clamp(v, lo, hi int) int {

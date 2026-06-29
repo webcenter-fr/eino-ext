@@ -64,6 +64,43 @@ tool-calling decorator. Plain base models never advertise tool support.
 | `ProtectedTools` | — | Tool names whose outputs are never pruned (e.g. `["skill"]`). |
 | `TokenCounter` | `memory.DefaultTokenCounter` | Token estimator. |
 | `Summarizer` | `nil` | LLM-backed compaction; `nil` => trim/prune only, no error on overflow. |
+| `Backend` | `nil` | `contentcomp.Store` enabling **reversible** prune (offload original instead of destructive truncation). |
+| `ContentCompressors` | — | Deterministic per-message compressors (e.g. `jsoncrush`, `shellout`) applied to tool outputs **before** any truncation. |
+| `VolatileCheck` / `VolatileObserver` | `false` / `nil` | Warn-only detection of volatile tokens (timestamps, UUIDs, `*_id`) in the cached prefix. Non-mutating. |
+| `VerbositySteer` | `""` | Append-only concision instruction at the **end** of the system prompt (cache-safe). Disabled by default. |
+
+## Reversible prune & content compression
+
+Without a `Backend`, pruning truncates stale tool outputs destructively. Set a
+`contentcomp.Store` as `Backend` to make pruning **reversible**: the original is
+offloaded to the store and the message keeps a content-addressed handle
+(`Extra["__eino_ext_contextopt_pruned_ref"]`). Recover it via
+`Optimizer.RestorePruned`.
+
+`ContentCompressors` run on tool outputs **before** any truncation, so a JSON
+tool output is crushed (lossless) and a shell output compacted before the
+optimizer ever considers a hard truncation:
+
+```go
+store := contentcomp.NewMemoryStore()
+cfg := &contextopt.Config{
+    PruneToolOutputs:   true,
+    Backend:            store, // reversible prune
+    ContentCompressors: []contentcomp.Compressor{
+        jsoncrush.NewCompressor(),
+        shellout.NewCompressor(),
+    },
+}
+```
+
+## Diagnostics & steering (warn-only)
+
+- `VolatileCheck` + `VolatileObserver` report ISO-8601 timestamps, UUIDs and
+  `*_id` fields found in the cacheable prefix (system + tools + first messages).
+  **No bytes are modified.**
+- `VerbositySteer` appends a concision instruction to the **end** of the first
+  system message (append-only; the prefix before it is unchanged, so the cache
+  is preserved). Idempotent via `Extra["__eino_ext_contextopt_verbosity_steer"]`.
 
 ## Notes
 

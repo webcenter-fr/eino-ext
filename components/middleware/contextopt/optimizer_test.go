@@ -10,7 +10,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/components/memory"
 )
 
-func user(content string) *schema.Message     { return schema.UserMessage(content) }
+func user(content string) *schema.Message      { return schema.UserMessage(content) }
 func assistant(content string) *schema.Message { return schema.AssistantMessage(content, nil) }
 
 func toolMsg(callID, content string) *schema.Message {
@@ -149,7 +149,7 @@ func TestPruneToolOutputs(t *testing.T) {
 		ToolOutputMaxChars: 100,
 		TailTurns:          2,
 	})
-	out := o.pruneToolOutputs(msgs)
+	out, _ := o.pruneToolOutputs(context.Background(), msgs)
 	if len(out[2].Content) > 200 {
 		t.Fatalf("old tool output not pruned, len=%d", len(out[2].Content))
 	}
@@ -162,7 +162,7 @@ func TestPruneToolOutputs(t *testing.T) {
 	}
 
 	// Idempotence: second pass is a no-op (already pruned -> break).
-	out2 := o.pruneToolOutputs(out)
+	out2, _ := o.pruneToolOutputs(context.Background(), out)
 	if out2[2].Content != out[2].Content {
 		t.Fatal("second prune changed content")
 	}
@@ -182,7 +182,7 @@ func TestPruneProtectedTool(t *testing.T) {
 		ProtectedTools:   []string{"skill"},
 		TailTurns:        2,
 	})
-	out := o.pruneToolOutputs(msgs)
+	out, _ := o.pruneToolOutputs(context.Background(), msgs)
 	if len(out[2].Content) != 200_000 {
 		t.Fatal("protected tool output was pruned")
 	}
@@ -195,7 +195,7 @@ func TestPruneBelowMinimumNoop(t *testing.T) {
 		user("u2"), user("u3"),
 	}
 	o, _ := NewOptimizer(&Config{PruneToolOutputs: true, TailTurns: 2})
-	out := o.pruneToolOutputs(msgs)
+	out, _ := o.pruneToolOutputs(context.Background(), msgs)
 	if isPruned(out[2]) {
 		t.Fatal("pruned below minimum")
 	}
