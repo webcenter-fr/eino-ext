@@ -6,6 +6,8 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
 	github.com/cloudwego/eino v0.8.5
+	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
+	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/cloudwego/hertz v0.9.5
 	github.com/disaster37/opensearch/v3 v3.4.1
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
@@ -42,10 +44,13 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17 // indirect
 	github.com/cloudwego/netpoll v0.6.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/eino-contrib/ollama v0.1.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
+	github.com/evanphx/json-patch v5.9.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
@@ -72,6 +77,7 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
+	github.com/meguminnnnnnnnn/go-openai v0.1.2 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
