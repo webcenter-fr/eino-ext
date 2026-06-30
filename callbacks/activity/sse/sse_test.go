@@ -28,7 +28,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 
-	"github.com/webcenter-fr/eino-ext/components/observability/activity"
+	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 )
 
 type subscriberCounter interface {

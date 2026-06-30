@@ -29,7 +29,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/hertz-contrib/sse"
 
-	"github.com/webcenter-fr/eino-ext/components/observability/activity"
+	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 )
 
 // Config configures the SSE handler.

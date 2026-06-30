@@ -3,7 +3,7 @@ package jsoncrush
 import (
 	"context"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 )
 
 // compressor adapts Crush to the contentcomp.Compressor interface so it can be

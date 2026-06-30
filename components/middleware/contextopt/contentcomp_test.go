@@ -7,8 +7,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
-	"github.com/webcenter-fr/eino-ext/components/contentcomp/jsoncrush"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp/jsoncrush"
 )
 
 func TestReversiblePrune(t *testing.T) {

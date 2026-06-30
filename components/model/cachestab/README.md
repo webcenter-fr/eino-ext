@@ -117,7 +117,7 @@ See [`example_test.go`](./example_test.go) for self-contained, runnable samples:
 Run them with:
 
 ```bash
-go test ./components/middleware/cachestab/ -run Example -v
+go test ./components/model/cachestab/ -run Example -v
 ```
 
 ## Out of scope

@@ -17,7 +17,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 )
 
 // Pattern is a named, deterministic line/stream transform.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 )
 
 func canon(t *testing.T, s string) string {

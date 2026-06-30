@@ -55,6 +55,36 @@ msg := fmt.Sprintf("user %s has %d items", name, count)
 msg := "user " + name + " has " + strconv.Itoa(count) + " items"
 ```
 
+## Project structure
+
+The repository follows the official
+[eino-ext](https://github.com/cloudwego/eino-ext) layout. Place new code
+according to what it implements:
+
+- `components/<abstraction>/<impl>` where `<abstraction>` is an eino component
+  type: one of `document`, `embedding`, `indexer`, `model`, `prompt`,
+  `retriever`, `tool`.
+  - A model decorator/wrapper — anything implementing `model.BaseChatModel` or
+    `model.ToolCallingChatModel` — is a **model** component and belongs under
+    `components/model/...`, **not** a "middleware". The canonical example is
+    `cachestab` (`components/model/cachestab`), a `ToolCallingChatModel`
+    decorator.
+- `callbacks/` (top level) — `callbacks.Handler` implementations, e.g.
+  `callbacks/activity`.
+- `libs/` (top level) — shared, non-component support libraries that are not
+  tied to a specific eino abstraction, e.g. `libs/contentcomp`.
+
+### Project-specific extensions
+
+These directories deviate from the official eino-ext layout and exist only for
+this project:
+
+- `components/middleware/` — reserved strictly for eino adk middlewares
+  (`adk.ChatModelAgentMiddleware`), e.g. `contextopt`. Do not place plain model
+  decorators here.
+- `components/memory/` — conversation-history persistence (no eino-ext
+  equivalent).
+
 ## Components
 
 - Follow the existing component layout: a `Config` struct with `validate` and

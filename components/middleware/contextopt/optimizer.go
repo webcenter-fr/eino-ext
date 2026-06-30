@@ -21,7 +21,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/go-playground/validator/v10"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 	"github.com/webcenter-fr/eino-ext/components/memory"
 )
 

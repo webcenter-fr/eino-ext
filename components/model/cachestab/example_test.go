@@ -6,7 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/webcenter-fr/eino-ext/components/middleware/cachestab"
+	"github.com/webcenter-fr/eino-ext/components/model/cachestab"
 )
 
 // demoModel is a minimal, provider-agnostic stand-in for a real

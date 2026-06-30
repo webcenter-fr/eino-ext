@@ -20,7 +20,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/webcenter-fr/eino-ext/components/contentcomp"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 )
 
 const (
