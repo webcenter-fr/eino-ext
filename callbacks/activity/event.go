@@ -89,6 +89,11 @@ type Event struct {
 	SessionID string `json:"sessionID"`
 	// Type identifies the concrete Data payload.
 	Type Type `json:"type"`
+	// Agent is the name of the agent that produced the event, populated from
+	// WithAgent on the run context. It is empty for single-agent runs. The
+	// Handler also merges it into the SSE data body (see MarshalSSEData) so a UI
+	// can route events by agent without reading a non-standard SSE field.
+	Agent string `json:"agent,omitempty"`
 	// Timestamp is when the event was produced.
 	Timestamp time.Time `json:"timestamp"`
 	// Data is one of the typed payloads in this file (or nil).
@@ -253,12 +258,37 @@ type CompactionEnded struct {
 }
 
 // MarshalSSEData renders the JSON body written after the SSE "data:" field for an
-// Event. It marshals only the Data payload, mirroring the Kilocode wire format
-// where the envelope metadata (id, type) travels in the SSE frame fields.
+// Event. It marshals the Data payload and, when Event.Agent is set, merges an
+// "agent" key into the emitted JSON object so a browser can route events by
+// agent with const { agent } = JSON.parse(e.data). The envelope metadata (id,
+// type) still travels in the SSE frame fields, mirroring the Kilocode wire
+// format.
+//
+// The function is tolerant of non-object payloads: when Data does not marshal to
+// a JSON object (e.g. it is nil, a string, or an array), the original payload is
+// returned unchanged unless an agent is set, in which case a {"agent": "..."}
+// object is emitted for nil Data. This keeps existing consumers working.
 func MarshalSSEData(e Event) ([]byte, error) {
 	b, err := json.Marshal(e.Data)
 	if err != nil {
 		return nil, errors.Wrap(err, "activity: failed to marshal event data")
 	}
-	return b, nil
+	if e.Agent == "" {
+		return b, nil
+	}
+	// Merge the agent key into the payload object when possible.
+	var obj map[string]any
+	if e.Data == nil {
+		obj = map[string]any{}
+	} else if err := json.Unmarshal(b, &obj); err != nil || obj == nil {
+		// Non-object payload (string/array/number): cannot merge an agent key
+		// without changing its shape; preserve the original body.
+		return b, nil
+	}
+	obj["agent"] = e.Agent
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return nil, errors.Wrap(err, "activity: failed to marshal event data with agent")
+	}
+	return merged, nil
 }

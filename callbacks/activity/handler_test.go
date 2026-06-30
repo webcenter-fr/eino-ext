@@ -302,3 +302,61 @@ func TestHandlerStreamReadersClosed(t *testing.T) {
 	h.OnStartWithStreamInput(ctx, info, sr2)
 	// No assertion beyond not panicking / not hanging; race detector covers leaks.
 }
+
+func TestHandlerAgentAttribution(t *testing.T) {
+	h, _, ch, ctx := setup(t)
+	ctx = WithAgent(ctx, "supervisor")
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel, Type: "OpenAI"}
+
+	h.OnStart(ctx, info, &model.CallbackInput{})
+
+	events := collect(t, ch, 3)
+	if len(events) < 3 {
+		t.Fatalf("want at least 3 events, got %v", types(events))
+	}
+	// First event must be agent.switched, emitted before the first step.started.
+	if events[0].Type != TypeAgentSwitched {
+		t.Fatalf("want agent.switched first, got %v", types(events))
+	}
+	if as := events[0].Data.(AgentSwitched); as.Agent != "supervisor" {
+		t.Fatalf("agent.switched payload = %+v", as)
+	}
+	// Every event carries the agent on the envelope.
+	for _, e := range events {
+		if e.Agent != "supervisor" {
+			t.Fatalf("event %s missing agent attribution: %q", e.Type, e.Agent)
+		}
+	}
+	// step.started also carries the agent in its payload.
+	for _, e := range events {
+		if e.Type == TypeStepStarted {
+			if ss := e.Data.(StepStarted); ss.Agent != "supervisor" {
+				t.Fatalf("step.started payload agent = %q", ss.Agent)
+			}
+		}
+	}
+}
+
+func TestHandlerAgentSwitchedOncePerAgent(t *testing.T) {
+	h, _, ch, ctx := setup(t)
+	infoModel := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
+
+	sup := WithAgent(ctx, "supervisor")
+	sub := WithAgent(ctx, "researcher")
+
+	h.OnError(sup, infoModel, errors.New("a")) // supervisor -> 1 switch + step.failed
+	h.OnError(sup, infoModel, errors.New("b")) // same agent, no new switch
+	h.OnError(sub, infoModel, errors.New("c")) // researcher -> 1 switch + step.failed
+	h.OnError(sup, infoModel, errors.New("d")) // back to supervisor -> 1 switch + step.failed
+
+	events := collect(t, ch, 8)
+	switches := map[string]int{}
+	for _, e := range events {
+		if e.Type == TypeAgentSwitched {
+			switches[e.Data.(AgentSwitched).Agent]++
+		}
+	}
+	if switches["supervisor"] != 2 || switches["researcher"] != 1 {
+		t.Fatalf("unexpected agent.switched counts: %v (events %v)", switches, types(events))
+	}
+}

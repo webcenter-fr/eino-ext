@@ -104,6 +104,37 @@ func TestSSEStreamsEvents(t *testing.T) {
 	}
 }
 
+func TestSSEStreamsAgentInData(t *testing.T) {
+	bus, err := activity.NewBus(activity.Config{})
+	if err != nil {
+		t.Fatalf("NewBus: %v", err)
+	}
+	defer bus.Close()
+	addr := startServer(t, bus)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/events?session=s", addr), nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	sc := bus.(subscriberCounter)
+	deadline := time.Now().Add(2 * time.Second)
+	for !sc.HasSubscribers("s") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	bus.Publish(context.Background(), activity.Event{SessionID: "s", Agent: "supervisor", Type: activity.TypeTextDelta, Data: activity.TextDelta{Delta: "hi"}})
+
+	_, _, data := readFrame(t, resp.Body)
+	if !strings.Contains(data, `"agent":"supervisor"`) || !strings.Contains(data, `"delta":"hi"`) {
+		t.Fatalf("data frame missing agent or delta: %q", data)
+	}
+}
+
 func TestSSEReplayWithLastEventID(t *testing.T) {
 	bus, err := activity.NewBus(activity.Config{})
 	if err != nil {

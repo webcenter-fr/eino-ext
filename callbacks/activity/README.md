@@ -60,6 +60,35 @@ for e := range events {
 (`{input, output, reasoning, cache{read, write}}`) — the same shape Kilocode's UI
 renders for token/cost counters.
 
+### Agent attribution
+
+In a multi-agent run (supervisor + sub-agents) every event can be attributed to
+the agent that produced it. Scope each agent's execution with `WithAgent`, or
+register the
+[`agentattr`](../../components/middleware/agentattr) adk middleware on an adk
+`ChatModelAgent`'s `Handlers`:
+
+```go
+mw, _ := agentattr.New(&agentattr.Config{AgentName: "supervisor"})
+agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+    Name:  "supervisor",
+    Model: m,
+    Handlers: []adk.ChatModelAgentMiddleware{mw},
+})
+```
+
+The Handler then:
+
+- sets `Event.Agent` on every emitted event (and merges an `agent` key into the
+  SSE `data` JSON — see [`sse`](./sse));
+- emits a single `agent.switched` event the first time a session observes a new
+  agent name, before that agent's first `step.started`;
+- populates `step.started`'s `agent` payload field.
+
+`WithAgent` works without adk too: set it on the run context per sub-agent and
+the same attribution applies. A run with no `WithAgent` scope carries no agent
+attribution (empty `agent`), preserving the single-agent wire shape.
+
 ## Bus semantics & invariants
 
 - **Non-blocking publish.** A slow or stalled UI client can never block an agent

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -44,6 +45,18 @@ import (
 type Handler struct {
 	bus Bus
 	ids atomic.Uint64
+	// lastAgent tracks the most recently seen agent name per session so the
+	// Handler can emit a single agent.switched event on each transition. Keyed
+	// by sessionID; values are strings.
+	//
+	// NOTE: unlike the Bus (which caps retained sessions via MaxSessions and
+	// LRU-evicts idle ones), this map is NOT pruned: it retains one small entry
+	// per DISTINCT session id ever seen, independent of Bus eviction. For the
+	// expected deployment model (a bounded, reused set of session ids) this is
+	// negligible. A workload that mints a unique session id per request without
+	// bound would grow this map without bound; if that becomes a concern, add a
+	// Bus session-eviction hook that deletes the corresponding entry here.
+	lastAgent sync.Map
 }
 
 // NewHandler returns a Handler publishing to bus.
@@ -80,7 +93,31 @@ func stepFailedData(err error) StepFailed {
 
 func (h *Handler) publish(ctx context.Context, t Type, data any) {
 	sessionID, _ := SessionFromContext(ctx)
-	h.bus.Publish(ctx, Event{SessionID: sessionID, Type: t, Data: data})
+	agent, _ := AgentFromContext(ctx)
+	h.maybeEmitAgentSwitched(ctx, sessionID, agent)
+	h.bus.Publish(ctx, Event{SessionID: sessionID, Agent: agent, Type: t, Data: data})
+}
+
+// maybeEmitAgentSwitched publishes a single agent.switched event the first time a
+// session observes a new (non-empty) agent name, tracking the last-seen agent
+// per session. It is a no-op for unattributed events (empty agent) and for
+// repeated events from the already-active agent.
+func (h *Handler) maybeEmitAgentSwitched(ctx context.Context, sessionID, agent string) {
+	if agent == "" {
+		return
+	}
+	prev, _ := h.lastAgent.Load(sessionID)
+	if p, ok := prev.(string); ok && p == agent {
+		return
+	}
+	// Record before publishing so a concurrent publish for the same session
+	// does not double-emit; LoadOrStore-style swap keeps this race-tolerant.
+	if actual, loaded := h.lastAgent.Swap(sessionID, agent); loaded {
+		if p, ok := actual.(string); ok && p == agent {
+			return
+		}
+	}
+	h.bus.Publish(ctx, Event{SessionID: sessionID, Agent: agent, Type: TypeAgentSwitched, Data: AgentSwitched{Agent: agent}})
 }
 
 // Needed reports whether a timing is worth setting up. Coarse timings are always
@@ -130,7 +167,8 @@ func toolName(info *callbacks.RunInfo) string {
 func (h *Handler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	switch componentOf(info) {
 	case components.ComponentOfChatModel:
-		h.publish(ctx, TypeStepStarted, StepStarted{Model: modelName(info)})
+		agent, _ := AgentFromContext(ctx)
+		h.publish(ctx, TypeStepStarted, StepStarted{Agent: agent, Model: modelName(info)})
 		h.publish(ctx, TypeTextStarted, TextStarted{})
 	case components.ComponentOfTool:
 		callID := h.newID("call")

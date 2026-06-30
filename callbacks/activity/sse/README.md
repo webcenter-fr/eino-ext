@@ -26,7 +26,8 @@ Each connection:
 - reads the `Last-Event-ID` request header and asks the bus to replay missed
   events before streaming live ones;
 - writes one SSE frame per event (`id:`, `event: <Type>`, `data: <json>`), where
-  the JSON body is `activity.MarshalSSEData(event)` (the typed `Data` payload);
+  the JSON body is `activity.MarshalSSEData(event)` (the typed `Data` payload,
+  with an `agent` key merged in when the event is attributed to an agent);
 - emits periodic `event: ping` heartbeats to hold the connection open through
   proxies;
 - unsubscribes from the bus on client disconnect (`ctx.Done()`).
@@ -45,6 +46,17 @@ es.addEventListener('step.ended', (e) => {
   const { cost, tokens } = JSON.parse(e.data)
   showCounters(cost, tokens)
 })
+```
+
+In a multi-agent run, every `data` payload also carries the producing agent, so
+the UI can route (or label) events without reading a non-standard SSE field:
+
+```js
+es.addEventListener('text.delta', (e) => {
+  const { agent, delta } = JSON.parse(e.data)
+  append(agent, delta) // e.g. route the supervisor's answer vs a sub-agent's chatter
+})
+es.addEventListener('agent.switched', (e) => banner(`Now: ${JSON.parse(e.data).agent}`))
 ```
 
 ## Out of scope
