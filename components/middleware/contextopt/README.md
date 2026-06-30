@@ -11,6 +11,79 @@ ecosystem. It keeps long conversations under a model's context window by:
 The core `Optimizer` is **pure** (no LLM dependency). LLM access only enters
 through the optional `Summarizer`.
 
+## Why this wins — design rationale
+
+### The problem: context grows faster than it pays off
+
+In an agentic loop, every turn appends new messages — user input, assistant
+reasoning, and (often large) tool outputs — to a history that is **re-sent in
+full on every request**. That history grows monotonically, which causes three
+compounding costs:
+
+- **Hard failures** — once the history exceeds the model's context window, the
+  request is rejected outright. The agent simply stops working mid-task.
+- **Linear token billing** — you pay for the *entire* history on *every* turn.
+  A 100-turn session re-bills the early turns ~100 times.
+- **Latency & quality decay** — larger prompts mean higher time-to-first-token,
+  and relevant recent context gets diluted by stale, low-value tool dumps.
+
+Naively truncating the oldest messages loses information the agent still needs;
+naively summarizing on every turn is expensive and destroys the cacheable
+prefix. The art is removing the *least valuable* tokens while preserving both
+**meaning** and **cache stability**.
+
+### The strategy: a layered, cheapest-first pipeline
+
+`contextopt` attacks the history in increasing order of cost and information
+loss, so the expensive, lossy operations only run when the cheap ones are not
+enough (`optimizer.go:509`):
+
+```
+1. trim before last summary   (free)        ← drop history already captured by an anchor
+2. content compression        (lossless)    ← jsoncrush/shellout crush tool outputs, no info lost
+3. prune stale tool outputs   (low loss)    ← truncate/offload OLD tool dumps, protect recent window
+4. summarize on overflow      (lossy, $)    ← only if still over budget; collapse head, keep tail verbatim
+```
+
+Each layer is gated:
+
+- **Trim** is free — it discards messages already represented by an anchored
+  summary, so no information is actually lost.
+- **Compress** is lossless or reversible — a JSON tool output is crushed and a
+  shell dump compacted *before* anything is destroyed.
+- **Prune** is bounded — it only touches tool outputs **outside** a protected
+  recent window (`PruneProtectTokens`), only when eligible tokens exceed
+  `PruneMinimum`, and with a `Backend` it is **reversible** (the original is
+  offloaded, not deleted; recover via `RestorePruned`).
+- **Summarize** is the last resort — it runs **only** on real overflow and
+  **only** if a `Summarizer` is configured, and even then it preserves the most
+  recent turns (the *tail*) verbatim so live working context is never blurred.
+
+### Why each design choice concretely pays off
+
+| Choice | Why it wins |
+| --- | --- |
+| Pure core `Optimizer`, LLM only via `Summarizer` | Deterministic, unit-testable, zero LLM cost on the common (non-overflow) path. |
+| Idempotence markers (`__eino_ext_contextopt_pruned`, `…_compressed`) | `Optimize` runs every turn but only does O(new tool outputs) work — no re-truncating, no re-compressing. |
+| Protected recent window + tail preservation | The agent's *active* reasoning is never pruned or summarized away, so task quality holds. |
+| Cheapest-first ordering | Most turns are fixed by free/lossless layers; the costly summarizer call is avoided until genuinely necessary. |
+| Reversible prune (`Backend`) | Frees tokens now while keeping originals recoverable, so pruning is safe even for data you might need later. |
+| Append-only `VerbositySteer` / non-mutating `VolatileCheck` | Steering and diagnostics keep the cacheable prefix byte-stable, so they don't sabotage prompt-cache hits (complements `cachestab`). |
+
+### The concrete win
+
+| Without `contextopt`                          | With `contextopt`                                 |
+| --------------------------------------------- | ------------------------------------------------- |
+| History grows until the request is rejected   | History is kept under the usable window           |
+| Full history re-billed every turn             | Stale/low-value tokens removed before re-billing  |
+| Long sessions degrade and eventually break    | Long, multi-turn sessions stay viable             |
+| Summarization (if any) is all-or-nothing      | Layered loss: free → lossless → bounded → lossy   |
+
+The payoff scales with session length and tool-output volume: the longer the
+agent runs, the more turns benefit from removing tokens that were already
+summarized, already compressible, or too old to matter — while the recent,
+decision-relevant context is protected by design.
+
 ## Two surfaces
 
 Both wrap the same `*Optimizer`:
