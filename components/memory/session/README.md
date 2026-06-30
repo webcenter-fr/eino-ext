@@ -100,6 +100,11 @@ model call, so the middleware does not re-summarize the already-condensed
 history. Any later middleware summarization is genuine intra-run overflow
 (incremental via `previousSummary`), not a duplicate.
 
+A runnable, self-contained demonstration (no API key required) lives in
+[`../examples/contextopt_persistent`](../examples/contextopt_persistent): it
+wires both layers, instruments the shared `Summarizer`, and asserts the cost is
+paid at most once per turn.
+
 ## API
 
 | Type / method | Purpose |
