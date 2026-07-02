@@ -10,8 +10,8 @@ import (
 func NewClient(config Config) (c api.API, err error) {
 
 	// client
-	if config.Option != nil {
-		c, err = goargocdclient.New(config.Url, config.Option)
+	if config.Options != nil {
+		c, err = goargocdclient.New(config.Url, config.Options...)
 	} else {
 		c, err = goargocdclient.New(config.Url)
 	}

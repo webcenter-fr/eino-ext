@@ -10,8 +10,8 @@ type Configs map[string]Config
 
 // Config represents the configuration for an ArgoCD instance.
 type Config struct {
-	Url string
-	goargocdclient.Option
+	Url     string
+	Options []goargocdclient.Option
 }
 
 // GetConfig retrieves the configuration for a given instance name. It returns a api.API if found, or nil if the instance name does not exist in the Configs map.
