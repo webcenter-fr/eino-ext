@@ -2,7 +2,7 @@ package cachestab
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/goccy/go-json"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"

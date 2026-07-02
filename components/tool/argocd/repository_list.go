@@ -11,34 +11,38 @@ import (
 	"github.com/goccy/go-json"
 )
 
-const projectListDescription = `
+const repositoryListDescription = `
 ** General Purpose **
-It lists all ArgoCD projects accessible to the configured instance.
+It lists all ArgoCD repositories accessible to the configured instance.
 
 ** Output **
-It returns a JSON array of objects, where each object represents a project with the following fields:
-- name: the name of the project.
-- description: the description of the project.
+It returns a JSON array of objects, where each object represents a repository with the following fields:
+- name: the name of the repository.
+- type: the type of the repository.
+- url: the URL of the repository.
+- status: the status of the repository.
 `
 
-type ProjectListParams struct {
+type RepositoryListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each project JSON."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each repository JSON."`
 }
 
-type ProjectListOutput struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+type RepositoryListOutput struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Type   string `json:"type"`
+	Url    string `json:"url"`
 }
 
-type ProjectListTool struct {
+type RepositoryListTool struct {
 	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
 }
 
-func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams) (result string, err error) {
+func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
 	}
@@ -53,16 +57,18 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	resp, err := c.Project().List()
+	resp, err := c.Repository().List(&api.RepositoryQueryOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "failed to list projects")
+		return "", errors.Wrap(err, "failed to list repositories")
 	}
 
 	outputs := make([]json.RawMessage, 0, len(resp.Items))
 	for _, item := range resp.Items {
-		output := ProjectListOutput{
-			Name:        item.Name,
-			Description: item.Spec.Description,
+		output := RepositoryListOutput{
+			Name:   item.Name,
+			Status: item.ConnectionState.Status,
+			Type:   item.Type,
+			Url:    item.Repo,
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
@@ -80,18 +86,18 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 	return string(data), nil
 }
 
-func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {
+func NewRepositoryListTool(ctx context.Context, configs Configs) (*RepositoryListTool, error) {
 	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &ProjectListTool{
+	listTool := &RepositoryListTool{
 		clients:        clients,
 		knownInstances: configs.GetInstanceNames(),
 	}
 
-	t, err := utils.InferTool("argocd_project_list", fmt.Sprintf("%s\n%s", projectListDescription, listOutputGuidance), listTool.Invoke)
+	t, err := utils.InferTool("argocd_repository_list", fmt.Sprintf("%s\n%s", repositoryListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

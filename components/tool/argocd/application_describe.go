@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
 )
 
@@ -27,13 +28,13 @@ type ApplicationDescribeParams struct {
 }
 
 type ApplicationDescribeOutput struct {
-	Metadata *ObjectMeta         `json:"metadata,omitempty"`
-	Spec     map[string]any      `json:"spec,omitempty"`
-	Status   *ApplicationStatus  `json:"status,omitempty"`
+	Metadata *api.ObjectMeta        `json:"metadata,omitempty"`
+	Spec     *api.ApplicationSpec   `json:"spec,omitempty"`
+	Status   *api.ApplicationStatus `json:"status,omitempty"`
 }
 
 type ApplicationDescribeTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -49,15 +50,18 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	app, err := c.GetApplication(ctx, params.Name, params.AppNamespace, params.Project)
+	app, err := c.Application().Get(params.Name, &api.ApplicationGetOptions{
+		AppNamespace: params.AppNamespace,
+		Project:      []string{params.Project},
+	})
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to get application")
 	}
 
 	output := &ApplicationDescribeOutput{
-		Metadata: &app.Metadata,
-		Spec:     app.Spec,
-		Status:   app.Status,
+		Metadata: &app.ObjectMeta,
+		Spec:     &app.Spec,
+		Status:   &app.Status,
 	}
 
 	for _, excludeField := range params.ExcludeFieldsOutput {
@@ -82,7 +86,7 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 }
 
 func NewApplicationDescribeTool(ctx context.Context, configs Configs) (*ApplicationDescribeTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}

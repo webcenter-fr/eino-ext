@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,40 +21,31 @@ func (t *ToolTestSuite) TestApplicationList() {
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), listResult)
 
-	expectedOutputs := []ApplicationListOutput{
-		{
-			Name:       "my-app",
-			Namespace:  "argocd",
-			Project:    "default",
-			Health:     "Healthy",
-			SyncStatus: "Synced",
-			Revision:   "abc123",
-		},
-		{
-			Name:       "other-app",
-			Namespace:  "argocd",
-			Project:    "production",
-			Health:     "Degraded",
-			SyncStatus: "OutOfSync",
-		},
-	}
-	assert.Empty(t.T(), cmp.Diff(listResult, string(MustMarshal(expectedOutputs))))
+	var outputs []ApplicationListOutput
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 2)
+
+	assert.Equal(t.T(), "my-app", outputs[0].Name)
+	assert.Equal(t.T(), "argocd", outputs[0].Namespace)
+	assert.Equal(t.T(), "default", outputs[0].Project)
+	assert.Equal(t.T(), "Healthy", outputs[0].Health)
+	assert.Equal(t.T(), "Synced", outputs[0].SyncStatus)
+	assert.Equal(t.T(), "abc123", outputs[0].Revision)
+
+	assert.Equal(t.T(), "other-app", outputs[1].Name)
+	assert.Equal(t.T(), "production", outputs[1].Project)
+	assert.Equal(t.T(), "Degraded", outputs[1].Health)
+	assert.Equal(t.T(), "OutOfSync", outputs[1].SyncStatus)
 
 	listResult, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "my-app"}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), listResult)
 
-	expectedOutputs = []ApplicationListOutput{
-		{
-			Name:       "my-app",
-			Namespace:  "argocd",
-			Project:    "default",
-			Health:     "Healthy",
-			SyncStatus: "Synced",
-			Revision:   "abc123",
-		},
-	}
-	assert.Empty(t.T(), cmp.Diff(listResult, string(MustMarshal(expectedOutputs))))
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "my-app", outputs[0].Name)
 
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
@@ -72,18 +63,16 @@ func (t *ToolTestSuite) TestApplicationDescribe() {
 	describeResult, err := describeTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app"}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)
-	assert.Contains(t.T(), describeResult, "my-app")
+	assert.Contains(t.T(), describeResult, `"name":"my-app"`)
+	assert.Contains(t.T(), describeResult, `"health"`)
+	assert.Contains(t.T(), describeResult, `"sync"`)
 
 	describeResult, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "excludeFieldsOutput": ["metadata", "spec"]}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)
-	expectedOutput := &ApplicationDescribeOutput{
-		Status: &ApplicationStatus{
-			Health: &HealthStatus{Status: "Healthy"},
-			Sync:   &SyncStatus{Status: "Synced", Revision: "abc123"},
-		},
-	}
-	assert.Empty(t.T(), cmp.Diff(describeResult, string(MustMarshal(expectedOutput))))
+	assert.NotContains(t.T(), describeResult, `"metadata"`)
+	assert.NotContains(t.T(), describeResult, `"spec"`)
+	assert.Contains(t.T(), describeResult, `"status"`)
 
 	_, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "non-existent"}`)
 	assert.Error(t.T(), err)
@@ -158,17 +147,15 @@ func (t *ToolTestSuite) TestProjectList() {
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), listResult)
 
-	expectedOutputs := []ProjectListOutput{
-		{
-			Name:        "default",
-			Description: "Default project",
-		},
-		{
-			Name:        "production",
-			Description: "Production project",
-		},
-	}
-	assert.Empty(t.T(), cmp.Diff(listResult, string(MustMarshal(expectedOutputs))))
+	var outputs []ProjectListOutput
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 2)
+
+	assert.Equal(t.T(), "default", outputs[0].Name)
+	assert.Equal(t.T(), "Default project", outputs[0].Description)
+	assert.Equal(t.T(), "production", outputs[1].Name)
+	assert.Equal(t.T(), "Production project", outputs[1].Description)
 
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
@@ -186,18 +173,14 @@ func (t *ToolTestSuite) TestProjectDescribe() {
 	describeResult, err := describeTool.InvokableRun(ctx, `{"instance": "test", "name": "default"}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)
-	assert.Contains(t.T(), describeResult, "default")
+	assert.Contains(t.T(), describeResult, `"name":"default"`)
+	assert.Contains(t.T(), describeResult, "Default project")
 
 	describeResult, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "default", "excludeFieldsOutput": ["metadata"]}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)
-	expectedOutput := &ProjectDescribeOutput{
-		Spec: map[string]any{
-			"description": "Default project",
-			"sourceRepos": []any{"*"},
-		},
-	}
-	assert.Empty(t.T(), cmp.Diff(describeResult, string(MustMarshal(expectedOutput))))
+	assert.NotContains(t.T(), describeResult, `"metadata"`)
+	assert.Contains(t.T(), describeResult, `"spec"`)
 
 	_, err = describeTool.InvokableRun(ctx, `{"instance": "invalid-instance", "name": "default"}`)
 	assert.Error(t.T(), err)

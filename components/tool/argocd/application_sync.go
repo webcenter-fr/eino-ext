@@ -2,11 +2,12 @@ package argocd
 
 import (
 	"context"
+	"fmt"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/goccy/go-json"
+	"github.com/disaster37/goargocdclient/api"
 )
 
 const applicationSyncDescription = `
@@ -24,11 +25,11 @@ type ApplicationSyncParams struct {
 	Project      string `json:"project,omitempty" jsonschema:"(optional) Application project."`
 	Revision     string `json:"revision,omitempty" jsonschema:"(optional) Target revision to sync to."`
 	DryRun       bool   `json:"dryRun,omitempty" jsonschema:"(optional) Simulate sync without applying changes."`
-	Prune        bool   `json:"prune,omitempty" jsonschema:"(optional) Delete resources no longer in git."`
+	Prune        bool   `json:"prune,omitempty" jsonschema:"(optional) Delete resources no longer in git. Be careful with this option, it can delete resources in your cluster."`
 }
 
 type ApplicationSyncTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -44,27 +45,21 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	req := &SyncRequest{
-		Revision: params.Revision,
-		Prune:    params.Prune,
-		DryRun:   params.DryRun,
+	if err := c.Application().Sync(params.Name, &api.SyncOptions{
+		Revision:     params.Revision,
+		Prune:        params.Prune,
+		DryRun:       params.DryRun,
+		Project:      params.Project,
+		AppNamespace: params.AppNamespace,
+	}); err != nil {
+		return "", errors.Wrap(err, "application sync failed")
 	}
 
-	app, err := c.SyncApplication(ctx, params.Name, params.AppNamespace, params.Project, req)
-	if err != nil {
-		return "", err
-	}
-
-	data, err := json.Marshal(app)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	return fmt.Sprintf(`{"message": "Application %q sync successfully"}`, params.Name), nil
 }
 
 func NewApplicationSyncTool(ctx context.Context, configs Configs) (*ApplicationSyncTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}

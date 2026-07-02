@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
 )
 
@@ -42,7 +43,7 @@ type ApplicationListOutput struct {
 }
 
 type ApplicationListTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -63,26 +64,24 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	resp, err := c.ListApplications(ctx, params.Selector, params.Project, params.AppNamespace)
+	resp, err := c.Application().List(&api.ApplicationListOptions{
+		Selector:     params.Selector,
+		Project:      []string{params.Project},
+		AppNamespace: params.AppNamespace,
+	})
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to list applications")
 	}
 
 	outputs := make([]json.RawMessage, 0, len(resp.Items))
 	for _, item := range resp.Items {
 		output := ApplicationListOutput{
-			Name:      item.Metadata.Name,
-			Namespace: item.Metadata.Namespace,
-			Project:   getProjectFromSpec(item.Spec),
-		}
-		if item.Status != nil {
-			if item.Status.Health != nil {
-				output.Health = item.Status.Health.Status
-			}
-			if item.Status.Sync != nil {
-				output.SyncStatus = item.Status.Sync.Status
-				output.Revision = item.Status.Sync.Revision
-			}
+			Name:       item.Name,
+			Namespace:  item.Namespace,
+			Project:    item.Spec.Project,
+			Health:     string(item.Status.Health.Status),
+			SyncStatus: string(item.Status.Sync.Status),
+			Revision:   item.Status.Sync.Revision,
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
@@ -100,20 +99,8 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 	return string(data), nil
 }
 
-func getProjectFromSpec(spec map[string]any) string {
-	if spec == nil {
-		return "default"
-	}
-	if project, ok := spec["project"]; ok {
-		if projectStr, ok := project.(string); ok {
-			return projectStr
-		}
-	}
-	return "default"
-}
-
 func NewApplicationListTool(ctx context.Context, configs Configs) (*ApplicationListTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}

@@ -15,8 +15,9 @@ package jsoncrush
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"sort"
+
+	"github.com/goccy/go-json"
 
 	"emperror.dev/errors"
 

@@ -1,29 +1,31 @@
 # ArgoCD Tools
 
-Thin REST client and eino tools for interacting with ArgoCD servers via their REST API (grpc-gateway).
+eino tools for interacting with ArgoCD servers via their REST API (grpc-gateway) using the `goargocdclient` library.
 
 ## Design
 
-- **Zero ArgoCD Go dependencies** — uses only `net/http` and `encoding/json` to avoid pulling in ArgoCD's 200+ transitive dependencies and k8s version conflicts.
-- **Authentication** — pre-existing JWT token only, created externally via `argocd account generate-token`.
+- **goargocdclient** — uses the `github.com/disaster37/goargocdclient` library for type-safe ArgoCD API interactions.
+- **Authentication** — token or username/password auth via `goargocdclient` options. Tokens can be created externally via `argocd account generate-token`.
 - **Multi-instance** — supports a map of named ArgoCD instances, matching the kubernetes tool pattern.
-- **TLS** — configurable `insecure` boolean per instance; default is secure.
+- **TLS** — configurable via `goargocdclient.WithInsecure()` option; secure by default.
 
 ## Configuration
 
 ```go
-import "github.com/webcenter-fr/eino-ext/components/tool/argocd"
+import (
+    "github.com/webcenter-fr/eino-ext/components/tool/argocd"
+    "github.com/disaster37/goargocdclient"
+)
 
 configs := argocd.Configs{
-    "prod": &argocd.Config{
-        ServerURL: "https://argocd.example.com",
-        Token:     "eyJhbGciOiJIUzI1NiIs...",
-        Insecure:  false,
+    "prod": argocd.Config{
+        Url:    "https://argocd.example.com",
+        Option: goargocdclient.WithToken("eyJhbGciOiJIUzI1NiIs..."),
     },
-    "staging": &argocd.Config{
-        ServerURL: "https://argocd-staging.example.com",
-        Token:     "eyJhbGciOiJIUzI1NiIs...",
-        Insecure:  true,
+    "staging": argocd.Config{
+        Url:    "https://argocd-staging.example.com",
+        Option: goargocdclient.WithInsecure(),
+        // Option: goargocdclient.WithToken("eyJhbGciOiJIUzI1NiIs..."),
     },
 }
 ```
@@ -40,6 +42,11 @@ configs := argocd.Configs{
 | `argocd_application_delete` | Delete an application with optional cascade |
 | `argocd_project_list` | List projects with optional filter |
 | `argocd_project_describe` | Get project details with optional field exclusion |
+| `argocd_cluster_list` | List clusters with optional filter |
+| `argocd_cluster_describe` | Get cluster details with optional field exclusion |
+| `argocd_repository_list` | List repositories with optional filter |
+| `argocd_repository_describe` | Get repository details with optional field exclusion |
+| `argocd_certificate_list` | List certificates with optional filter |
 
 ## Usage Example
 

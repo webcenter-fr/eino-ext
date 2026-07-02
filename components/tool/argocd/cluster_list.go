@@ -11,34 +11,36 @@ import (
 	"github.com/goccy/go-json"
 )
 
-const projectListDescription = `
+const clusterListDescription = `
 ** General Purpose **
-It lists all ArgoCD projects accessible to the configured instance.
+It lists all ArgoCD clusters accessible to the configured instance.
 
 ** Output **
-It returns a JSON array of objects, where each object represents a project with the following fields:
-- name: the name of the project.
-- description: the description of the project.
+It returns a JSON array of objects, where each object represents a cluster with the following fields:
+- name: the name of the cluster.
+- server: the server address of the cluster.
+- project: the ArgoCD project the cluster belongs to.
 `
 
-type ProjectListParams struct {
+type ClusterListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each project JSON."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each cluster JSON."`
 }
 
-type ProjectListOutput struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+type ClusterListOutput struct {
+	Name    string `json:"name"`
+	Server  string `json:"server"`
+	Project string `json:"project"`
 }
 
-type ProjectListTool struct {
+type ClusterListTool struct {
 	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
 }
 
-func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams) (result string, err error) {
+func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
 	}
@@ -53,16 +55,17 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	resp, err := c.Project().List()
+	resp, err := c.Cluster().List(&api.ClusterQueryOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "failed to list projects")
+		return "", errors.Wrap(err, "failed to list clusters")
 	}
 
 	outputs := make([]json.RawMessage, 0, len(resp.Items))
 	for _, item := range resp.Items {
-		output := ProjectListOutput{
-			Name:        item.Name,
-			Description: item.Spec.Description,
+		output := ClusterListOutput{
+			Name:    item.Name,
+			Server:  item.Server,
+			Project: item.Project,
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
@@ -80,18 +83,18 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 	return string(data), nil
 }
 
-func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {
+func NewClusterListTool(ctx context.Context, configs Configs) (*ClusterListTool, error) {
 	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &ProjectListTool{
+	listTool := &ClusterListTool{
 		clients:        clients,
 		knownInstances: configs.GetInstanceNames(),
 	}
 
-	t, err := utils.InferTool("argocd_project_list", fmt.Sprintf("%s\n%s", projectListDescription, listOutputGuidance), listTool.Invoke)
+	t, err := utils.InferTool("argocd_cluster_list", fmt.Sprintf("%s\n%s", clusterListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

@@ -34,8 +34,9 @@
 package activity
 
 import (
-	"encoding/json"
 	"time"
+
+	"github.com/goccy/go-json"
 
 	"emperror.dev/errors"
 )

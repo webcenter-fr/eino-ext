@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
 )
 
@@ -21,16 +22,17 @@ It returns a JSON object representing the ArgoCD project.
 type ProjectDescribeParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The project name."`
-	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec" jsonschema:"(optional) Fields to exclude: 'metadata', 'spec'."`
+	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status" jsonschema:"(optional) Fields to exclude: 'metadata', 'spec', 'status'."`
 }
 
 type ProjectDescribeOutput struct {
-	Metadata *ObjectMeta    `json:"metadata,omitempty"`
-	Spec     map[string]any `json:"spec,omitempty"`
+	Metadata *api.ObjectMeta    `json:"metadata,omitempty"`
+	Spec     *api.ProjectSpec   `json:"spec,omitempty"`
+	Status   *api.ProjectStatus `json:"status,omitempty"`
 }
 
 type ProjectDescribeTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -46,14 +48,15 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	project, err := c.GetProject(ctx, params.Name)
+	project, err := c.Project().Get(params.Name)
 	if err != nil {
 		return "", err
 	}
 
 	output := &ProjectDescribeOutput{
-		Metadata: &project.Metadata,
-		Spec:     project.Spec,
+		Metadata: &project.ObjectMeta,
+		Spec:     &project.Spec,
+		Status:   &project.Status,
 	}
 
 	for _, excludeField := range params.ExcludeFieldsOutput {
@@ -62,6 +65,8 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 			output.Metadata = nil
 		case "spec":
 			output.Spec = nil
+		case "status":
+			output.Status = nil
 		default:
 			return "", errors.Errorf("invalid exclude field: %s", excludeField)
 		}
@@ -76,7 +81,7 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 }
 
 func NewProjectDescribeTool(ctx context.Context, configs Configs) (*ProjectDescribeTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}

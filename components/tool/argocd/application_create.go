@@ -6,7 +6,9 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
+	"k8s.io/utils/ptr"
 )
 
 const applicationCreateDescription = `
@@ -25,13 +27,13 @@ type ApplicationCreateParams struct {
 	RepoURL        string `json:"repoURL" validate:"required" jsonschema:"(required) Git repository URL."`
 	TargetRevision string `json:"targetRevision,omitempty" jsonschema:"(optional) Git branch/tag/commit. Defaults to 'HEAD'."`
 	Path           string `json:"path,omitempty" jsonschema:"(optional) Path within the repo."`
-	DestServer     string `json:"destServer" validate:"required" jsonschema:"(required) Destination cluster API server URL."`
+	DestServer     string `json:"destServer" validate:"required" jsonschema:"(required) Destination server name"`
 	DestNamespace  string `json:"destNamespace,omitempty" jsonschema:"(optional) Destination namespace."`
 	Upsert         bool   `json:"upsert,omitempty" jsonschema:"(optional) Update if application already exists."`
 }
 
 type ApplicationCreateTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -57,26 +59,27 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		targetRevision = "HEAD"
 	}
 
-	req := &ApplicationCreateRequest{
-		Metadata: ObjectMeta{
-			Name:      params.Name,
-			Namespace: params.AppNamespace,
-		},
-		Spec: ApplicationSpec{
-			Source: &ApplicationSource{
+	app, err := c.Application().Create(&api.ApplicationModel{
+		Spec: api.ApplicationSpec{
+			Source: &api.ApplicationSource{
 				RepoURL:        params.RepoURL,
 				Path:           params.Path,
 				TargetRevision: targetRevision,
 			},
-			Destination: &ApplicationDestination{
-				Server:    params.DestServer,
+			Destination: api.ApplicationDestination{
+				Name:      params.DestServer,
 				Namespace: params.DestNamespace,
 			},
 			Project: project,
 		},
-	}
-
-	app, err := c.CreateApplication(ctx, req, params.Upsert)
+		ObjectMeta: api.ObjectMeta{
+			Name:      params.Name,
+			Namespace: params.AppNamespace,
+		},
+	}, &api.ApplicationCreateOptions{
+		Upsert:   &params.Upsert,
+		Validate: ptr.To(true),
+	})
 	if err != nil {
 		return "", err
 	}
@@ -90,7 +93,7 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 }
 
 func NewApplicationCreateTool(ctx context.Context, configs Configs) (*ApplicationCreateTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}

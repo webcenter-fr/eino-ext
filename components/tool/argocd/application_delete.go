@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/disaster37/goargocdclient/api"
 )
 
 const applicationDeleteDescription = `
@@ -25,7 +27,7 @@ type ApplicationDeleteParams struct {
 }
 
 type ApplicationDeleteTool struct {
-	clients        map[string]*Client
+	clients        map[string]api.API
 	knownInstances []string
 
 	tool.InvokableTool
@@ -41,16 +43,19 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 		return "", instanceNotFoundError(params.Instance, t.knownInstances)
 	}
 
-	if err := c.DeleteApplication(ctx, params.Name, params.AppNamespace, params.Project, params.Cascade); err != nil {
-		return "", err
+	if err := c.Application().Delete(params.Name, &api.ApplicationDeleteOptions{
+		AppNamespace: params.AppNamespace,
+		Project:      params.Project,
+		Cascade:      params.Cascade,
+	}); err != nil {
+		return "", errors.Wrap(err, "failed to delete application")
 	}
 
-	output := fmt.Sprintf(`{"message": "Application %q deleted successfully"}`, params.Name)
-	return output, nil
+	return fmt.Sprintf(`{"message": "Application %q deleted successfully"}`, params.Name), nil
 }
 
 func NewApplicationDeleteTool(ctx context.Context, configs Configs) (*ApplicationDeleteTool, error) {
-	clients, err := NewClients(configs)
+	clients, err := BuildClients(configs)
 	if err != nil {
 		return nil, err
 	}
