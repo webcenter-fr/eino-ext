@@ -18,6 +18,10 @@ test: envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./...
 
 
+.PHONY: models-dev-refresh
+models-dev-refresh: ## Refresh the committed models.dev catalog snapshot.
+	go generate ./libs/modelsdev
+
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)

@@ -43,8 +43,9 @@ import (
 //   - callback Input/Output are never mutated (shared pointers);
 //   - start/end pairing uses only the SAME handler's context chain.
 type Handler struct {
-	bus Bus
-	ids atomic.Uint64
+	bus    Bus
+	pricer Pricer
+	ids    atomic.Uint64
 	// lastAgent tracks the most recently seen agent name per session so the
 	// Handler can emit a single agent.switched event on each transition. Keyed
 	// by sessionID; values are strings.
@@ -59,9 +60,37 @@ type Handler struct {
 	lastAgent sync.Map
 }
 
-// NewHandler returns a Handler publishing to bus.
+// Pricer computes the USD cost of a completed step from its gateway model name
+// and token usage. Implementations are free-standing: see
+// libs/modelsdev.CatalogPricer for a models.dev-backed implementation.
+type Pricer interface {
+	Cost(model string, t Tokens) float64
+}
+
+// NewHandler returns a Handler publishing to bus. StepEnded.Cost stays 0 (no
+// pricer configured); use NewHandlerWithConfig or WithPricer to price steps.
 func NewHandler(bus Bus) *Handler {
 	return &Handler{bus: bus}
+}
+
+// Option configures a Handler built with NewHandlerWithConfig.
+type Option func(*Handler)
+
+// WithPricer attaches a Pricer so StepEnded.Cost is populated from the step's
+// model name and token usage. A nil pricer is a no-op (Cost stays 0).
+func WithPricer(p Pricer) Option {
+	return func(h *Handler) { h.pricer = p }
+}
+
+// NewHandlerWithConfig returns a Handler publishing to bus, configured with
+// opts (e.g. WithPricer). It is backward-compatible with NewHandler: calling
+// it with no options behaves identically.
+func NewHandlerWithConfig(bus Bus, opts ...Option) *Handler {
+	h := &Handler{bus: bus}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // compile-time checks.
@@ -204,7 +233,7 @@ func (h *Handler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output cal
 			text = mo.Message.Content
 		}
 		h.publish(ctx, TypeTextEnded, TextEnded{Text: text})
-		h.publish(ctx, TypeStepEnded, stepEnded(finishReason(mo), mo.TokenUsage))
+		h.publish(ctx, TypeStepEnded, h.stepEnded(modelName(info), finishReason(mo), mo.TokenUsage))
 	case components.ComponentOfTool:
 		callID, _ := ctx.Value(ctxKeyCallID).(string)
 		var content string
@@ -332,14 +361,16 @@ func (h *Handler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.Run
 			h.publish(ctx, TypeReasoningEnded, ReasoningEnded{ReasoningID: rid, Text: reasonBuf.String()})
 		}
 		h.publish(ctx, TypeTextEnded, TextEnded{Text: textBuf.String()})
-		h.publish(ctx, TypeStepEnded, stepEnded(finish, usage))
+		h.publish(ctx, TypeStepEnded, h.stepEnded(modelName(info), finish, usage))
 	}()
 
 	return ctx
 }
 
-// stepEnded builds a StepEnded payload from a finish reason and token usage.
-func stepEnded(finish string, usage *model.TokenUsage) StepEnded {
+// stepEnded builds a StepEnded payload from a finish reason and token usage,
+// pricing it via h.pricer when one is configured (nil pricer leaves Cost at
+// its zero value, so NewHandler(bus) callers are unaffected).
+func (h *Handler) stepEnded(gatewayModel string, finish string, usage *model.TokenUsage) StepEnded {
 	se := StepEnded{Finish: finish}
 	if usage != nil {
 		se.Tokens = Tokens{
@@ -350,6 +381,9 @@ func stepEnded(finish string, usage *model.TokenUsage) StepEnded {
 			// TokenUsage exposes only a cache-read (CachedTokens) count.
 			Cache: CacheTokens{Read: usage.PromptTokenDetails.CachedTokens},
 		}
+	}
+	if h.pricer != nil {
+		se.Cost = h.pricer.Cost(gatewayModel, se.Tokens)
 	}
 	return se
 }

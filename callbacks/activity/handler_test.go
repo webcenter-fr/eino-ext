@@ -110,6 +110,83 @@ func TestHandlerChatModelStepEndedTokens(t *testing.T) {
 	}
 }
 
+// stubPricer is a test Pricer that always returns Price, recording the last
+// (model, tokens) it was called with.
+type stubPricer struct {
+	Price     float64
+	lastModel string
+	lastTok   Tokens
+}
+
+func (p *stubPricer) Cost(model string, t Tokens) float64 {
+	p.lastModel = model
+	p.lastTok = t
+	return p.Price
+}
+
+func TestHandlerChatModelStepEndedCostWithPricer(t *testing.T) {
+	b := mustBus(t, Config{})
+	t.Cleanup(func() { b.Close() })
+	ch, unsub := b.Subscribe(context.Background(), "s", "")
+	t.Cleanup(unsub)
+	ctx := WithSession(context.Background(), "s")
+
+	pricer := &stubPricer{Price: 1.5}
+	h := NewHandlerWithConfig(b, WithPricer(pricer))
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel, Type: "gpt-5"}
+	out := &model.CallbackOutput{
+		Message:    &schema.Message{Role: schema.Assistant, Content: "x", ResponseMeta: &schema.ResponseMeta{FinishReason: "stop"}},
+		TokenUsage: &model.TokenUsage{PromptTokens: 10, CompletionTokens: 5},
+	}
+	h.OnEnd(ctx, info, out)
+
+	var stepEnd *Event
+	for _, e := range collect(t, ch, 2) {
+		e := e
+		if e.Type == TypeStepEnded {
+			stepEnd = &e
+		}
+	}
+	if stepEnd == nil {
+		t.Fatal("no step.ended emitted")
+	}
+	se := stepEnd.Data.(StepEnded)
+	if se.Cost != 1.5 {
+		t.Fatalf("Cost = %v, want 1.5", se.Cost)
+	}
+	if pricer.lastModel != "gpt-5" {
+		t.Fatalf("pricer called with model %q, want %q", pricer.lastModel, "gpt-5")
+	}
+	if pricer.lastTok.Input != 10 || pricer.lastTok.Output != 5 {
+		t.Fatalf("pricer called with tokens %+v", pricer.lastTok)
+	}
+}
+
+func TestHandlerChatModelStepEndedCostWithoutPricer(t *testing.T) {
+	h, _, ch, ctx := setup(t)
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
+	out := &model.CallbackOutput{
+		Message:    &schema.Message{Role: schema.Assistant, Content: "x", ResponseMeta: &schema.ResponseMeta{FinishReason: "stop"}},
+		TokenUsage: &model.TokenUsage{PromptTokens: 10, CompletionTokens: 5},
+	}
+	h.OnEnd(ctx, info, out)
+
+	var stepEnd *Event
+	for _, e := range collect(t, ch, 2) {
+		e := e
+		if e.Type == TypeStepEnded {
+			stepEnd = &e
+		}
+	}
+	if stepEnd == nil {
+		t.Fatal("no step.ended emitted")
+	}
+	se := stepEnd.Data.(StepEnded)
+	if se.Cost != 0 {
+		t.Fatalf("Cost = %v, want 0 (NewHandler backward compatibility)", se.Cost)
+	}
+}
+
 func TestHandlerChatModelStreaming(t *testing.T) {
 	h, _, ch, ctx := setup(t)
 	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
