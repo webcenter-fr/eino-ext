@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	emperror.dev/errors v0.8.1
+	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
 	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
@@ -27,6 +28,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/net v0.56.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	k8s.io/api v0.36.2
 	k8s.io/apiextensions-apiserver v0.36.2
@@ -40,6 +42,7 @@ require (
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
+	github.com/JohannesKaufmann/dom v0.3.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -120,7 +123,6 @@ require (
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
