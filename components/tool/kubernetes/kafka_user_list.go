@@ -32,7 +32,7 @@ type KafkaUserListOutput struct {
 }
 
 // ToJson returns the JSON representation of the KafkaUserListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *KafkaUserListOutput) ToJson(o *strimzi.KafkaUser) json.RawMessage {
+func (h *KafkaUserListOutput ) ToJSON(o *strimzi.KafkaUser) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

@@ -19,7 +19,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
 	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 	"github.com/webcenter-fr/eino-ext/components/memory"
@@ -139,7 +139,7 @@ func NewOptimizer(cfg *Config) (*Optimizer, error) {
 	// Work on a copy so we don't mutate the caller's struct.
 	c := *cfg
 
-	if err := validator.New().Struct(&c); err != nil {
+	if err := validate.Struct(&c); err != nil {
 		return nil, errors.Wrap(err, "invalid contextopt.Config")
 	}
 

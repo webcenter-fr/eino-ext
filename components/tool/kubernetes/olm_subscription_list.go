@@ -36,7 +36,7 @@ type OLMSubscriptionListOutput struct {
 }
 
 // ToJson returns the JSON representation of the OLMSubscriptionListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *OLMSubscriptionListOutput) ToJson(o *olmv1alpha1.Subscription) json.RawMessage {
+func (h *OLMSubscriptionListOutput ) ToJSON(o *olmv1alpha1.Subscription) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

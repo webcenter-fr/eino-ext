@@ -34,7 +34,7 @@ type KafkaNodePoolListOutput struct {
 }
 
 // ToJson returns the JSON representation of the KafkaNodePoolListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *KafkaNodePoolListOutput) ToJson(o *strimzi.KafkaNodePool) json.RawMessage {
+func (h *KafkaNodePoolListOutput ) ToJSON(o *strimzi.KafkaNodePool) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

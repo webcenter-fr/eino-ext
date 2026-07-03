@@ -33,7 +33,7 @@ type PodListOutput struct {
 }
 
 // ToJson returns the JSON representation of the PodListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *PodListOutput) ToJson(o *corev1.Pod) json.RawMessage {
+func (h *PodListOutput ) ToJSON(o *corev1.Pod) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

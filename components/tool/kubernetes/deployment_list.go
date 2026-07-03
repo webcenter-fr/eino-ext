@@ -36,7 +36,7 @@ type DeploymentListOutput struct {
 }
 
 // ToJson returns the JSON representation of the DeploymentListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *DeploymentListOutput) ToJson(o *appsv1.Deployment) json.RawMessage {
+func (h *DeploymentListOutput ) ToJSON(o *appsv1.Deployment) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

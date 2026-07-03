@@ -36,7 +36,7 @@ type StatefulSetListOutput struct {
 }
 
 // ToJson returns the JSON representation of the StatefulSetListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *StatefulSetListOutput) ToJson(o *appsv1.StatefulSet) json.RawMessage {
+func (h *StatefulSetListOutput ) ToJSON(o *appsv1.StatefulSet) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

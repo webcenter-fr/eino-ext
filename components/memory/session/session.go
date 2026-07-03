@@ -39,22 +39,13 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
 	"github.com/webcenter-fr/eino-ext/components/memory"
+	"github.com/webcenter-fr/eino-ext/libs/summarizer"
 )
 
-// Summarizer produces an anchored summary of a conversation history.
-// previousSummary is the text of the last summary (empty when none), allowing
-// incremental updates.
-//
-// The signature is intentionally identical to
-// contextopt.Summarizer.Summarize so that an instance built with
-// contextopt.NewModelSummarizer satisfies this interface by structural typing
-// (no import of the contextopt package is required here).
-type Summarizer interface {
-	Summarize(ctx context.Context, history []*schema.Message, previousSummary string) (string, error)
-}
+type Summarizer = summarizer.Summarizer
 
 // Config configures a SessionManager.
 type Config struct {
@@ -106,7 +97,7 @@ type refLock struct {
 
 // NewSessionManager validates cfg and returns a SessionManager.
 func NewSessionManager(cfg Config) (*SessionManager, error) {
-	if err := validator.New().Struct(&cfg); err != nil {
+	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid session.Config")
 	}
 	tc := cfg.TokenCounter

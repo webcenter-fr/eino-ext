@@ -25,7 +25,7 @@ type ConfigMapListOutput struct {
 }
 
 // ToJson returns the JSON representation of the ConfigMapListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *ConfigMapListOutput) ToJson(o *corev1.ConfigMap) json.RawMessage {
+func (h *ConfigMapListOutput ) ToJSON(o *corev1.ConfigMap) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

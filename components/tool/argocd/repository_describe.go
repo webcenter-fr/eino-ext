@@ -41,9 +41,7 @@ type RepositoryDescribeOutputSpec struct {
 }
 
 type RepositoryDescribeTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -52,9 +50,9 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	repository, err := c.Repository().Get(params.Name, &api.RepositoryQueryOptions{})
@@ -99,16 +97,12 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 }
 
 func NewRepositoryDescribeTool(ctx context.Context, configs Configs) (*RepositoryDescribeTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	describeTool := &RepositoryDescribeTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	describeTool := &RepositoryDescribeTool{baseTool: base}
 	t, err := utils.InferTool("argocd_repository_describe", fmt.Sprintf("%s\n%s", repositoryDescribeDescription, describeOutputGuidance), describeTool.Invoke)
 	if err != nil {
 		return nil, err

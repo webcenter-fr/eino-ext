@@ -1,7 +1,8 @@
 package kubernetes
 
 import (
-	"github.com/thoas/go-funk"
+	"sort"
+
 	"k8s.io/client-go/rest"
 )
 
@@ -15,5 +16,10 @@ func (c Configs) GetConfig(clusterName string) *rest.Config {
 
 // GetClusterNames returns a slice of all cluster names present in the Configs map.
 func (c Configs) GetClusterNames() []string {
-	return funk.Keys(c).([]string)
+	names := make([]string, 0, len(c))
+	for name := range c {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

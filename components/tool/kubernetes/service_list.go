@@ -32,7 +32,7 @@ type ServiceListOutput struct {
 }
 
 // ToJson returns the JSON representation of the ServiceListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *ServiceListOutput) ToJson(o *corev1.Service) json.RawMessage {
+func (h *ServiceListOutput ) ToJSON(o *corev1.Service) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

@@ -32,9 +32,7 @@ type ProjectDescribeOutput struct {
 }
 
 type ProjectDescribeTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -43,9 +41,9 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	project, err := c.Project().Get(params.Name)
@@ -81,16 +79,12 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 }
 
 func NewProjectDescribeTool(ctx context.Context, configs Configs) (*ProjectDescribeTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	describeTool := &ProjectDescribeTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	describeTool := &ProjectDescribeTool{baseTool: base}
 	t, err := utils.InferTool("argocd_project_describe", fmt.Sprintf("%s\n%s", projectDescribeDescription, describeOutputGuidance), describeTool.Invoke)
 	if err != nil {
 		return nil, err

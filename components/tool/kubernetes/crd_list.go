@@ -34,7 +34,7 @@ type CustomResourceDefinitionListOutput struct {
 }
 
 // ToJson returns the JSON representation of the CustomResourceDefinitionListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *CustomResourceDefinitionListOutput) ToJson(o *apiextensionsv1.CustomResourceDefinition) json.RawMessage {
+func (h *CustomResourceDefinitionListOutput ) ToJSON(o *apiextensionsv1.CustomResourceDefinition) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

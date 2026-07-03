@@ -31,7 +31,7 @@ type OLMClusterServiceVersionListOutput struct {
 }
 
 // ToJson returns the JSON representation of the OLMClusterServiceVersionListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *OLMClusterServiceVersionListOutput) ToJson(o *olmv1alpha1.ClusterServiceVersion) json.RawMessage {
+func (h *OLMClusterServiceVersionListOutput ) ToJSON(o *olmv1alpha1.ClusterServiceVersion) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

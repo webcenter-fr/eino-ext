@@ -31,7 +31,7 @@ type StorageClassListOutput struct {
 }
 
 // ToJson returns the JSON representation of the StorageClassListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *StorageClassListOutput) ToJson(o *storagev1.StorageClass) json.RawMessage {
+func (h *StorageClassListOutput ) ToJSON(o *storagev1.StorageClass) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

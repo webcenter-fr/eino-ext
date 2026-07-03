@@ -7,11 +7,10 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 )
 
 const resourceDescribeDescription = `
@@ -23,7 +22,7 @@ You can use it when there a are no dedicated tool for describing a specific Kube
 It return a JSON object representing the kubernetes resource.
 `
 
-// ResourceDescribeParams defines the parameters for the ResourceDescribe function, which gets the details of a specific resource in a specified Kubernetes cluster. It includes the cluster name, namespace, and resource name.
+// ResourceDescribeParams defines the parameters for the ResourceDescribe function.
 type ResourceDescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace           string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
@@ -34,7 +33,7 @@ type ResourceDescribeParams struct {
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
-// ResourceDescribeOutput defines the structure of the output returned by the ResourceDescribe function. It represents a resource with its metadata, spec, and status.
+// ResourceDescribeOutput defines the structure of the output returned by the ResourceDescribe function.
 type ResourceDescribeOutput struct {
 	metav1.TypeMeta `json:",inline"`
 	Metadata        *metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -43,24 +42,22 @@ type ResourceDescribeOutput struct {
 	Data            any                `json:"data,omitempty"`
 }
 
-// ResourceDescribeTool is a tool that gets the details of a specific resource in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
+// ResourceDescribeTool is a tool that gets the details of a specific resource in a specified Kubernetes cluster.
 type ResourceDescribeTool struct {
-	clients map[string]dynamic.Interface
+	*baseToolWithDynamic
 	tool.InvokableTool
-	knownClusters []string
 }
 
-// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+// Invoke executes the ResourceDescribeTool with the given parameters.
 func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescribeParams) (result string, err error) {
 
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for ResourceDescribeTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
 	}
 
-	c, ok := t.clients[params.Cluster]
-	if !ok {
-		return "", errors.Errorf("Kubernetes cluster not found: %s. Cluster must be one of: %s", params.Cluster, strings.Join(t.knownClusters, ", "))
+	c, err := t.dynamicClient(params.Cluster)
+	if err != nil {
+		return "", err
 	}
 
 	namespaceResource := schema.GroupVersionResource{
@@ -74,7 +71,10 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 		return "", errors.Wrapf(err, "failed to get resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.ResourceKind, params.ResourceGroup, params.ResourceVersion)
 	}
 
-	output := objectToDescribeOutput(o)
+	output, err := objectToDescribeOutput(o)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to convert object to describe output")
+	}
 	output.Spec = o.Object["spec"]
 	output.Status = o.Object["status"]
 	output.Data = o.Object["data"]
@@ -103,17 +103,24 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 
 }
 
-// NewResourceDescribeTool creates a new instance of the ResourceDescribeTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
+// NewResourceDescribeTool creates a new instance of the ResourceDescribeTool.
 func NewResourceDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	describeTool := &ResourceDescribeTool{
-		knownClusters: configs.GetClusterNames(),
-	}
 	clients, err := BuildClientDynamics(configs, nil)
 	if err != nil {
 		return nil, err
 	}
-	describeTool.clients = clients
+	base, err := newBaseTool(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	describeTool := &ResourceDescribeTool{
+		baseToolWithDynamic: &baseToolWithDynamic{
+			baseTool: base,
+			dynamics: clients,
+		},
+	}
 
 	// Infer tool
 	t, err := utils.InferTool("kubernetes_describe_resource", resourceDescribeDescription, describeTool.Invoke)

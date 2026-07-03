@@ -9,6 +9,8 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/webcenter-fr/eino-ext/libs/summarizer"
 )
 
 // DefaultSummaryTemplate is the anchored Markdown summary template (faithful copy
@@ -18,19 +20,9 @@ import (
 //go:embed prompts/summary_template.md
 var DefaultSummaryTemplate string
 
-// Summarizer produces an anchored summary of a conversation history. previousSummary
-// is the text of the last summary (empty when none), allowing incremental updates.
-type Summarizer interface {
-	Summarize(ctx context.Context, history []*schema.Message, previousSummary string) (string, error)
-}
+type Summarizer = summarizer.Summarizer
 
-// SummarizerFunc adapts a function to the Summarizer interface.
-type SummarizerFunc func(ctx context.Context, history []*schema.Message, previousSummary string) (string, error)
-
-// Summarize implements Summarizer.
-func (f SummarizerFunc) Summarize(ctx context.Context, history []*schema.Message, previousSummary string) (string, error) {
-	return f(ctx, history, previousSummary)
-}
+type SummarizerFunc = summarizer.SummarizerFunc
 
 // modelSummarizer is an LLM-backed Summarizer.
 type modelSummarizer struct {

@@ -29,9 +29,7 @@ type ApplicationSyncParams struct {
 }
 
 type ApplicationSyncTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -40,9 +38,9 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	if err := c.Application().Sync(params.Name, &api.SyncOptions{
@@ -59,16 +57,12 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 }
 
 func NewApplicationSyncTool(ctx context.Context, configs Configs) (*ApplicationSyncTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	syncTool := &ApplicationSyncTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	syncTool := &ApplicationSyncTool{baseTool: base}
 	t, err := utils.InferTool("argocd_application_sync", applicationSyncDescription, syncTool.Invoke)
 	if err != nil {
 		return nil, err

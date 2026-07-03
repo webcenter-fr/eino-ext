@@ -33,7 +33,7 @@ type NodeListOutput struct {
 }
 
 // ToJson returns the JSON representation of the NodeListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *NodeListOutput) ToJson(o *corev1.Node) json.RawMessage {
+func (h *NodeListOutput ) ToJSON(o *corev1.Node) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

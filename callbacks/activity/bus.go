@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 // Bus is the transport-agnostic pub/sub surface that producers publish to and
@@ -116,7 +116,7 @@ type subscriber struct {
 
 // NewBus validates cfg and returns an in-memory Bus.
 func NewBus(cfg Config) (Bus, error) {
-	if err := validator.New().Struct(&cfg); err != nil {
+	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid activity.Config")
 	}
 	if cfg.BufferSize == 0 {

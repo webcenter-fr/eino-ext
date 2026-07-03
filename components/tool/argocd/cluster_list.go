@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
 const clusterListDescription = `
@@ -34,9 +35,7 @@ type ClusterListOutput struct {
 }
 
 type ClusterListTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -45,14 +44,14 @@ func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams)
 		return "", err
 	}
 
-	filter, err := CompileFilter(params.Filter)
+	re, err := filter.Compile(params.Filter)
 	if err != nil {
 		return "", errors.Wrap(err, "error when compile regex")
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	resp, err := c.Cluster().List(&api.ClusterQueryOptions{})
@@ -69,7 +68,7 @@ func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams)
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
-		if !IsMatch(outputJSON, filter) {
+		if !filter.Match(outputJSON, re) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)
@@ -84,16 +83,12 @@ func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams)
 }
 
 func NewClusterListTool(ctx context.Context, configs Configs) (*ClusterListTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &ClusterListTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	listTool := &ClusterListTool{baseTool: base}
 	t, err := utils.InferTool("argocd_cluster_list", fmt.Sprintf("%s\n%s", clusterListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err

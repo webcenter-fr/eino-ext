@@ -31,7 +31,7 @@ type PVCListOutput struct {
 }
 
 // ToJson returns the JSON representation of the PVCListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *PVCListOutput) ToJson(o *corev1.PersistentVolumeClaim) json.RawMessage {
+func (h *PVCListOutput ) ToJSON(o *corev1.PersistentVolumeClaim) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

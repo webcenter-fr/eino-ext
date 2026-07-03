@@ -34,9 +34,7 @@ type ApplicationDescribeOutput struct {
 }
 
 type ApplicationDescribeTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -45,9 +43,9 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	app, err := c.Application().Get(params.Name, &api.ApplicationGetOptions{
@@ -86,16 +84,12 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 }
 
 func NewApplicationDescribeTool(ctx context.Context, configs Configs) (*ApplicationDescribeTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	describeTool := &ApplicationDescribeTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	describeTool := &ApplicationDescribeTool{baseTool: base}
 	t, err := utils.InferTool("argocd_application_describe", fmt.Sprintf("%s\n%s", applicationDescribeDescription, describeOutputGuidance), describeTool.Invoke)
 	if err != nil {
 		return nil, err

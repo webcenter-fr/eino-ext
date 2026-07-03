@@ -2,22 +2,20 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"regexp"
-	"strings"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
-	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 )
 
 const resourceListDescription = `
@@ -32,14 +30,14 @@ It return a JSON array of objects, where each object represents a resource with 
 - status: the status of the resource, if applicable.
 `
 
-// ResourceListOutput defines the structure of the output returned by the ResourceList function. It represents a resource with its name, namespace, and status.
+// ResourceListOutput defines the structure of the output returned by the ResourceList function.
 type ResourceListOutput struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 	Status    string `json:"status,omitempty"`
 }
 
-// ResourceListParams defines the parameters for the List function, which lists all the resources in a specified Kubernetes cluster. It includes the cluster name, an optional namespace to filter resources, and an optional regex pattern to further filter the output.
+// ResourceListParams defines the parameters for the ResourceList function.
 type ResourceListParams struct {
 	Cluster         string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace       string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
@@ -51,30 +49,23 @@ type ResourceListParams struct {
 	Paginate        *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
-// ResourceListTool is a tool that lists all the resources in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
+// ResourceListTool is a tool that lists all the resources in a specified Kubernetes cluster.
 type ResourceListTool struct {
-	clients map[string]dynamic.Interface
+	*baseToolWithDynamic
 	tool.InvokableTool
-	knownClusters []string
-	output        *ResourceListOutput
+	output *ResourceListOutput
 }
 
-// IsMatch checks if the Object matches the provided compiled regex filter. If the filter is nil, it returns true.
-func (t *ResourceListTool) IsMatch(o json.RawMessage, filter *regexp.Regexp) bool {
-	if filter == nil {
+// IsMatch returns true if the JSON data matches the compiled regex filter. A nil filter matches everything.
+func (t *ResourceListTool) IsMatch(o json.RawMessage, re *regexp.Regexp) bool {
+	if re == nil {
 		return true
 	}
-
-	if filter.Match(o) {
-		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter.String())
-		return true
-	}
-	return false
-
+	return re.Match(o)
 }
 
-// ToJson converts the given unstructured.Unstructured object to a JSON representation of ResourceListOutput, which includes the resource's name, namespace, and status (if applicable).
-func (h *ResourceListOutput) ToJson(o *unstructured.Unstructured) json.RawMessage {
+// ToJSON converts the given unstructured.Unstructured object to a JSON representation of ResourceListOutput.
+func (h *ResourceListOutput) ToJSON(o *unstructured.Unstructured) json.RawMessage {
 	if o == nil {
 		return nil
 	}
@@ -96,34 +87,28 @@ func (h *ResourceListOutput) ToJson(o *unstructured.Unstructured) json.RawMessag
 		}
 	}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		panic(err)
-	}
-	return data
-
+	return marshal.MustMarshal(output)
 }
 
-// Invoke executes the ResourceListTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+// Invoke executes the ResourceListTool with the given parameters.
 func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParams) (result string, err error) {
 
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
 		params.Paginate.PageSize = 50
 	}
 
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for PodListTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
 	}
 
-	filter, err := CompileFilter(params.Filter)
+	re, err := filter.Compile(params.Filter)
 	if err != nil {
 		return "", err
 	}
 
-	c, ok := t.clients[params.Cluster]
-	if !ok {
-		return "", errors.Errorf("Kubernetes cluster not found: %s. Cluster must be one of: %s", params.Cluster, strings.Join(t.knownClusters, ", "))
+	c, err := t.dynamicClient(params.Cluster)
+	if err != nil {
+		return "", err
 	}
 
 	var ls labels.Selector
@@ -155,8 +140,8 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 
 	outputs := make([]json.RawMessage, 0, len(o.Items))
 	for _, item := range o.Items {
-		output := t.output.ToJson(&item)
-		if !t.IsMatch(output, filter) {
+		output := t.output.ToJSON(&item)
+		if !t.IsMatch(output, re) {
 			continue
 		}
 		outputs = append(outputs, output)
@@ -168,7 +153,8 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	}
 	continueToken := accessor.GetContinue()
 	if continueToken != "" {
-		outputs = append(outputs, json.RawMessage(fmt.Sprintf(`{"paginateToken": "%s"}`, continueToken)))
+		tokenData := marshal.MustMarshal(paginateToken{PaginateToken: continueToken})
+		outputs = append(outputs, json.RawMessage(tokenData))
 	}
 
 	data, err := json.Marshal(outputs)
@@ -179,17 +165,24 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	return string(data), nil
 }
 
-// NewResourceListTool creates a new instance of the ResourceListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
+// NewResourceListTool creates a new instance of the ResourceListTool.
 func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	listTool := &ResourceListTool{
-		knownClusters: configs.GetClusterNames(),
-		output:        &ResourceListOutput{},
-	}
 	clients, err := BuildClientDynamics(configs, nil)
 	if err != nil {
 		return nil, err
 	}
-	listTool.clients = clients
+	base, err := newBaseTool(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	listTool := &ResourceListTool{
+		baseToolWithDynamic: &baseToolWithDynamic{
+			baseTool: base,
+			dynamics: clients,
+		},
+		output: &ResourceListOutput{},
+	}
 
 	// Infer tool
 	t, err := utils.InferTool("kubernetes_resources_list", resourceListDescription+"\n"+listOutputGuidance, listTool.Invoke)

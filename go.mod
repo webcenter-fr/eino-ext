@@ -24,7 +24,6 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
-	github.com/thoas/go-funk v0.9.3
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	go.yaml.in/yaml/v3 v3.0.4
 	k8s.io/api v0.36.2

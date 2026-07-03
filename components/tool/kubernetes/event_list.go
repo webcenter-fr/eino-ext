@@ -34,7 +34,7 @@ type EventListOutput struct {
 }
 
 // ToJson returns the JSON representation of the EventListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *EventListOutput) ToJson(o *corev1.Event) json.RawMessage {
+func (h *EventListOutput ) ToJSON(o *corev1.Event) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

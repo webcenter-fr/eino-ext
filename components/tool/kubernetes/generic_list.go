@@ -10,20 +10,27 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
-	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type OutputObject[resource client.Object] interface {
-	ToJson(resource) json.RawMessage
+type paginateToken struct {
+	PaginateToken string `json:"paginateToken"`
 }
 
-// ListParams defines the parameters for the List function, which lists all the resources in a specified Kubernetes cluster. It includes the cluster name, an optional namespace to filter resources, and an optional regex pattern to further filter the output.
+// OutputObject is the interface that list output types must implement to convert
+// a Kubernetes resource into its JSON representation.
+type OutputObject[resource client.Object] interface {
+	ToJSON(resource) json.RawMessage
+}
+
+// ListParams defines the parameters for the List function, which lists all the resources in a specified Kubernetes cluster.
 type ListParams struct {
 	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace      string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
@@ -37,42 +44,35 @@ type ListParamsPaginate struct {
 	PaginateToken string `json:"paginateToken,omitempty" jsonschema:"(optional) The token to retrieve the next page of results. This token is returned in the response when there are more results available than can fit in a single page."`
 }
 
-// ListTool is a tool that lists all the resources in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
+// ListTool is a tool that lists all the resources in a specified Kubernetes cluster.
 type ListTool[resourceList client.ObjectList, resource client.Object, outputObject OutputObject[resource]] struct {
-	clients map[string]client.Client
+	clients       map[string]client.Client
 	tool.InvokableTool
 	output        outputObject
 	r             resourceList
 	knownClusters []string
 }
 
-// IsMatch checks if the Object matches the provided compiled regex filter. If the filter is nil, it returns true.
-func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessage, filter *regexp.Regexp) bool {
-	if filter == nil {
+// IsMatch returns true if the JSON data matches the compiled regex filter. A nil filter matches everything.
+func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessage, re *regexp.Regexp) bool {
+	if re == nil {
 		return true
 	}
-
-	if filter.Match(o) {
-		logrus.Debugf("Output %s filtered by regex: %s", string(o), filter.String())
-		return true
-	}
-	return false
-
+	return re.Match(o)
 }
 
-// Invoke executes the ListTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+// Invoke executes the ListTool with the given parameters.
 func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Context, params *ListParams) (result string, err error) {
 
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
 		params.Paginate.PageSize = 50
 	}
 
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for PodListTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
 	}
 
-	filter, err := CompileFilter(params.Filter)
+	re, err := filter.Compile(params.Filter)
 	if err != nil {
 		return "", errors.Wrap(err, "error when compile regex")
 	}
@@ -104,11 +104,14 @@ func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Cont
 		return "", errors.Wrap(err, "failed to list resources")
 	}
 
-	items := GetItems[resourceList, resource](oList)
+	items, err := GetItems[resourceList, resource](oList)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get items from list")
+	}
 	outputs := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
-		output := t.output.ToJson(item)
-		if !t.IsMatch(output, filter) {
+		output := t.output.ToJSON(item)
+		if !t.IsMatch(output, re) {
 			continue
 		}
 		outputs = append(outputs, output)
@@ -120,7 +123,8 @@ func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Cont
 	}
 	continueToken := accessor.GetContinue()
 	if continueToken != "" {
-		outputs = append(outputs, json.RawMessage(fmt.Sprintf(`{"paginateToken": "%s"}`, continueToken)))
+		tokenData := marshal.MustMarshal(paginateToken{PaginateToken: continueToken})
+		outputs = append(outputs, json.RawMessage(tokenData))
 	}
 
 	data, err := json.Marshal(outputs)
@@ -131,7 +135,7 @@ func (t *ListTool[resourceList, resource, outputObject]) Invoke(ctx context.Cont
 	return string(data), nil
 }
 
-// NewListTool creates a new instance of the ListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
+// NewListTool creates a new instance of the ListTool.
 func NewListTool[resourceList client.ObjectList, resource client.Object, outputObject OutputObject[resource]](ctx context.Context, configs Configs, toolsName string, toolsDescription string, oList resourceList, output outputObject, s *runtime.Scheme) (tool.InvokableTool, error) {
 	listTool := &ListTool[resourceList, resource, outputObject]{
 		r:             oList,
@@ -154,31 +158,34 @@ func NewListTool[resourceList client.ObjectList, resource client.Object, outputO
 	return listTool, nil
 }
 
-// GetItems permit to get items contend from ObjectList interface
-func GetItems[k8sObjectList client.ObjectList, k8sObject client.Object](o k8sObjectList) (items []k8sObject) {
+// GetItems extracts the Items slice from a Kubernetes ObjectList using reflection.
+func GetItems[k8sObjectList client.ObjectList, k8sObject client.Object](o k8sObjectList) (items []k8sObject, err error) {
 	if reflect.ValueOf(o).IsNil() {
-		panic("ressource can't be nil")
+		return nil, errors.New("resource list cannot be nil")
 	}
 
 	val := reflect.ValueOf(o).Elem()
 	valueField := val.FieldByName("Items")
+	if !valueField.IsValid() {
+		return nil, errors.Errorf("resource list of type %T has no Items field", o)
+	}
 
 	items = make([]k8sObject, valueField.Len())
 	for i := range items {
 		items[i] = valueField.Index(i).Addr().Interface().(k8sObject)
 	}
 
-	return items
+	return items, nil
 }
 
-// CloneObject creates empty clone of type
+// CloneObject creates an empty clone of the given object type using reflection.
 func CloneObject[objectType comparable](o objectType) objectType {
 	if reflect.TypeOf(o).Kind() != reflect.Pointer {
-		panic("CloneObject work only with pointer")
+		panic("CloneObject works only with pointer types")
 	}
 
 	if reflect.ValueOf(o).IsNil() {
-		panic("Object can't be nill")
+		panic("CloneObject: object cannot be nil")
 	}
 
 	return reflect.New(reflect.TypeOf(o).Elem()).Interface().(objectType)

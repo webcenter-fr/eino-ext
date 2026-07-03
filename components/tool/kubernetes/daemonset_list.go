@@ -36,7 +36,7 @@ type DaemonSetListOutput struct {
 }
 
 // ToJson returns the JSON representation of the DaemonSetListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *DaemonSetListOutput) ToJson(o *appsv1.DaemonSet) json.RawMessage {
+func (h *DaemonSetListOutput ) ToJSON(o *appsv1.DaemonSet) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

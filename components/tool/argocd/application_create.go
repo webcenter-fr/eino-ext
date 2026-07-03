@@ -33,9 +33,7 @@ type ApplicationCreateParams struct {
 }
 
 type ApplicationCreateTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -44,9 +42,9 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	project := params.Project
@@ -93,16 +91,12 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 }
 
 func NewApplicationCreateTool(ctx context.Context, configs Configs) (*ApplicationCreateTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	createTool := &ApplicationCreateTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	createTool := &ApplicationCreateTool{baseTool: base}
 	t, err := utils.InferTool("argocd_application_create", applicationCreateDescription, createTool.Invoke)
 	if err != nil {
 		return nil, err

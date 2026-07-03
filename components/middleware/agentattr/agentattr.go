@@ -37,7 +37,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 )
@@ -74,7 +74,7 @@ func New(cfg *Config) (*Middleware, error) {
 		cfg = &Config{}
 	}
 	c := *cfg
-	if err := validator.New().Struct(&c); err != nil {
+	if err := validate.Struct(&c); err != nil {
 		return nil, errors.Wrap(err, "invalid agentattr.Config")
 	}
 	return &Middleware{

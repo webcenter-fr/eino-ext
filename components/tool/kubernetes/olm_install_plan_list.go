@@ -31,7 +31,7 @@ type OLMInstallPlanListOutput struct {
 }
 
 // ToJson returns the JSON representation of the OLMInstallPlanListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *OLMInstallPlanListOutput) ToJson(o *olmv1alpha1.InstallPlan) json.RawMessage {
+func (h *OLMInstallPlanListOutput ) ToJSON(o *olmv1alpha1.InstallPlan) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

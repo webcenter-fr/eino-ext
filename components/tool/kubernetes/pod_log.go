@@ -9,9 +9,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 const podLogDescription = `
@@ -25,7 +25,7 @@ It return a Raw string representing the logs of the pod. Each log line is separa
 
 `
 
-// PodLogParams defines the parameters for the PodLog function, which gets the logs of a specific pod in a specified Kubernetes cluster. It includes the cluster name, namespace, and pod name.
+// PodLogParams defines the parameters for the PodLog function.
 type PodLogParams struct {
 	Cluster       string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace     string `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the pod."`
@@ -36,42 +36,33 @@ type PodLogParams struct {
 }
 
 // PodLogTool is a tool that gets the logs of a specific pod in a specified Kubernetes cluster.
-// It implements both tool.InvokableTool (blocking, returns full log as string) and
-// tool.StreamableTool (streaming, returns log lines as a schema.StreamReader).
+// Implements both tool.InvokableTool (blocking) and tool.StreamableTool (streaming).
 type PodLogTool struct {
-	clients       map[string]*kubernetes.Clientset
-	knownClusters []string
-
-	tool.InvokableTool
-	tool.StreamableTool
+	base       *baseTool
+	invokable  tool.InvokableTool
+	streamable tool.StreamableTool
 }
 
-// validate validates the given PodLogParams.
-func (t *PodLogTool) validate(params *PodLogParams) (*kubernetes.Clientset, error) {
+// validate validates the given PodLogParams and returns the correct clientset.
+func (t *PodLogTool) validate(params *PodLogParams) error {
 	if params.MaxLines == 0 {
 		params.MaxLines = 100
 	}
-	v := validator.New()
-	if err := v.Struct(params); err != nil {
-		return nil, errors.Wrap(err, "invalid parameters for PodLogTool")
-	}
-
-	c, ok := t.clients[params.Cluster]
-	if !ok {
-		return nil, errors.Errorf("Kubernetes cluster not found: %s. Cluster must be one of: %s", params.Cluster, strings.Join(t.knownClusters, ", "))
-	}
-
-	return c, nil
+	return validate.Struct(params)
 }
 
 // Invoke gets the logs of a pod and returns them as a single string (non-streaming).
 func (t *PodLogTool) Invoke(ctx context.Context, params *PodLogParams) (string, error) {
-	c, err := t.validate(params)
+	if err := t.validate(params); err != nil {
+		return "", err
+	}
+
+	re, err := filter.Compile(params.FilterPattern)
 	if err != nil {
 		return "", err
 	}
 
-	re, err := CompileFilter(params.FilterPattern)
+	c, err := t.base.clientset(params.Cluster)
 	if err != nil {
 		return "", err
 	}
@@ -102,10 +93,12 @@ func (t *PodLogTool) Invoke(ctx context.Context, params *PodLogParams) (string, 
 }
 
 // InvokeAsStream gets the logs of a pod and returns them line-by-line as a schema.StreamReader[string].
-// Each string chunk in the stream is one log line (without the trailing newline).
-// The caller must close the returned StreamReader.
 func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (*schema.StreamReader[string], error) {
-	c, err := t.validate(params)
+	if err := t.validate(params); err != nil {
+		return nil, err
+	}
+
+	c, err := t.base.clientset(params.Cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +113,7 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 		return nil, errors.Wrap(err, "failed to get pod logs")
 	}
 
-	re, err := CompileFilter(params.FilterPattern)
+	re, err := filter.Compile(params.FilterPattern)
 	if err != nil {
 		return nil, err
 	}
@@ -147,33 +140,49 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 	return sr, nil
 }
 
-// NewPodLogTool creates a new PodLogTool that supports both invokable (non-streaming) and
-// streamable (streaming) modes. The returned value satisfies both tool.InvokableTool and
-// tool.StreamableTool and can be used in either mode by the eino ToolsNode.
-func NewPodLogTool(ctx context.Context, configs Configs) (*PodLogTool, error) {
-	podLogTool := &PodLogTool{
-		knownClusters: configs.GetClusterNames(),
-	}
+// Info returns tool information by delegating to the embedded invokable tool.
+func (t *PodLogTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return t.invokable.Info(ctx)
+}
 
-	clients, err := BuildClientSets(configs, nil)
+// InvokableRun executes the tool in non-streaming mode.
+func (t *PodLogTool) InvokableRun(ctx context.Context, args string, opts ...tool.Option) (string, error) {
+	return t.invokable.InvokableRun(ctx, args, opts...)
+}
+
+// StreamableRun executes the tool in streaming mode.
+func (t *PodLogTool) StreamableRun(ctx context.Context, args string, opts ...tool.Option) (*schema.StreamReader[string], error) {
+	return t.streamable.StreamableRun(ctx, args, opts...)
+}
+
+// NewPodLogTool creates a new PodLogTool that supports both invokable and streamable modes.
+func NewPodLogTool(ctx context.Context, configs Configs) (*PodLogTool, error) {
+	clientsets, err := BuildClientSets(configs, nil)
 	if err != nil {
 		return nil, err
 	}
-	podLogTool.clients = clients
+
+	podLogTool := &PodLogTool{
+		base: &baseTool{
+			configs:       configs,
+			clientsets:    clientsets,
+			knownClusters: configs.GetClusterNames(),
+		},
+	}
 
 	// Wire the non-streaming (invokable) path.
 	invokable, err := utils.InferTool("kubernetes_pod_logs", podLogDescription, podLogTool.Invoke)
 	if err != nil {
 		return nil, err
 	}
-	podLogTool.InvokableTool = invokable
+	podLogTool.invokable = invokable
 
 	// Wire the streaming path.
 	streamable, err := utils.InferStreamTool("kubernetes_pod_logs", podLogDescription, podLogTool.InvokeAsStream)
 	if err != nil {
 		return nil, err
 	}
-	podLogTool.StreamableTool = streamable
+	podLogTool.streamable = streamable
 
 	return podLogTool, nil
 }

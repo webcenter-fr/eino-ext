@@ -29,7 +29,7 @@ type IngressListOutput struct {
 }
 
 // ToJson returns the JSON representation of the IngressListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *IngressListOutput) ToJson(o *networkingv1.Ingress) json.RawMessage {
+func (h *IngressListOutput ) ToJSON(o *networkingv1.Ingress) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

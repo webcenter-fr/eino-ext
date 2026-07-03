@@ -27,9 +27,7 @@ type ApplicationDeleteParams struct {
 }
 
 type ApplicationDeleteTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -38,9 +36,9 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	if err := c.Application().Delete(params.Name, &api.ApplicationDeleteOptions{
@@ -55,16 +53,12 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 }
 
 func NewApplicationDeleteTool(ctx context.Context, configs Configs) (*ApplicationDeleteTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	deleteTool := &ApplicationDeleteTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	deleteTool := &ApplicationDeleteTool{baseTool: base}
 	t, err := utils.InferTool("argocd_application_delete", applicationDeleteDescription, deleteTool.Invoke)
 	if err != nil {
 		return nil, err

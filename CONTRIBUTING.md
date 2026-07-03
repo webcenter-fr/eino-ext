@@ -101,3 +101,112 @@ go build ./...
 go vet ./...
 go test ./...
 ```
+
+## Tool Design Principles
+
+When creating new tools (components under `components/tool/`), follow these principles to ensure maintainability, usability, and security.
+
+### Interfaces and Default Implementations
+
+- **Define interfaces** for tool families that share common behavior. For example, all "list" tools should implement a common interface.
+- **Provide default implementations** when a pattern is repeated across multiple tools. Extract common logic into generic helpers or base types.
+- **Use generics** to reduce code duplication when tools operate on similar data structures with different types.
+
+```go
+// Good: Define an interface for list tools
+type ListToolInterface interface {
+    Invoke(ctx context.Context, params ListParams) (string, error)
+}
+
+// Good: Generic factory for creating list tools
+func NewListTool[T client.Object, O OutputObject[T]](
+    ctx context.Context, 
+    configs Configs, 
+    toolName string, 
+    description string,
+) (tool.InvokableTool, error)
+```
+
+### Code Organization
+
+- **Extract common patterns** into shared helpers under `libs/toolkit/` when the same logic appears in multiple tool packages.
+- **Avoid duplication** between tool packages. If ArgoCD and Kubernetes both need `CompileFilter`, it belongs in `libs/toolkit/filter/`.
+- **Group related tools** with a factory function that creates all tools for a component at once.
+
+```go
+// Good: Factory function to create all ArgoCD tools
+func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, error) {
+    tools := make([]tool.InvokableTool, 0)
+    
+    appList, err := NewApplicationListTool(ctx, configs)
+    if err != nil {
+        return nil, err
+    }
+    tools = append(tools, appList)
+    
+    // ... other tools
+    
+    return tools, nil
+}
+```
+
+### Naming Conventions
+
+- Follow Go naming conventions: `ToJSON` not `ToJson`, `ID` not `Id`, `URL` not `Url`.
+- Use descriptive names that reveal intent: `ApplicationListOutput` is better than `Output`.
+- Keep parameter struct names consistent: `XxxParams` for input, `XxxOutput` for output.
+
+### Security Guidelines
+
+Tools that execute commands or access external systems must implement security controls:
+
+- **Command blocklists** must be robust against bypass attempts. Test with variations like `/bin/rm`, `./rm`, absolute paths, and shell builtins.
+- **Validate all inputs** including URLs (prevent SSRF), file paths (prevent directory traversal), and command arguments.
+- **Implement timeouts** for all external API calls to prevent resource exhaustion.
+- **Rate limiting** should be considered for tools that make API calls.
+- **Redact sensitive data** in outputs (secrets, passwords, tokens).
+
+```go
+// Bad: Easily bypassed blocklist
+var blocklist = []string{`^\s*rm\s`}  // Doesn't catch /bin/rm, ./rm, etc.
+
+// Good: More robust blocklist with multiple patterns
+var blocklist = []string{
+    `\brm\b`,           // Matches rm anywhere
+    `^\s*/[^\s]*/rm\b`, // Matches absolute paths
+    `^\s*\./rm\b`,      // Matches relative paths
+}
+```
+
+### Usability
+
+- **Provide helper functions** to simplify common use cases. Users should be able to get started with minimal configuration.
+- **Document tool usage** with examples in the component's README.md.
+- **Export configuration types** so users can customize behavior without modifying the library.
+- **Consider builder patterns** for complex configurations.
+
+```go
+// Good: Simple API for common case
+tools, err := argocd.NewAllTools(ctx, argocd.Configs{
+    "prod": argocd.Config{Url: "https://argocd.example.com"},
+})
+
+// Good: Builder for complex configuration
+builder := argocd.NewConfigBuilder().
+    WithInstance("prod", "https://argocd.example.com").
+    WithToken(os.Getenv("ARGOCD_TOKEN")).
+    WithTimeout(30 * time.Second)
+configs := builder.Build()
+```
+
+### Error Handling
+
+- **Wrap errors** with context using `emperror.dev/errors` to help users debug issues.
+- **Validate parameters early** and return clear error messages.
+- **Don't panic** in tool implementations; return errors instead.
+
+### Testing
+
+- **Write table-driven tests** for tool invocations with various parameter combinations.
+- **Test error cases** including invalid parameters, network failures, and permission errors.
+- **Use mocks** for external dependencies to ensure tests are fast and reliable.

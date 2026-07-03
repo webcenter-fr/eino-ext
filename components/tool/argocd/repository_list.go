@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
 const repositoryListDescription = `
@@ -36,9 +37,7 @@ type RepositoryListOutput struct {
 }
 
 type RepositoryListTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -47,14 +46,14 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 		return "", err
 	}
 
-	filter, err := CompileFilter(params.Filter)
+	re, err := filter.Compile(params.Filter)
 	if err != nil {
 		return "", errors.Wrap(err, "error when compile regex")
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	resp, err := c.Repository().List(&api.RepositoryQueryOptions{})
@@ -72,7 +71,7 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
-		if !IsMatch(outputJSON, filter) {
+		if !filter.Match(outputJSON, re) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)
@@ -87,16 +86,12 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 }
 
 func NewRepositoryListTool(ctx context.Context, configs Configs) (*RepositoryListTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &RepositoryListTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	listTool := &RepositoryListTool{baseTool: base}
 	t, err := utils.InferTool("argocd_repository_list", fmt.Sprintf("%s\n%s", repositoryListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err

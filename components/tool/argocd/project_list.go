@@ -7,8 +7,8 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/disaster37/goargocdclient/api"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
 const projectListDescription = `
@@ -32,9 +32,7 @@ type ProjectListOutput struct {
 }
 
 type ProjectListTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -43,14 +41,14 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", err
 	}
 
-	filter, err := CompileFilter(params.Filter)
+	re, err := filter.Compile(params.Filter)
 	if err != nil {
 		return "", errors.Wrap(err, "error when compile regex")
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	resp, err := c.Project().List()
@@ -66,7 +64,7 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		}
 
 		outputJSON := json.RawMessage(MustMarshal(output))
-		if !IsMatch(outputJSON, filter) {
+		if !filter.Match(outputJSON, re) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)
@@ -81,16 +79,12 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 }
 
 func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &ProjectListTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	listTool := &ProjectListTool{baseTool: base}
 	t, err := utils.InferTool("argocd_project_list", fmt.Sprintf("%s\n%s", projectListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err

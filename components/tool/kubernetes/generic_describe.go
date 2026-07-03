@@ -9,11 +9,10 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -46,9 +45,8 @@ type DescribeTool[resource client.Object] struct {
 // Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
 func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribeParams) (result string, err error) {
 
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for PodDescribeTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
 	}
 
 	c, ok := t.clients[params.Cluster]
@@ -57,17 +55,19 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 	}
 
 	o := reflect.New(reflect.TypeOf(t.r).Elem()).Interface().(client.Object)
-	if err = c.Get(context.Background(), client.ObjectKey{Namespace: params.Namespace, Name: params.Name}, o); err != nil {
+	if err = c.Get(ctx, client.ObjectKey{Namespace: params.Namespace, Name: params.Name}, o); err != nil {
 		return "", errors.Wrap(err, "failed to get resource")
 	}
 	kind, err := c.GroupVersionKindFor(o)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get GroupVersionKind for resource")
 	}
-	SetObjectTypeMeta(o, v1.TypeMeta{
+	if err := SetObjectTypeMeta(o, metav1.TypeMeta{
 		Kind:       kind.Kind,
 		APIVersion: kind.Version,
-	})
+	}); err != nil {
+		return "", errors.Wrap(err, "failed to set TypeMeta")
+	}
 
 	// Special filter for secret content.
 	if resource, ok := any(o).(*corev1.Secret); ok {
@@ -76,7 +76,10 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 		}
 	}
 
-	output := objectToDescribeOutput(o)
+	output, err := objectToDescribeOutput(o)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to convert object to describe output")
+	}
 
 	for _, excludeField := range params.ExcludeFieldsOutput {
 		switch excludeField {
@@ -99,7 +102,65 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 	}
 
 	return string(data), nil
+}
 
+// GetObjectStatus retrieves the status field from a Kubernetes resource object using reflection.
+// It returns (nil, nil) when the resource has no Status field.
+func GetObjectStatus(r client.Object) (any, error) {
+	rt := reflect.TypeOf(r)
+	if rt.Kind() != reflect.Ptr {
+		return nil, errors.Errorf("resource must be pointer, got %T", rt)
+	}
+	rv := reflect.ValueOf(r).Elem()
+	om := rv.FieldByName("Status")
+	if !om.IsValid() {
+		return nil, nil
+	}
+	return om.Interface(), nil
+}
+
+// GetObjectSpec retrieves the Spec field from a Kubernetes resource object.
+// It returns (nil, nil) when the resource has no Spec field.
+func GetObjectSpec(r client.Object) (any, error) {
+	rt := reflect.TypeOf(r)
+	if rt.Kind() != reflect.Ptr {
+		return nil, errors.Errorf("resource must be pointer, got %T", rt)
+	}
+	rv := reflect.ValueOf(r).Elem()
+	om := rv.FieldByName("Spec")
+	if !om.IsValid() {
+		return nil, nil
+	}
+	return om.Interface(), nil
+}
+
+// GetDataSpec retrieves the Data field from a Kubernetes resource object.
+// It returns (nil, nil) when the resource has no Data field.
+func GetDataSpec(r client.Object) (any, error) {
+	rt := reflect.TypeOf(r)
+	if rt.Kind() != reflect.Ptr {
+		return nil, errors.Errorf("resource must be pointer, got %T", rt)
+	}
+	rv := reflect.ValueOf(r).Elem()
+	om := rv.FieldByName("Data")
+	if !om.IsValid() {
+		return nil, nil
+	}
+	return om.Interface(), nil
+}
+
+func SetObjectTypeMeta(o client.Object, typeMeta metav1.TypeMeta) error {
+	rt := reflect.TypeOf(o)
+	if rt.Kind() != reflect.Ptr {
+		return errors.Errorf("resource must be pointer, got %T", rt)
+	}
+	rv := reflect.ValueOf(o).Elem()
+	om := rv.FieldByName("TypeMeta")
+	if !om.IsValid() {
+		return errors.Errorf("resource of type %T has no TypeMeta field", o)
+	}
+	om.Set(reflect.ValueOf(typeMeta))
+	return nil
 }
 
 // NewDescribePodTool creates a new instance of the DescribePodTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.
@@ -125,65 +186,22 @@ func NewDescribeTool[resource client.Object](ctx context.Context, configs Config
 	return describeTool, nil
 }
 
-// GetObjectStatus retrieves the status field from a Kubernetes resource object using reflection. It checks if the provided object is a pointer and has a "Status" field, and returns the value of that field. If the object is not a pointer or does not have a "Status" field, it panics with an appropriate error message.
-func GetObjectStatus(r client.Object) any {
-	rt := reflect.TypeOf(r)
-	if rt.Kind() != reflect.Ptr {
-		panic("Resource must be pointer")
-	}
-	rv := reflect.ValueOf(r).Elem()
-	om := rv.FieldByName("Status")
-	if !om.IsValid() {
-		return nil
-	}
-	return om.Interface()
-}
-
-// GetObjectSpec retrieves the Spec field from a Kubernetes resource object. It uses reflection to access the Spec field and returns its value. The resource object must be a pointer and must have a Spec field for this function to work correctly.
-func GetObjectSpec(r client.Object) any {
-	rt := reflect.TypeOf(r)
-	if rt.Kind() != reflect.Ptr {
-		panic("Resource must be pointer")
-	}
-	rv := reflect.ValueOf(r).Elem()
-	om := rv.FieldByName("Spec")
-	if !om.IsValid() {
-		return nil
-	}
-	return om.Interface()
-}
-
-// GetDataSpec retrieves the Data field from a Kubernetes resource object. It uses reflection to access the Data field and returns its value. The resource object must be a pointer and must have a Data field for this function to work correctly.
-func GetDataSpec(r client.Object) any {
-	rt := reflect.TypeOf(r)
-	if rt.Kind() != reflect.Ptr {
-		panic("Resource must be pointer")
-	}
-	rv := reflect.ValueOf(r).Elem()
-	om := rv.FieldByName("Data")
-	if !om.IsValid() {
-		return nil
-	}
-	return om.Interface()
-}
-
-func SetObjectTypeMeta(o client.Object, typeMeta v1.TypeMeta) {
-	rt := reflect.TypeOf(o)
-	if rt.Kind() != reflect.Ptr {
-		panic("Resource must be pointer")
-	}
-	rv := reflect.ValueOf(o).Elem()
-	om := rv.FieldByName("TypeMeta")
-	if !om.IsValid() {
-		return
-	}
-	om.Set(reflect.ValueOf(typeMeta))
-}
-
 // objectToDescribeOutput converts a Kubernetes resource object to a DescribeOutput struct. It extracts the TypeMeta, Metadata, Spec, and Status from the resource object and populates the DescribeOutput struct accordingly. This function is used to format the output of the DescribeTool in a consistent way.
-func objectToDescribeOutput[resource client.Object](r resource) DescribeOutput {
+func objectToDescribeOutput[resource client.Object](r resource) (DescribeOutput, error) {
 	if reflect.ValueOf(r).IsNil() {
-		return reflect.Zero(reflect.TypeOf(DescribeOutput{})).Interface().(DescribeOutput)
+		return reflect.Zero(reflect.TypeOf(DescribeOutput{})).Interface().(DescribeOutput), nil
+	}
+	spec, err := GetObjectSpec(r)
+	if err != nil {
+		return DescribeOutput{}, err
+	}
+	status, err := GetObjectStatus(r)
+	if err != nil {
+		return DescribeOutput{}, err
+	}
+	data, err := GetDataSpec(r)
+	if err != nil {
+		return DescribeOutput{}, err
 	}
 	return DescribeOutput{
 		TypeMeta: metav1.TypeMeta{
@@ -200,8 +218,8 @@ func objectToDescribeOutput[resource client.Object](r resource) DescribeOutput {
 			CreationTimestamp: r.GetCreationTimestamp(),
 			DeletionTimestamp: r.GetDeletionTimestamp(),
 		},
-		Spec:   GetObjectSpec(r),
-		Status: GetObjectStatus(r),
-		Data:   GetDataSpec(r),
-	}
+		Spec:   spec,
+		Status: status,
+		Data:   data,
+	}, nil
 }

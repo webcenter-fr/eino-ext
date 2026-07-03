@@ -6,7 +6,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
 	"go.yaml.in/yaml/v3"
 	"k8s.io/apimachinery/pkg/util/json"
@@ -33,12 +33,17 @@ type ConvertorTool struct {
 	tool.InvokableTool
 }
 
-// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+const maxInputSize = 1024 * 1024 // 1MB
+
+// Invoke executes the ConvertorTool with the given parameters. It validates the parameters, converts the input data from the specified input format to the output format, and returns the result as a string.
 func (t *ConvertorTool) Invoke(ctx context.Context, params *ConvertorParams) (result string, err error) {
 
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for ConvertorTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
+	}
+
+	if len(params.Input) > maxInputSize {
+		return "", errors.Errorf("input too large: %d bytes (max %d)", len(params.Input), maxInputSize)
 	}
 
 	// Input to Object

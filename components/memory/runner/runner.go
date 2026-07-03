@@ -51,7 +51,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
-	"github.com/go-playground/validator/v10"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
 	"github.com/webcenter-fr/eino-ext/components/memory"
 	"github.com/webcenter-fr/eino-ext/components/memory/session"
@@ -93,7 +93,7 @@ type Config struct {
 // the caller must Close it if it stops reading early. The session turn is
 // released asynchronously once persistence finishes.
 func Run(cfg Config) (*schema.StreamReader[*schema.Message], error) {
-	if err := validator.New().Struct(&cfg); err != nil {
+	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid runner.Config")
 	}
 

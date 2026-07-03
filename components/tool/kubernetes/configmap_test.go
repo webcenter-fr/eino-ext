@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/disaster37/operator-sdk-extra/v2/pkg/helper"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	"github.com/disaster37/operator-sdk-extra/v2/pkg/test"
 	"github.com/google/go-cmp/cmp"
 	"github.com/sirupsen/logrus"
@@ -137,7 +138,7 @@ func doListConfigMap() test.TestStep[*corev1.ConfigMap] {
 					Namespace: key.Namespace,
 				},
 			}
-			assert.Empty(t, cmp.Diff(listCm, string(MustMarshal(expectedOutputs))))
+			assert.Empty(t, cmp.Diff(listCm, string(marshal.MustMarshal(expectedOutputs))))
 
 			// List ConfigMaps with label selector
 			listCm, err = cmToolList.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "namespace": "%s", "labelsSelector": "app=test"}`, key.Namespace))
@@ -149,7 +150,7 @@ func doListConfigMap() test.TestStep[*corev1.ConfigMap] {
 					Namespace: key.Namespace,
 				},
 			}
-			assert.Empty(t, cmp.Diff(listCm, string(MustMarshal(expectedOutputs))))
+			assert.Empty(t, cmp.Diff(listCm, string(marshal.MustMarshal(expectedOutputs))))
 
 			// List ConfigMaps with filter
 			listCm, err = cmToolList.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "namespace": "%s", "filter": "-[2-3]"}`, key.Namespace))
@@ -165,7 +166,7 @@ func doListConfigMap() test.TestStep[*corev1.ConfigMap] {
 					Namespace: key.Namespace,
 				},
 			}
-			assert.Empty(t, cmp.Diff(listCm, string(MustMarshal(expectedOutputs))))
+			assert.Empty(t, cmp.Diff(listCm, string(marshal.MustMarshal(expectedOutputs))))
 
 			// When cluster not exist, it should return error
 			_, err = cmToolList.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "invalid-cluster", "namespace": "%s"}`, key.Namespace))
@@ -211,16 +212,19 @@ func doDescribeConfigMap() test.TestStep[*corev1.ConfigMap] {
 			cm, err := cmToolDescribe.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "name": "%s", "namespace": "%s"}`, expectedCm.Name, key.Namespace))
 			assert.NoError(t, err)
 			assert.NotEmpty(t, cm)
-			assert.Empty(t, cmp.Diff(cm, string(MustMarshal(objectToDescribeOutput(expectedCm)))))
+			dOutput, err := objectToDescribeOutput(expectedCm)
+			assert.NoError(t, err)
+			assert.Empty(t, cmp.Diff(cm, string(marshal.MustMarshal(dOutput))))
 
 			// Filter output by exclude fields
 			cm, err = cmToolDescribe.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "name": "%s", "namespace": "%s", "excludeFieldsOutput": ["metadata", "status"]}`, expectedCm.Name, key.Namespace))
 			assert.NoError(t, err)
 			assert.NotEmpty(t, cm)
-			describeOutput := objectToDescribeOutput(expectedCm)
+			describeOutput, err := objectToDescribeOutput(expectedCm)
+			assert.NoError(t, err)
 			describeOutput.Metadata = nil
 			describeOutput.Status = nil
-			assert.Empty(t, cmp.Diff(cm, string(MustMarshal(describeOutput))))
+			assert.Empty(t, cmp.Diff(cm, string(marshal.MustMarshal(describeOutput))))
 
 			// When cluster not exist, it should return error
 			_, err = cmToolDescribe.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "invalid-cluster", "name": "%s", "namespace": "%s"}`, expectedCm.Name, key.Namespace))

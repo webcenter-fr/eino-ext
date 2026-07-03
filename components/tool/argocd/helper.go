@@ -1,12 +1,9 @@
 package argocd
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-json"
 )
 
@@ -24,24 +21,8 @@ Use ` + "`excludeFieldsOutput`" + ` to drop large sections you do not need (any 
 'metadata', 'spec', 'status') instead of fetching the full resource.
 `
 
-func CompileFilter(pattern string) (*regexp.Regexp, error) {
-	if pattern == "" {
-		return nil, nil
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid regex filter %q (Go RE2 syntax)", pattern)
-	}
-	return re, nil
-}
-
-func IsMatch(o json.RawMessage, filter *regexp.Regexp) bool {
-	if filter == nil {
-		return true
-	}
-	return filter.Match(o)
-}
-
+// MustMarshal marshals v to JSON. Panics on error.
+// This is safe to use here because Go structs cannot fail JSON serialization in practice.
 func MustMarshal(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -50,14 +31,7 @@ func MustMarshal(v any) []byte {
 	return b
 }
 
-func validateParams(v any) error {
-	validator := validator.New()
-	if err := validator.Struct(v); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("invalid parameters for %T", v))
-	}
-	return nil
-}
-
+// instanceNotFoundError returns an error indicating the requested instance is unknown.
 func instanceNotFoundError(instance string, known []string) error {
 	return errors.Errorf("ArgoCD instance not found: %s. Instance must be one of: %s", instance, strings.Join(known, ", "))
 }

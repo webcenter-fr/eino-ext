@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/sirupsen/logrus"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -13,18 +12,19 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/disaster37/opensearch/v3"
 	"github.com/disaster37/opensearch/v3/config"
-	"github.com/go-playground/validator/v10"
+	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 const opensearchLogKubernetesDescription = `
 ** General Purpose **
-It permit to retrive logs from Opensearch about pods in Kubernetes cluster.
-It useful to get logs when pod no more exist in Kubernetes cluster, but logs still exist in Opensearch.
-It usefull to filter logs with lucene query syntax.
+It retrieves logs from Opensearch about pods in a Kubernetes cluster.
+It is useful to get logs when a pod no longer exists in the Kubernetes cluster, but logs still exist in Opensearch.
+It is useful to filter logs with lucene query syntax.
 
-** Parameters *
-You need to provide podName and or containerName.
-Never put on luceneQuery the cluster, namespace, podName or containerName, because they are already filter by dedicated parameters, and put them in luceneQuery can cause issue with query performance.
+** Parameters **
+You need to provide podName and/or containerName.
+Never put on luceneQuery the cluster, namespace, podName or containerName, because they are already filtered by dedicated parameters, and putting them in luceneQuery can cause issues with query performance.
 
 ** Output **
 It returns the logs in string format.
@@ -62,33 +62,22 @@ func (params *OpensearchLogKubernetesParams) applyDefaults() {
 	}
 }
 
-// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+// Invoke executes the OpensearchLogKubernetesTool with the given parameters. It validates the parameters, builds an OpenSearch query, executes the search, and returns the logs as a single string.
 func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *OpensearchLogKubernetesParams) (result string, err error) {
 
+	ctx = t.ensureTimeout(ctx)
 	params.applyDefaults()
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return "", errors.Wrap(err, "invalid parameters for OpensearchLogKubernetesTool")
+	if err := validate.Struct(params); err != nil {
+		return "", err
 	}
 	if params.PodName == "" && params.ContainerName == "" {
 		return "", errors.New("at least one of podName or containerName must be provided")
 	}
 
-	boolQuery := opensearch.NewBoolQuery()
-	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
-	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
-	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
-	if params.PodName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.pod.name", params.PodName))
+	boolQuery := t.buildQuery(params)
+	if boolQuery == nil {
+		return "", errors.New("at least one of podName or containerName must be provided")
 	}
-	if params.ContainerName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
-	}
-	if params.LuceneQuery == "" {
-		params.LuceneQuery = "*"
-	}
-	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
-	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search().
 		Query(boolQuery).
@@ -124,33 +113,22 @@ func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *Opense
 	return strings.Join(logs, "\n"), nil
 }
 
-// Invoke executes the DescribeTool with the given parameters. It validates the parameters, retrieves the appropriate Kubernetes client for the specified cluster, and lists the resources based on the provided namespace and label selector. The output is filtered using a regex pattern if provided, and the final result is returned as a JSON string.
+// InvokeAsStream executes the OpensearchLogKubernetesTool with the given parameters and streams the logs line-by-line as a schema.StreamReader[string].
 func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params *OpensearchLogKubernetesParams) (stream *schema.StreamReader[string], err error) {
 
+	ctx = t.ensureTimeout(ctx)
 	params.applyDefaults()
-	validator := validator.New()
-	if err := validator.Struct(params); err != nil {
-		return nil, errors.Wrap(err, "invalid parameters for OpensearchLogKubernetesTool")
+	if err := validate.Struct(params); err != nil {
+		return nil, err
 	}
 	if params.PodName == "" && params.ContainerName == "" {
 		return nil, errors.New("at least one of podName or containerName must be provided")
 	}
 
-	boolQuery := opensearch.NewBoolQuery()
-	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
-	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
-	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
-	if params.PodName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.pod.name", params.PodName))
+	boolQuery := t.buildQuery(params)
+	if boolQuery == nil {
+		return nil, errors.New("at least one of podName or containerName must be provided")
 	}
-	if params.ContainerName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
-	}
-	if params.LuceneQuery == "" {
-		params.LuceneQuery = "*"
-	}
-	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
-	boolQuery.Must(stringQuery)
 
 	res, err := t.client.Search().
 		Query(boolQuery).
@@ -190,6 +168,40 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 	}()
 
 	return sr, nil
+}
+
+// buildQuery builds the OpenSearch bool query from the given parameters.
+func (t *OpensearchLogKubernetesTool) buildQuery(params *OpensearchLogKubernetesParams) opensearch.Query {
+	boolQuery := opensearch.NewBoolQuery()
+	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
+	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
+	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
+	if params.PodName != "" {
+		boolQuery.Must(opensearch.NewTermQuery("kubernetes.pod.name", params.PodName))
+	}
+	if params.ContainerName != "" {
+		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
+	}
+	if params.LuceneQuery == "" {
+		params.LuceneQuery = "*"
+	}
+	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
+	boolQuery.Must(stringQuery)
+	return boolQuery
+}
+
+const defaultOpensearchTimeout = 30 * time.Second
+
+func (t *OpensearchLogKubernetesTool) ensureTimeout(ctx context.Context) context.Context {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultOpensearchTimeout)
+		go func() {
+			<-ctx.Done()
+			cancel()
+		}()
+	}
+	return ctx
 }
 
 // fieldAsString extracts a string value from an OpenSearch field, which may be

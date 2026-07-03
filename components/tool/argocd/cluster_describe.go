@@ -31,9 +31,7 @@ type ClusterDescribeOutput struct {
 }
 
 type ClusterDescribeTool struct {
-	clients        map[string]api.API
-	knownInstances []string
-
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -42,9 +40,9 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 		return "", err
 	}
 
-	c, ok := t.clients[params.Instance]
-	if !ok {
-		return "", instanceNotFoundError(params.Instance, t.knownInstances)
+	c, err := t.client(params.Instance)
+	if err != nil {
+		return "", err
 	}
 
 	cluster, err := c.Cluster().Get("", &api.ClusterQueryOptions{Name: params.Name})
@@ -79,16 +77,12 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 }
 
 func NewClusterDescribeTool(ctx context.Context, configs Configs) (*ClusterDescribeTool, error) {
-	clients, err := BuildClients(configs)
+	base, err := newBaseTool(configs)
 	if err != nil {
 		return nil, err
 	}
 
-	describeTool := &ClusterDescribeTool{
-		clients:        clients,
-		knownInstances: configs.GetInstanceNames(),
-	}
-
+	describeTool := &ClusterDescribeTool{baseTool: base}
 	t, err := utils.InferTool("argocd_cluster_describe", fmt.Sprintf("%s\n%s", clusterDescribeDescription, describeOutputGuidance), describeTool.Invoke)
 	if err != nil {
 		return nil, err

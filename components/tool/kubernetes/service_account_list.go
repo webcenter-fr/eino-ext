@@ -25,7 +25,7 @@ type ServiceAccountListOutput struct {
 }
 
 // ToJson returns the JSON representation of the ServiceAccountListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *ServiceAccountListOutput) ToJson(o *corev1.ServiceAccount) json.RawMessage {
+func (h *ServiceAccountListOutput ) ToJSON(o *corev1.ServiceAccount) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

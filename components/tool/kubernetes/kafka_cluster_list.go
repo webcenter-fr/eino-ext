@@ -32,7 +32,7 @@ type KafkaClusterListOutput struct {
 }
 
 // ToJson returns the JSON representation of the KafkaClusterListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *KafkaClusterListOutput) ToJson(o *strimzi.Kafka) json.RawMessage {
+func (h *KafkaClusterListOutput ) ToJSON(o *strimzi.Kafka) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

@@ -1,12 +1,5 @@
 package kubernetes
 
-import (
-	"regexp"
-
-	"emperror.dev/errors"
-	"github.com/goccy/go-json"
-)
-
 // listOutputGuidance is a shared guidance block appended to the description of all
 // list tools (generic and resource list). It instructs the model to narrow queries
 // to avoid large responses that blow up the context window.
@@ -28,33 +21,3 @@ const describeOutputGuidance = `
 Use ` + "`excludeFieldsOutput`" + ` to drop large sections you do not need (any of
 'metadata', 'spec', 'status', 'data') instead of fetching the full resource.
 `
-
-// CompileFilter compiles the given regex pattern using Go RE2 syntax. It returns a
-// nil regexp (without error) when the pattern is empty, which callers must treat as
-// "match everything". An invalid pattern returns a wrapped error instead of panicking.
-func CompileFilter(pattern string) (*regexp.Regexp, error) {
-	if pattern == "" {
-		return nil, nil
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid regex filter %q (Go RE2 syntax)", pattern)
-	}
-	return re, nil
-}
-
-// MustMarshal is a helper function that marshals a value to JSON and panics if an error occurs. It is useful for quickly converting data structures to JSON without having to handle errors in the calling code.
-func MustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return b
-}
-
-// MustUnmarshal is a helper function that unmarshals JSON data into a specified Go data structure and panics if an error occurs. It is useful for quickly converting JSON data to Go structures without having to handle errors in the calling code.
-func MustUnmarshal(data []byte, v any) {
-	if err := json.Unmarshal(data, v); err != nil {
-		panic(err)
-	}
-}

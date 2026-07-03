@@ -1,8 +1,9 @@
 package argocd
 
 import (
+	"sort"
+
 	"github.com/disaster37/goargocdclient"
-	"github.com/thoas/go-funk"
 )
 
 // Configs is a map of ArgoCD instance configurations, where the key is the Argocd instance name.
@@ -21,5 +22,10 @@ func (c Configs) GetConfig(instanceName string) Config {
 
 // GetInstanceNames returns a slice of all instances names present in the Configs map.
 func (c Configs) GetInstanceNames() []string {
-	return funk.Keys(c).([]string)
+	names := make([]string, 0, len(c))
+	for name := range c {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -33,7 +33,7 @@ type SparkApplicationListOutput struct {
 }
 
 // ToJson returns the JSON representation of the SparkApplicationListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *SparkApplicationListOutput) ToJson(o *spark.SparkApplication) json.RawMessage {
+func (h *SparkApplicationListOutput ) ToJSON(o *spark.SparkApplication) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)

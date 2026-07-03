@@ -20,7 +20,6 @@ It returns a JSON array of objects, where each object represents an instance wit
 
 type InstanceListTool struct {
 	knownInstances []string
-
 	tool.InvokableTool
 }
 

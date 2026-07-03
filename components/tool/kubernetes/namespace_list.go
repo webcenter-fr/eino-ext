@@ -23,7 +23,7 @@ type NamespaceListOutput struct {
 }
 
 // ToJson returns the JSON representation of the NamespaceListOutput struct. It marshals the struct into a JSON RawMessage and returns it. If there is an error during marshaling, it panics.
-func (h *NamespaceListOutput) ToJson(o *corev1.Namespace) json.RawMessage {
+func (h *NamespaceListOutput ) ToJSON(o *corev1.Namespace) json.RawMessage {
 
 	// Forge object
 	output := CloneObject(h)
