@@ -24,7 +24,8 @@ type ApplicationSyncParams struct {
 	AppNamespace string `json:"appNamespace,omitempty" jsonschema:"(optional) Application namespace."`
 	Project      string `json:"project,omitempty" jsonschema:"(optional) Application project."`
 	Revision     string `json:"revision,omitempty" jsonschema:"(optional) Target revision to sync to."`
-	DryRun       bool   `json:"dryRun,omitempty" jsonschema:"(optional) Simulate sync without applying changes."`
+	DryRun       bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the sync without applying changes. Show the result to the user and ask for confirmation."`
+	Confirmed    bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the sync. Set this after the user has approved the dry-run result."`
 	Prune        bool   `json:"prune,omitempty" jsonschema:"(optional) Delete resources no longer in git. Be careful with this option, it can delete resources in your cluster."`
 }
 

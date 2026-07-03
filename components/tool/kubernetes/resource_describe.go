@@ -27,9 +27,9 @@ type ResourceDescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace           string   `json:"namespace" validate:"required" jsonschema:"(required) The namespace of the resource."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
-	ResourceVersion     string   `json:"resourceVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
-	ResourceGroup       string   `json:"resourceGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
-	ResourceKind        string   `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
+	ApiVersion          string   `json:"apiVersion" validate:"required" jsonschema:"(required) The API version. For example, 'v1' or 'v1beta1'."`
+	ApiGroup            string   `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
+	Resource            string   `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase. For example, 'deployments', 'pods'."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
@@ -48,6 +48,17 @@ type ResourceDescribeTool struct {
 	tool.InvokableTool
 }
 
+// redactSecretData replaces all values in the given data map with "REDACTED".
+func redactSecretData(data any) {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return
+	}
+	for k := range m {
+		m[k] = "REDACTED"
+	}
+}
+
 // Invoke executes the ResourceDescribeTool with the given parameters.
 func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescribeParams) (result string, err error) {
 
@@ -61,14 +72,24 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 	}
 
 	namespaceResource := schema.GroupVersionResource{
-		Group:    params.ResourceGroup,
-		Version:  params.ResourceVersion,
-		Resource: strings.ToLower(params.ResourceKind),
+		Group:    params.ApiGroup,
+		Version:  params.ApiVersion,
+		Resource: params.Resource,
 	}
 
 	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.ResourceKind, params.ResourceGroup, params.ResourceVersion)
+		return "", errors.Wrapf(err, "failed to get resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+	}
+
+	// Redact secret data to avoid leaking sensitive information.
+	if strings.ToLower(params.Resource) == "secrets" {
+		if data, ok := o.Object["data"]; ok {
+			redactSecretData(data)
+		}
+		if stringData, ok := o.Object["stringData"]; ok {
+			redactSecretData(stringData)
+		}
 	}
 
 	output, err := objectToDescribeOutput(o)

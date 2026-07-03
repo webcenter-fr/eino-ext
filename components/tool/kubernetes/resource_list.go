@@ -39,14 +39,14 @@ type ResourceListOutput struct {
 
 // ResourceListParams defines the parameters for the ResourceList function.
 type ResourceListParams struct {
-	Cluster         string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace       string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
-	LabelsSelector  string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
-	ResourceVersion string              `json:"resourceVersion" validate:"required" jsonschema:"(required) The group and version of the resource, in the format of 'group/version'. For example, 'apps/v1'."`
-	ResourceGroup   string              `json:"resourceGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
-	ResourceKind    string              `json:"resourceKind" validate:"required" jsonschema:"(required) The kind of the resource. For example, 'Deployment'."`
-	Filter          string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
-	Paginate        *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
+	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace      string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces."`
+	LabelsSelector string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
+	ApiVersion     string              `json:"apiVersion" validate:"required" jsonschema:"(required) The API version. For example, 'v1' or 'v1beta1'."`
+	ApiGroup       string              `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
+	Resource       string              `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase. For example, 'deployments', 'pods'."`
+	Filter         string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
+	Paginate       *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
 // ResourceListTool is a tool that lists all the resources in a specified Kubernetes cluster.
@@ -120,9 +120,9 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	}
 
 	namespaceResource := schema.GroupVersionResource{
-		Group:    params.ResourceGroup,
-		Version:  params.ResourceVersion,
-		Resource: params.ResourceKind,
+		Group:    params.ApiGroup,
+		Version:  params.ApiVersion,
+		Resource: params.Resource,
 	}
 
 	listOpts := v1.ListOptions{}
@@ -135,7 +135,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 	}
 	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).List(ctx, listOpts)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to list resources on namespace %s of type %s.%s/%s", params.Namespace, params.ResourceKind, params.ResourceGroup, params.ResourceVersion)
+		return "", errors.Wrapf(err, "failed to list resources on namespace %s of type %s.%s/%s", params.Namespace, params.Resource, params.ApiGroup, params.ApiVersion)
 	}
 
 	outputs := make([]json.RawMessage, 0, len(o.Items))

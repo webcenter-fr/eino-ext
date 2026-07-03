@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
+	"github.com/goccy/go-json"
 )
 
 const applicationDeleteDescription = `
@@ -24,6 +25,8 @@ type ApplicationDeleteParams struct {
 	AppNamespace string `json:"appNamespace,omitempty" jsonschema:"(optional) Application namespace."`
 	Project      string `json:"project,omitempty" jsonschema:"(optional) Application project."`
 	Cascade      *bool  `json:"cascade,omitempty" jsonschema:"(optional) Also delete application resources. Defaults to true."`
+	DryRun       bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, fetch the application and return what would be deleted without actually deleting it. Show the result to the user and ask for confirmation."`
+	Confirmed    bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the deletion. Set this after the user has approved the dry-run result."`
 }
 
 type ApplicationDeleteTool struct {
@@ -39,6 +42,26 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 	c, err := t.client(params.Instance)
 	if err != nil {
 		return "", err
+	}
+
+	if params.DryRun {
+		// Dry-run: fetch the application and return what would be deleted.
+		var projectFilter []string
+		if params.Project != "" {
+			projectFilter = []string{params.Project}
+		}
+		app, fetchErr := c.Application().Get(params.Name, &api.ApplicationGetOptions{
+			AppNamespace: params.AppNamespace,
+			Project:      projectFilter,
+		})
+		if fetchErr != nil {
+			return "", errors.Wrap(fetchErr, "failed to fetch application for dry-run")
+		}
+		data, marshalErr := json.Marshal(app)
+		if marshalErr != nil {
+			return "", errors.Wrap(marshalErr, "failed to marshal output")
+		}
+		return fmt.Sprintf(`{"dryRun": true, "wouldDelete": %s}`, string(data)), nil
 	}
 
 	if err := c.Application().Delete(params.Name, &api.ApplicationDeleteOptions{

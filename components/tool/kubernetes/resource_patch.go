@@ -1,0 +1,142 @@
+package kubernetes
+
+import (
+	"context"
+
+	"emperror.dev/errors"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+)
+
+const resourcePatchDescription = `
+** General Purpose **
+It patches any Kubernetes resource using strategic merge, JSON merge, or JSON patch.
+Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
+
+** Patch Types **
+- 'strategic': Strategic merge patch (default for most Kubernetes resources). Only specify the fields you want to change.
+- 'merge': JSON merge patch (RFC 7386). Replace the entire value at the given paths.
+- 'json': JSON patch (RFC 6902). Use operations like add, remove, replace, move, copy, test.
+
+** Safety **
+Always use dryRun=true first to validate the patch before applying.
+After reviewing the dry-run result, set confirmed=true to actually apply the patch.
+
+** Output **
+It returns the patched resource as a JSON object.
+`
+
+// ResourcePatchParams defines the parameters for the ResourcePatch function.
+type ResourcePatchParams struct {
+	Cluster    string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace  string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
+	ApiGroup   string `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource."`
+	ApiVersion string `json:"apiVersion" validate:"required" jsonschema:"(required) The API version."`
+	Resource   string `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase."`
+	Name       string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
+	PatchType  string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
+	Patch      string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`
+	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without patching."`
+	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute."`
+}
+
+// ResourcePatchTool patches any Kubernetes resource.
+type ResourcePatchTool struct {
+	*baseToolWithDynamic
+	tool.InvokableTool
+}
+
+// mapPatchType maps the string patch type to the Kubernetes PatchType constant.
+func mapPatchType(pt string) types.PatchType {
+	switch pt {
+	case "strategic":
+		return types.StrategicMergePatchType
+	case "merge":
+		return types.MergePatchType
+	case "json":
+		return types.JSONPatchType
+	default:
+		return types.StrategicMergePatchType
+	}
+}
+
+// Invoke executes the ResourcePatchTool with the given parameters.
+func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchParams) (result string, err error) {
+
+	if err := validate.Struct(params); err != nil {
+		return "", err
+	}
+
+	// Enforce safety gate: require confirmation for non-dry-run operations.
+	if !params.DryRun && !params.Confirmed {
+		return "", errors.New("confirmed must be true to execute (set dryRun=true first to preview)")
+	}
+
+	c, err := t.dynamicClient(params.Cluster)
+	if err != nil {
+		return "", err
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    params.ApiGroup,
+		Version:  params.ApiVersion,
+		Resource: params.Resource,
+	}
+
+	patchType := mapPatchType(params.PatchType)
+
+	opts := metav1.PatchOptions{}
+	if params.DryRun {
+		opts.DryRun = []string{metav1.DryRunAll}
+	}
+
+	patched, err := c.Resource(gvr).Namespace(params.Namespace).Patch(ctx, params.Name, patchType, []byte(params.Patch), opts)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to patch resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+	}
+
+	// Remove managedFields to reduce noise in the output.
+	unstructured.RemoveNestedField(patched.Object, "metadata", "managedFields")
+
+	data, err := json.Marshal(patched.Object)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to marshal patched resource")
+	}
+
+	return string(data), nil
+}
+
+// NewResourcePatchTool creates a new instance of the ResourcePatchTool.
+func NewResourcePatchTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
+
+	clients, err := BuildClientDynamics(configs, nil)
+	if err != nil {
+		return nil, err
+	}
+	base, err := newBaseTool(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	patchTool := &ResourcePatchTool{
+		baseToolWithDynamic: &baseToolWithDynamic{
+			baseTool: base,
+			dynamics: clients,
+		},
+	}
+
+	// Infer tool
+	t, err := utils.InferTool("kubernetes_resource_patch", resourcePatchDescription, patchTool.Invoke)
+	if err != nil {
+		return nil, err
+	}
+	patchTool.InvokableTool = t
+
+	return patchTool, nil
+}

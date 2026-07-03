@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"fmt"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -30,6 +31,8 @@ type ApplicationCreateParams struct {
 	DestServer     string `json:"destServer" validate:"required" jsonschema:"(required) Destination server name"`
 	DestNamespace  string `json:"destNamespace,omitempty" jsonschema:"(optional) Destination namespace."`
 	Upsert         bool   `json:"upsert,omitempty" jsonschema:"(optional) Update if application already exists."`
+	DryRun         bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the creation without making changes. Show the result to the user and ask for confirmation."`
+	Confirmed      bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the creation. Set this after the user has approved the dry-run result."`
 }
 
 type ApplicationCreateTool struct {
@@ -57,7 +60,8 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		targetRevision = "HEAD"
 	}
 
-	app, err := c.Application().Create(&api.ApplicationModel{
+	// Build the application model for dry-run preview.
+	appModel := &api.ApplicationModel{
 		Spec: api.ApplicationSpec{
 			Source: &api.ApplicationSource{
 				RepoURL:        params.RepoURL,
@@ -74,7 +78,18 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 			Name:      params.Name,
 			Namespace: params.AppNamespace,
 		},
-	}, &api.ApplicationCreateOptions{
+	}
+
+	if params.DryRun {
+		// Client-side dry-run: return the app model that would be created.
+		data, marshalErr := json.Marshal(appModel)
+		if marshalErr != nil {
+			return "", errors.Wrap(marshalErr, "failed to marshal output")
+		}
+		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": %s}`, string(data)), nil
+	}
+
+	app, err := c.Application().Create(appModel, &api.ApplicationCreateOptions{
 		Upsert:   &params.Upsert,
 		Validate: ptr.To(true),
 	})

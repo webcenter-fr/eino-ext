@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -46,6 +47,8 @@ type PodExecParams struct {
 	Command       []string `json:"command" validate:"required,min=1" jsonschema:"(required) The command to execute as an array of strings. Example: [\"ls\", \"-la\", \"/app\"]."`
 	MaxLines      int64    `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of output lines to return. Default to 100."`
 	FilterPattern string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. Only matching lines are returned. Example: 'error|panic'. Invalid regex returns an error."`
+	DryRun        bool     `json:"dryRun,omitempty" jsonschema:"(optional) Does not apply to exec; exec requires confirmed=true directly. Set this with caution."`
+	Confirmed     bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the command. Set this after ensuring the command is safe and read-only."`
 }
 
 // PodExecTool is a tool that executes a command in a specific pod in a specified Kubernetes cluster.
@@ -56,6 +59,8 @@ type PodExecTool struct {
 	streamable tool.StreamableTool
 	blocklist  []*regexp.Regexp
 }
+
+var _ *rest.Config // ensure import is not removed
 
 // defaultBlocklist contains regex patterns for destructive commands that are always blocked.
 // Uses word boundaries to catch variations like /bin/rm, ./rm, etc.
@@ -96,33 +101,49 @@ func compileBlocklist(patterns []string) ([]*regexp.Regexp, error) {
 	return result, nil
 }
 
-// validate validates the given PodExecParams and returns the clientset and rest config.
-func (t *PodExecTool) validate(params *PodExecParams) (*rest.Config, error) {
-	if params.MaxLines == 0 {
-		params.MaxLines = 100
-	}
-	if err := validate.Struct(params); err != nil {
-		return nil, err
-	}
-
-	config, err := t.base.restConfig(params.Cluster)
-	if err != nil {
-		return nil, err
-	}
-
-	cmdStr := strings.Join(params.Command, " ")
+// checkBlocklist validates the command against the configured blocklist patterns.
+func (t *PodExecTool) checkBlocklist(command []string) error {
+	cmdStr := strings.Join(command, " ")
 	for _, re := range t.blocklist {
 		if re.MatchString(cmdStr) {
-			return nil, errors.Errorf("command %q is blocked by security policy (matches blocklist pattern %q)", cmdStr, re.String())
+			return errors.Errorf("command %q is blocked by security policy (matches blocklist pattern %q)", cmdStr, re.String())
 		}
 	}
+	return nil
+}
 
-	return config, nil
+// dryRunPreview returns a human-readable preview of the exec command that would
+// be run, without actually executing it.
+func (t *PodExecTool) dryRunPreview(params *PodExecParams) string {
+	container := params.Container
+	if container == "" {
+		container = "(first container)"
+	}
+	return fmt.Sprintf(
+		`{"dryRun": true, "cluster": %q, "namespace": %q, "pod": %q, "container": %q, "command": %v}`,
+		params.Cluster, params.Namespace, params.Name, container, params.Command,
+	)
 }
 
 // Invoke executes a command in a pod and returns the output as a single string (non-streaming).
 func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string, error) {
-	config, err := t.validate(params)
+	// Validate params and check blocklist (applies to both dry-run and real exec).
+	if params.MaxLines == 0 {
+		params.MaxLines = 100
+	}
+	if err := validate.Struct(params); err != nil {
+		return "", err
+	}
+	if err := t.checkBlocklist(params.Command); err != nil {
+		return "", err
+	}
+
+	// Dry-run: return a preview without executing.
+	if params.DryRun {
+		return t.dryRunPreview(params), nil
+	}
+
+	config, err := t.base.restConfig(params.Cluster)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +210,26 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 
 // InvokeAsStream executes a command in a pod and returns the output line-by-line as a schema.StreamReader[string].
 func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams) (*schema.StreamReader[string], error) {
-	config, err := t.validate(params)
+	// Validate params and check blocklist (applies to both dry-run and real exec).
+	if params.MaxLines == 0 {
+		params.MaxLines = 100
+	}
+	if err := validate.Struct(params); err != nil {
+		return nil, err
+	}
+	if err := t.checkBlocklist(params.Command); err != nil {
+		return nil, err
+	}
+
+	// Dry-run: return a preview stream without executing.
+	if params.DryRun {
+		sr, sw := schema.Pipe[string](1)
+		sw.Send(t.dryRunPreview(params), nil)
+		sw.Close()
+		return sr, nil
+	}
+
+	config, err := t.base.restConfig(params.Cluster)
 	if err != nil {
 		return nil, err
 	}
