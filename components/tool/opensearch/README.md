@@ -4,7 +4,7 @@ An eino tool for retrieving Kubernetes pod logs from OpenSearch.
 
 ## Design
 
-- **OpenSearch client** — uses the official `opensearch-project/opensearch-go/v3`
+- **OpenSearch client** — uses `github.com/disaster37/opensearch/v4`
   client with sniffing and health checks disabled.
 - **Streaming** — implements both `tool.InvokableTool` and `tool.StreamableTool`
   for batch and streaming log retrieval.
@@ -14,13 +14,13 @@ An eino tool for retrieving Kubernetes pod logs from OpenSearch.
 
 ```go
 import (
-    "github.com/opensearch-project/opensearch-go/v3/opensearchapi/config"
+    "github.com/disaster37/opensearch/v3/config"
 
     "github.com/webcenter-fr/eino-ext/components/tool/opensearch"
 )
 
 cfg := config.Config{
-    Addresses: []string{"https://opensearch.example.com:9200"},
+    URLs: []string{"https://opensearch.example.com:9200"},
     Username:  "admin",
     Password:  os.Getenv("OPENSEARCH_PASSWORD"),
 }

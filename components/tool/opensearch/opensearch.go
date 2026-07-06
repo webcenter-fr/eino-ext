@@ -1,18 +1,31 @@
 package opensearch
 
 import (
-	"github.com/disaster37/opensearch/v3"
+	"fmt"
+
+	opensearchv4 "github.com/disaster37/opensearch/v4"
 	"github.com/disaster37/opensearch/v3/config"
-	"k8s.io/utils/ptr"
+	"github.com/sirupsen/logrus"
 )
 
-// NewClient creates a new OpenSearch client using the provided configuration. It sets the Sniff and Healthcheck options to false, and returns the initialized client or an error if the client creation fails.
-func NewClient(cfg *config.Config) (*opensearch.Client, error) {
+// NewClient creates a new OpenSearch v4 client using the provided v3-compatible configuration.
+// It maps the v3 config.Config fields to the v4 opensearch.Config struct, creates a logger,
+// and returns the initialized client or an error if the client creation fails.
+func NewClient(cfg *config.Config) (opensearchv4.Client, error) {
+	if len(cfg.URLs) == 0 {
+		return nil, fmt.Errorf("no URLs provided in config")
+	}
 
-	cfg.Sniff = ptr.To(false)
-	cfg.Healthcheck = ptr.To(false)
+	opensearchCfg := &opensearchv4.Config{
+		URL:          cfg.URLs[0],
+		Username:     cfg.Username,
+		Password:     cfg.Password,
+		TLSSkipVerify: false,
+	}
 
-	es, err := opensearch.NewClientFromConfig(cfg)
+	logger := logrus.NewEntry(logrus.StandardLogger())
+
+	es, err := opensearchv4.New(opensearchCfg, logger)
 	if err != nil {
 		return nil, err
 	}

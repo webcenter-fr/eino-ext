@@ -10,8 +10,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/disaster37/opensearch/v3"
 	"github.com/disaster37/opensearch/v3/config"
+	opensearchv4 "github.com/disaster37/opensearch/v4"
+	opensearchv4api "github.com/disaster37/opensearch/v4/api"
+	"github.com/disaster37/opensearch/v4/querydsl"
 	"github.com/sirupsen/logrus"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
@@ -46,7 +48,7 @@ type OpensearchLogKubernetesParams struct {
 type OpensearchLogKubernetesTool struct {
 	tool.InvokableTool
 	tool.StreamableTool
-	client *opensearch.Client
+	client opensearchv4.Client
 }
 
 // applyDefaults applies the default values to the optional parameters when they are not set.
@@ -62,61 +64,15 @@ func (params *OpensearchLogKubernetesParams) applyDefaults() {
 	}
 }
 
-// Invoke executes the OpensearchLogKubernetesTool with the given parameters. It validates the parameters, builds an OpenSearch query, executes the search, and returns the logs as a single string.
-func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *OpensearchLogKubernetesParams) (result string, err error) {
-
-	ctx = t.ensureTimeout(ctx)
-	params.applyDefaults()
-	if err := validate.Struct(params); err != nil {
-		return "", err
-	}
-	if params.PodName == "" && params.ContainerName == "" {
-		return "", errors.New("at least one of podName or containerName must be provided")
+// runSearch validates parameters, builds the OpenSearch query, executes the search,
+// and returns the raw search result. It is shared by Invoke and InvokeAsStream.
+func (t *OpensearchLogKubernetesTool) runSearch(ctx context.Context, params *OpensearchLogKubernetesParams) (*querydsl.SearchResult, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultOpensearchTimeout)
+		defer cancel()
 	}
 
-	boolQuery := t.buildQuery(params)
-	if boolQuery == nil {
-		return "", errors.New("at least one of podName or containerName must be provided")
-	}
-
-	res, err := t.client.Search().
-		Query(boolQuery).
-		Sort("@timestamp", false).
-		Size(int(params.MaxLines)).
-		Fields("event.original").
-		FetchSource(false).
-		TrackTotalHits(true).
-		Do(ctx)
-
-	if err != nil {
-		return "", errors.Wrap(err, "failed to search logs in Opensearch")
-	}
-
-	if len(res.Hits.Hits) == 0 {
-		logrus.Debug("No result found")
-		return "No result found", nil
-	}
-
-	logs := make([]string, 0, len(res.Hits.Hits))
-
-	logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
-	logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
-	for _, hit := range res.Hits.Hits {
-		if v, ok := hit.Fields["event.original"]; ok {
-			if s := fieldAsString(v); s != "" {
-				logs = append(logs, s)
-			}
-		}
-	}
-	logs = append(logs, fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))))
-
-	return strings.Join(logs, "\n"), nil
-}
-
-// InvokeAsStream executes the OpensearchLogKubernetesTool with the given parameters and streams the logs line-by-line as a schema.StreamReader[string].
-func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params *OpensearchLogKubernetesParams) (stream *schema.StreamReader[string], err error) {
-
-	ctx = t.ensureTimeout(ctx)
 	params.applyDefaults()
 	if err := validate.Struct(params); err != nil {
 		return nil, err
@@ -130,17 +86,63 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 		return nil, errors.New("at least one of podName or containerName must be provided")
 	}
 
-	res, err := t.client.Search().
+	searchReq := querydsl.NewSearchRequest().
 		Query(boolQuery).
 		Sort("@timestamp", false).
 		Size(int(params.MaxLines)).
-		Fields("event.original").
+		DocValueFields("event.original").
 		FetchSource(false).
-		TrackTotalHits(true).
-		Do(ctx)
+		TrackTotalHits(true)
 
+	searchRes, err := t.client.Search().Search(ctx, &opensearchv4api.SearchRequest{
+		Indices: []string{"*"},
+		Body:    searchReq,
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to search logs in Opensearch")
+	}
+
+	return searchRes, nil
+}
+
+// Invoke executes the OpensearchLogKubernetesTool with the given parameters. It validates the parameters, builds an OpenSearch query, executes the search, and returns the logs as a single string.
+func (t *OpensearchLogKubernetesTool) Invoke(ctx context.Context, params *OpensearchLogKubernetesParams) (result string, err error) {
+	searchRes, err := t.runSearch(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	if searchRes == nil || searchRes.Hits == nil || len(searchRes.Hits.Hits) == 0 {
+		logrus.Debug("No result found")
+		return "No result found", nil
+	}
+
+	logs := make([]string, 0, len(searchRes.Hits.Hits))
+
+	var totalHits int64
+	if searchRes.Hits.TotalHits != nil {
+		totalHits = searchRes.Hits.TotalHits.Value
+	}
+
+	logrus.Debugf("Total log available %d logs", totalHits)
+	logrus.Debugf("Retrieved %d logs", len(searchRes.Hits.Hits))
+	for _, hit := range searchRes.Hits.Hits {
+		if v, ok := hit.Fields["event.original"]; ok {
+			if s := fieldAsString(v); s != "" {
+				logs = append(logs, s)
+			}
+		}
+	}
+	logs = append(logs, fmt.Sprintf("---\nStay %d logs to retrieve", totalHits-int64(len(searchRes.Hits.Hits))))
+
+	return strings.Join(logs, "\n"), nil
+}
+
+// InvokeAsStream executes the OpensearchLogKubernetesTool with the given parameters and streams the logs line-by-line as a schema.StreamReader[string].
+func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params *OpensearchLogKubernetesParams) (stream *schema.StreamReader[string], err error) {
+	searchRes, err := t.runSearch(ctx, params)
+	if err != nil {
+		return nil, err
 	}
 
 	sr, sw := schema.Pipe[string](100)
@@ -148,15 +150,20 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 	go func() {
 		defer sw.Close()
 
-		if len(res.Hits.Hits) == 0 {
+		if searchRes == nil || searchRes.Hits == nil || len(searchRes.Hits.Hits) == 0 {
 			logrus.Debug("No result found")
 			sw.Send("No result found", nil)
 			return
 		}
 
-		logrus.Debugf("Total log available %d logs", res.Hits.TotalHits.Value)
-		logrus.Debugf("Retrieved %d logs", len(res.Hits.Hits))
-		for _, hit := range res.Hits.Hits {
+		var totalHits int64
+		if searchRes.Hits.TotalHits != nil {
+			totalHits = searchRes.Hits.TotalHits.Value
+		}
+
+		logrus.Debugf("Total log available %d logs", totalHits)
+		logrus.Debugf("Retrieved %d logs", len(searchRes.Hits.Hits))
+		for _, hit := range searchRes.Hits.Hits {
 			if v, ok := hit.Fields["event.original"]; ok {
 				if s := fieldAsString(v); s != "" {
 					sw.Send(s, nil)
@@ -164,45 +171,33 @@ func (t *OpensearchLogKubernetesTool) InvokeAsStream(ctx context.Context, params
 			}
 		}
 
-		sw.Send(fmt.Sprintf("---\nStay %d logs to retrieve", res.Hits.TotalHits.Value-int64(len(res.Hits.Hits))), nil)
+		sw.Send(fmt.Sprintf("---\nStay %d logs to retrieve", totalHits-int64(len(searchRes.Hits.Hits))), nil)
 	}()
 
 	return sr, nil
 }
 
 // buildQuery builds the OpenSearch bool query from the given parameters.
-func (t *OpensearchLogKubernetesTool) buildQuery(params *OpensearchLogKubernetesParams) opensearch.Query {
-	boolQuery := opensearch.NewBoolQuery()
-	boolQuery.Must(opensearch.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
-	boolQuery.Must(opensearch.NewTermQuery("labels.cluster", params.Cluster))
-	boolQuery.Must(opensearch.NewTermQuery("kubernetes.namespace", params.Namespace))
+func (t *OpensearchLogKubernetesTool) buildQuery(params *OpensearchLogKubernetesParams) querydsl.Query {
+	boolQuery := querydsl.NewBoolQuery()
+	boolQuery.Must(querydsl.NewRangeQuery("@timestamp").Gte(params.From).Lte(params.To))
+	boolQuery.Must(querydsl.NewTermQuery("labels.cluster", params.Cluster))
+	boolQuery.Must(querydsl.NewTermQuery("kubernetes.namespace", params.Namespace))
 	if params.PodName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.pod.name", params.PodName))
+		boolQuery.Must(querydsl.NewTermQuery("kubernetes.pod.name", params.PodName))
 	}
 	if params.ContainerName != "" {
-		boolQuery.Must(opensearch.NewTermQuery("kubernetes.container.name", params.ContainerName))
+		boolQuery.Must(querydsl.NewTermQuery("kubernetes.container.name", params.ContainerName))
 	}
 	if params.LuceneQuery == "" {
 		params.LuceneQuery = "*"
 	}
-	stringQuery := opensearch.NewQueryStringQuery(params.LuceneQuery).AnalyzeWildcard(true)
+	stringQuery := querydsl.NewQueryStringQuery(params.LuceneQuery).WithAnalyzeWildcard(true)
 	boolQuery.Must(stringQuery)
 	return boolQuery
 }
 
 const defaultOpensearchTimeout = 30 * time.Second
-
-func (t *OpensearchLogKubernetesTool) ensureTimeout(ctx context.Context) context.Context {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultOpensearchTimeout)
-		go func() {
-			<-ctx.Done()
-			cancel()
-		}()
-	}
-	return ctx
-}
 
 // fieldAsString extracts a string value from an OpenSearch field, which may be
 // returned as a plain string or as a []interface{} slice (the common wire format).

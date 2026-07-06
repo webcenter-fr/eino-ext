@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/disaster37/opensearch/v3"
+	"github.com/disaster37/opensearch/v4/querydsl"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -228,6 +228,6 @@ func TestBuildQueryReturnsValidQuery(t *testing.T) {
 	_, err := query.Source()
 	assert.NoError(t, err)
 
-	_, ok := query.(*opensearch.BoolQuery)
+	_, ok := query.(*querydsl.BoolQuery)
 	assert.True(t, ok)
 }
