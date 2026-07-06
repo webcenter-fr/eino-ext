@@ -47,7 +47,7 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 
 	cluster, err := c.Cluster().Get("", &api.ClusterQueryOptions{Name: params.Name})
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to get cluster")
 	}
 	// Direct Name field shadows embedded ObjectMeta.Name, copy it over
 	cluster.ObjectMeta.Name = cluster.Name

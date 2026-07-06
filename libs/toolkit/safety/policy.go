@@ -26,6 +26,8 @@ type CELRule struct {
 	Expression string
 	// ToolNames restricts this rule to specific tools. If empty, applies to all tools.
 	ToolNames []string
+
+	program cel.Program
 }
 
 // CELPolicy evaluates CEL expressions against tool parameters.
@@ -51,11 +53,16 @@ func NewCELPolicy(rules []CELRule) (*CELPolicy, error) {
 	}
 
 		// Pre-compile all expressions to validate them at construction time.
-	for _, rule := range rules {
-		_, iss := env.Compile(rule.Expression)
+	for i, rule := range rules {
+		ast, iss := env.Compile(rule.Expression)
 		if iss.Err() != nil {
 			return nil, errors.Wrapf(iss.Err(), "failed to compile CEL rule %q", rule.Name)
 		}
+		prog, err := env.Program(ast)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create program for CEL rule %q", rule.Name)
+		}
+		rules[i].program = prog
 	}
 
 	return &CELPolicy{rules: rules, env: env}, nil
@@ -79,17 +86,7 @@ func (p *CELPolicy) Evaluate(_ context.Context, toolName string, params map[stri
 			continue
 		}
 
-		ast, iss := p.env.Compile(rule.Expression)
-		if iss.Err() != nil {
-			return errors.Wrapf(iss.Err(), "CEL rule %q compilation error", rule.Name)
-		}
-
-		prog, err := p.env.Program(ast)
-		if err != nil {
-			return errors.Wrapf(err, "CEL rule %q program error", rule.Name)
-		}
-
-		out, _, err := prog.Eval(activation)
+		out, _, err := rule.program.Eval(activation)
 		if err != nil {
 			return errors.Wrapf(err, "CEL rule %q evaluation error", rule.Name)
 		}

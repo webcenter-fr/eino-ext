@@ -1,11 +1,15 @@
 package marshal
 
-import "github.com/goccy/go-json"
+import (
+	"fmt"
+
+	"github.com/goccy/go-json"
+)
 
 func MustMarshal(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("marshal.MustMarshal(%T): %v", v, err))
 	}
 	return b
 }

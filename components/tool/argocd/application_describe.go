@@ -50,7 +50,7 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 
 	app, err := c.Application().Get(params.Name, &api.ApplicationGetOptions{
 		AppNamespace: params.AppNamespace,
-		Project:      []string{params.Project},
+		Project:      projectFilter(params.Project),
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get application")

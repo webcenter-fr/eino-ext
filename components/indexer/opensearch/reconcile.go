@@ -81,7 +81,10 @@ func LookupSourceHash(ctx context.Context, client opensearch.Client, index, sour
 	if err = json.Unmarshal(result.Hits.Hits[0].Source, &src); err != nil {
 		return "", false, errors.Wrap(err, "failed to decode existing source hit")
 	}
-	hash, _ = src[o.sourceHashField].(string)
+	hash, ok := src[o.sourceHashField].(string)
+	if !ok {
+		return "", true, errors.Errorf("source_hash field %q is not a string: %T", o.sourceHashField, src[o.sourceHashField])
+	}
 	return hash, true, nil
 }
 
@@ -128,7 +131,6 @@ func BulkLookupSourceHashes(ctx context.Context, client opensearch.Client, index
 			shash, _ := src[o.sourceHashField].(string)
 			hashes[sid] = shash
 		}
-		scrollID = result.ScrollId
 		result, err = client.Search().Scroll(ctx, &api.ScrollRequest{ScrollId: scrollID, KeepAlive: reconcileScrollKeepAlive})
 		if err != nil {
 			return hashes, errors.Wrap(err, "failed to continue bulk source_hash scroll")
@@ -210,7 +212,6 @@ func Reconcile(ctx context.Context, client opensearch.Client, index string, seen
 			}
 			toDelete = append(toDelete, sid)
 		}
-		scrollID = result.ScrollId
 		result, err = client.Search().Scroll(ctx, &api.ScrollRequest{ScrollId: scrollID, KeepAlive: reconcileScrollKeepAlive})
 		if err != nil {
 			return deleted, errors.Wrap(err, "failed to continue reconciliation scroll")

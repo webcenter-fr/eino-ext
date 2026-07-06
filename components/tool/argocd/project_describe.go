@@ -48,7 +48,7 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 
 	project, err := c.Project().Get(params.Name)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to get project")
 	}
 
 	output := &ProjectDescribeOutput{

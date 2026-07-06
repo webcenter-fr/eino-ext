@@ -38,7 +38,7 @@ type DocumentToFields func(ctx context.Context, doc *schema.Document) (map[strin
 // Config configures the OpenSearch indexer.
 type Config struct {
 	// URLs is the list of OpenSearch cluster URLs.
-	URLs []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
+	URLs []string `validate:"required,min=1,dive,required" jsonschema:"description=OpenSearch cluster URLs"`
 
 	// Username for basic authentication.
 	Username string `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
@@ -111,6 +111,7 @@ func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 		Username:      config.Username,
 		Password:      config.Password,
 		TLSSkipVerify: config.TLSSkipVerify,
+		Timeout:       30 * time.Second,
 	}
 
 	logger := logrus.NewEntry(logrus.StandardLogger())
@@ -123,11 +124,12 @@ func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 	if mapper == nil {
 		mapper = defaultDocumentToFields(config.ContentField)
 	}
-	config.DocumentToFields = mapper
+	configCopy := *config
+	configCopy.DocumentToFields = mapper
 
 	return &Indexer{
 		client: client,
-		config: *config,
+		config: configCopy,
 	}, nil
 }
 
@@ -208,6 +210,11 @@ func (i *Indexer) bulkStore(ctx context.Context, targetIndex string, docs []*sch
 // storeBatch embeds a single batch (when Embedding is configured) and sends
 // it to OpenSearch via one bulk request.
 func (i *Indexer) storeBatch(ctx context.Context, targetIndex string, batch []*schema.Document, options *indexer.Options) ([]string, error) {
+	for _, doc := range batch {
+		if doc == nil {
+			return nil, errors.New("cannot index a nil document")
+		}
+	}
 	vectors, err := i.embedBatch(ctx, batch, options.Embedding)
 	if err != nil {
 		return nil, err

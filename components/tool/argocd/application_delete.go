@@ -64,6 +64,10 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 		return fmt.Sprintf(`{"dryRun": true, "wouldDelete": %s}`, string(data)), nil
 	}
 
+	if !params.Confirmed {
+		return "", errors.Errorf("delete aborted: Confirmed must be true. Use DryRun first to preview, then set Confirmed=true to proceed.")
+	}
+
 	if err := c.Application().Delete(params.Name, &api.ApplicationDeleteOptions{
 		AppNamespace: params.AppNamespace,
 		Project:      params.Project,

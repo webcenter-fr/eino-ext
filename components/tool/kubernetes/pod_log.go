@@ -12,6 +12,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const podLogDescription = `
@@ -98,6 +99,11 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 		return nil, err
 	}
 
+	re, err := filter.Compile(params.FilterPattern)
+	if err != nil {
+		return nil, err
+	}
+
 	c, err := t.base.clientset(params.Cluster)
 	if err != nil {
 		return nil, err
@@ -111,11 +117,6 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get pod logs")
-	}
-
-	re, err := filter.Compile(params.FilterPattern)
-	if err != nil {
-		return nil, err
 	}
 
 	sr, sw := schema.Pipe[string](100)
@@ -166,6 +167,7 @@ func NewPodLogTool(ctx context.Context, configs Configs) (*PodLogTool, error) {
 		base: &baseTool{
 			configs:       configs,
 			clientsets:    clientsets,
+			clients:       make(map[string]client.Client),
 			knownClusters: configs.GetClusterNames(),
 		},
 	}

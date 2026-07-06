@@ -127,3 +127,19 @@ func NewAllToolsWithSafety(ctx context.Context, configs Configs, safetyCfg *safe
 
 	return tools, mw, nil
 }
+
+var (
+	_ tool.InvokableTool = (*ApplicationCreateTool)(nil)
+	_ tool.InvokableTool = (*ApplicationDeleteTool)(nil)
+	_ tool.InvokableTool = (*ApplicationSyncTool)(nil)
+	_ tool.InvokableTool = (*ApplicationDescribeTool)(nil)
+	_ tool.InvokableTool = (*ApplicationListTool)(nil)
+	_ tool.InvokableTool = (*ClusterDescribeTool)(nil)
+	_ tool.InvokableTool = (*ClusterListTool)(nil)
+	_ tool.InvokableTool = (*ProjectDescribeTool)(nil)
+	_ tool.InvokableTool = (*ProjectListTool)(nil)
+	_ tool.InvokableTool = (*RepositoryDescribeTool)(nil)
+	_ tool.InvokableTool = (*RepositoryListTool)(nil)
+	_ tool.InvokableTool = (*CertificateListTool)(nil)
+	_ tool.InvokableTool = (*InstanceListTool)(nil)
+)

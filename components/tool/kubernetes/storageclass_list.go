@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
+	marshal "github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	storagev1 "k8s.io/api/storage/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -40,11 +41,7 @@ func (h *StorageClassListOutput ) ToJSON(o *storagev1.StorageClass) json.RawMess
 	output.IsDefault = o.Annotations["storageclass.kubernetes.io/is-default-class"] == "true"
 	output.Provisioner = o.Provisioner
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		panic(err)
-	}
-	return data
+	return json.RawMessage(marshal.MustMarshal(output))
 }
 
 // NewStorageClassListTool creates a new instance of the StorageClassListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.

@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const podExecDescription = `
@@ -45,9 +46,8 @@ type PodExecParams struct {
 	Name          string   `json:"name" validate:"required" jsonschema:"(required) The pod name."`
 	Container     string   `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, the command will be executed in the first container."`
 	Command       []string `json:"command" validate:"required,min=1" jsonschema:"(required) The command to execute as an array of strings. Example: [\"ls\", \"-la\", \"/app\"]."`
-	MaxLines      int64    `json:"maxLines,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The maximum number of output lines to return. Default to 100."`
 	FilterPattern string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. Only matching lines are returned. Example: 'error|panic'. Invalid regex returns an error."`
-	DryRun        bool     `json:"dryRun,omitempty" jsonschema:"(optional) Does not apply to exec; exec requires confirmed=true directly. Set this with caution."`
+	DryRun        bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the command without executing it. Show the result to the user and ask for confirmation."`
 	Confirmed     bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the command. Set this after ensuring the command is safe and read-only."`
 }
 
@@ -75,10 +75,14 @@ var defaultBlocklist = []string{
 	`\bhalt\b`,
 	`\bpoweroff\b`,
 	`\bdd\b`,
-	`\bmkfs\b`,
+	`\bmkfs\w*`,
 	`\bmkswap\b`,
-	`\bchmod\s+.*-R\s+/`,
-	`\bchown\s+.*-R\s+/`,
+	`\bmount\b`,
+	`\bumount\b`,
+	`\bswapon\b`,
+	`\bswapoff\b`,
+	`\bchmod\s+.*(--recursive|-R)\s+/`,
+	`\bchown\s+.*(--recursive|-R)\s+/`,
 	`\bchroot\b`,
 	`\binsmod\b`,
 	`\bmodprobe\b`,
@@ -128,9 +132,6 @@ func (t *PodExecTool) dryRunPreview(params *PodExecParams) string {
 // Invoke executes a command in a pod and returns the output as a single string (non-streaming).
 func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string, error) {
 	// Validate params and check blocklist (applies to both dry-run and real exec).
-	if params.MaxLines == 0 {
-		params.MaxLines = 100
-	}
 	if err := validate.Struct(params); err != nil {
 		return "", err
 	}
@@ -141,6 +142,10 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 	// Dry-run: return a preview without executing.
 	if params.DryRun {
 		return t.dryRunPreview(params), nil
+	}
+
+	if !params.Confirmed {
+		return "", errors.New("confirmed must be true to execute a command in a pod (set dryRun=true first to preview)")
 	}
 
 	config, err := t.base.restConfig(params.Cluster)
@@ -211,9 +216,6 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 // InvokeAsStream executes a command in a pod and returns the output line-by-line as a schema.StreamReader[string].
 func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams) (*schema.StreamReader[string], error) {
 	// Validate params and check blocklist (applies to both dry-run and real exec).
-	if params.MaxLines == 0 {
-		params.MaxLines = 100
-	}
 	if err := validate.Struct(params); err != nil {
 		return nil, err
 	}
@@ -227,6 +229,10 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		sw.Send(t.dryRunPreview(params), nil)
 		sw.Close()
 		return sr, nil
+	}
+
+	if !params.Confirmed {
+		return nil, errors.New("confirmed must be true to execute a command in a pod (set dryRun=true first to preview)")
 	}
 
 	config, err := t.base.restConfig(params.Cluster)
@@ -269,8 +275,6 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 	stderrR, stderrW := io.Pipe()
 
 	go func() {
-		defer stdoutW.Close()
-		defer stderrW.Close()
 		execErr := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 			Stdin:  nil,
 			Stdout: stdoutW,
@@ -278,8 +282,11 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 			Tty:    false,
 		})
 		if execErr != nil {
-			stdoutW.CloseWithError(execErr)
-			stderrW.CloseWithError(execErr)
+			_ = stdoutW.CloseWithError(execErr)
+			_ = stderrW.CloseWithError(execErr)
+		} else {
+			_ = stdoutW.Close()
+			_ = stderrW.Close()
 		}
 	}()
 
@@ -343,6 +350,7 @@ func NewPodExecTool(ctx context.Context, configs Configs) (*PodExecTool, error) 
 		base: &baseTool{
 			configs:       configs,
 			clientsets:    clientsets,
+			clients:       make(map[string]client.Client),
 			knownClusters: configs.GetClusterNames(),
 		},
 		blocklist: bl,

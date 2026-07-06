@@ -65,7 +65,7 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 
 	resp, err := c.Application().List(&api.ApplicationListOptions{
 		Selector:     params.Selector,
-		Project:      []string{params.Project},
+		Project:      projectFilter(params.Project),
 		AppNamespace: params.AppNamespace,
 	})
 	if err != nil {

@@ -89,12 +89,16 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": %s}`, string(data)), nil
 	}
 
+	if !params.Confirmed {
+		return "", errors.Errorf("create aborted: Confirmed must be true. Use DryRun first to preview, then set Confirmed=true to proceed.")
+	}
+
 	app, err := c.Application().Create(appModel, &api.ApplicationCreateOptions{
 		Upsert:   &params.Upsert,
 		Validate: ptr.To(true),
 	})
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to create application")
 	}
 
 	data, err := json.Marshal(app)

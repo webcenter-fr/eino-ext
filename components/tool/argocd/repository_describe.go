@@ -57,7 +57,7 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 
 	repository, err := c.Repository().Get(params.Name, &api.RepositoryQueryOptions{})
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to get repository")
 	}
 	// Direct Name field shadows embedded ObjectMeta.Name, copy it over
 	repository.ObjectMeta.Name = repository.Name

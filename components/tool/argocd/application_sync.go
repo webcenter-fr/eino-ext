@@ -44,6 +44,10 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 		return "", err
 	}
 
+	if !params.Confirmed {
+		return "", errors.Errorf("sync aborted: Confirmed must be true. Use DryRun first to preview, then set Confirmed=true to proceed.")
+	}
+
 	if err := c.Application().Sync(params.Name, &api.SyncOptions{
 		Revision:     params.Revision,
 		Prune:        params.Prune,

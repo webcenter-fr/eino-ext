@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
+	marshal "github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -32,11 +33,7 @@ func (h *ConfigMapListOutput ) ToJSON(o *corev1.ConfigMap) json.RawMessage {
 	output.Name = o.Name
 	output.Namespace = o.Namespace
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		panic(err)
-	}
-	return data
+	return json.RawMessage(marshal.MustMarshal(output))
 }
 
 // NewConfigMapListTool creates a new instance of the ConfigMapListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.

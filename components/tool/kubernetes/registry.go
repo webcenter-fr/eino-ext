@@ -176,3 +176,17 @@ func NewAllToolsWithSafety(ctx context.Context, configs Configs, scheme *runtime
 
 	return tools, mw, nil
 }
+
+var (
+	_ tool.InvokableTool = (*ClusterListTool)(nil)
+	_ tool.InvokableTool = (*PodLogTool)(nil)
+	_ tool.InvokableTool = (*PodExecTool)(nil)
+	_ tool.InvokableTool = (*ResourceListTool)(nil)
+	_ tool.InvokableTool = (*ResourceCreateTool)(nil)
+	_ tool.InvokableTool = (*ResourceApplyTool)(nil)
+	_ tool.InvokableTool = (*ResourceDeleteTool)(nil)
+	_ tool.InvokableTool = (*ResourcePatchTool)(nil)
+	_ tool.InvokableTool = (*ResourceDescribeTool)(nil)
+	_ tool.StreamableTool = (*PodExecTool)(nil)
+	_ tool.StreamableTool = (*PodLogTool)(nil)
+)

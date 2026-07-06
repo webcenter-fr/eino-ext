@@ -36,6 +36,9 @@ func BuildClients(configs Configs, s *runtime.Scheme) (clients map[string]client
 	clients = make(map[string]client.Client)
 
 	for clusterName, config := range configs {
+		if config == nil {
+			return nil, errors.Errorf("config for cluster %q is nil", clusterName)
+		}
 		client, err := NewClient(config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for cluster %s", clusterName)

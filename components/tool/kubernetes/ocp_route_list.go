@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
+	marshal "github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	routev1 "github.com/openshift/api/route/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -43,11 +44,7 @@ func (h *OcpRouteListOutput ) ToJSON(o *routev1.Route) json.RawMessage {
 		output.TLS = true
 	}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		panic(err)
-	}
-	return data
+	return json.RawMessage(marshal.MustMarshal(output))
 }
 
 // NewOcpRouteListTool creates a new instance of the OcpRouteListTool. It takes a context and a Configs object as parameters, builds Kubernetes clients for the provided configurations, and infers the tool using the description and invoke function. It returns the invokable tool or an error if any step fails.

@@ -90,7 +90,7 @@ func (t *ToolTestSuite) TestApplicationSync() {
 	_, err = syncTool.Info(ctx)
 	assert.NoError(t.T(), err)
 
-	syncResult, err := syncTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app"}`)
+	syncResult, err := syncTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "confirmed": true}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), syncResult)
 	assert.Contains(t.T(), syncResult, "my-app")
@@ -108,7 +108,7 @@ func (t *ToolTestSuite) TestApplicationCreate() {
 	_, err = createTool.Info(ctx)
 	assert.NoError(t.T(), err)
 
-	createResult, err := createTool.InvokableRun(ctx, fmt.Sprintf(`{"instance": "test", "name": "my-new-app", "repoURL": "https://git.example.com/repo", "destServer": "%s"}`, "https://kubernetes.default.svc"))
+	createResult, err := createTool.InvokableRun(ctx, fmt.Sprintf(`{"instance": "test", "name": "my-new-app", "repoURL": "https://git.example.com/repo", "destServer": "%s", "confirmed": true}`, "https://kubernetes.default.svc"))
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), createResult)
 	assert.Contains(t.T(), createResult, "my-new-app")
@@ -126,7 +126,7 @@ func (t *ToolTestSuite) TestApplicationDelete() {
 	_, err = deleteTool.Info(ctx)
 	assert.NoError(t.T(), err)
 
-	deleteResult, err := deleteTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app"}`)
+	deleteResult, err := deleteTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "confirmed": true}`)
 	assert.NoError(t.T(), err)
 	assert.Contains(t.T(), deleteResult, "deleted successfully")
 
