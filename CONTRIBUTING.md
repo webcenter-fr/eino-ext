@@ -92,6 +92,25 @@ this project:
   wrapping, and `github.com/go-playground/validator/v10` for validation.
 - Add tests alongside the implementation and a `README.md` per component.
 
+## License Headers
+
+Do **NOT** add license banner comments to source files. The repository already
+has a `LICENSE` file at the root, which covers all code. Duplicating it in every
+file adds noise and maintenance overhead with no legal benefit.
+
+```go
+// DO NOT do this:
+/*
+ * Copyright 2025 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * ...
+ */
+
+// Just start with the package declaration:
+package mypackage
+```
+
 ## Validation
 
 Before opening a pull request:
