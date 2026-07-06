@@ -26,6 +26,9 @@ type Bus interface {
 	// events follow. The returned func unsubscribes and releases resources; it is
 	// idempotent. The channel is closed on unsubscribe or Bus.Close.
 	Subscribe(ctx context.Context, sessionID, lastEventID string) (<-chan Event, func())
+	// Replay returns all buffered events for sessionID. It returns an error if the
+	// session does not exist.
+	Replay(sessionID string) ([]Event, error)
 	// Close tears down the Bus and closes every subscriber channel.
 	Close() error
 }
@@ -298,6 +301,18 @@ func (b *memBus) HasSubscribers(sessionID string) bool {
 	defer b.mu.RUnlock()
 	st := b.sessions[sessionID]
 	return st != nil && len(st.subs) > 0
+}
+
+func (b *memBus) Replay(sessionID string) ([]Event, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	st := b.sessions[sessionID]
+	if st == nil {
+		return nil, errors.New("session not found")
+	}
+	events := make([]Event, len(st.ring))
+	copy(events, st.ring)
+	return events, nil
 }
 
 func (b *memBus) Close() error {

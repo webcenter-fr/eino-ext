@@ -62,6 +62,9 @@ const (
 	TypeCompactionStarted Type = "compaction.started"
 	TypeCompactionDelta   Type = "compaction.delta"
 	TypeCompactionEnded   Type = "compaction.ended"
+
+	// Session.
+	TypeSessionEnded Type = "session.ended"
 )
 
 // Event is the transport-agnostic envelope published on the Bus. Data carries one
@@ -240,6 +243,14 @@ type CompactionDelta struct {
 // CompactionEnded carries the final compaction output.
 type CompactionEnded struct {
 	Text string `json:"text"`
+}
+
+// SessionEnded marks the end of a session with duration, cost, and usage statistics.
+type SessionEnded struct {
+	Duration time.Duration `json:"duration"`
+	Cost     float64       `json:"cost"`
+	Steps    int           `json:"steps"`
+	Tools    int           `json:"tools"`
 }
 
 // MarshalSSEData renders the JSON body written after the SSE "data:" field for an

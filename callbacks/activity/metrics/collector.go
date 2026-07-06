@@ -11,6 +11,7 @@ import (
 	"context"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 )
@@ -26,13 +27,42 @@ import (
 // name before it reaches StepStarted.Model, or cardinality will grow
 // unbounded.
 type Collector struct {
-	tokens *prometheus.CounterVec
-	cost   *prometheus.CounterVec
+	tokens     *prometheus.CounterVec
+	cost       *prometheus.CounterVec
+	reg        prometheus.Registerer
+	costSaver  *CostSaverCollector
+	summarizer *activity.SessionSummarizer
+	analyzer   *activity.CompositeComplexityAnalyzer
+}
+
+// CostSaverConfig configures the cost saver feature.
+type CostSaverConfig struct {
+	Enabled        bool                                `json:"enabled"`
+	AnalyzerConfig *activity.ComplexityAnalyzerConfig `json:"analyzer_config"`
+}
+
+// Option configures a Collector.
+type Option func(*Collector)
+
+// WithCostSaver enables the cost saver feature with the given configuration.
+func WithCostSaver(cfg CostSaverConfig, bus activity.Bus) Option {
+	return func(c *Collector) {
+		if cfg.Enabled && cfg.AnalyzerConfig != nil {
+			costSaver, err := NewCostSaverCollector(c.reg)
+			if err != nil {
+				logrus.WithError(err).Warn("metrics: failed to create cost saver collector")
+				return
+			}
+			c.costSaver = costSaver
+			c.summarizer = activity.NewSessionSummarizer(bus)
+			c.analyzer = activity.NewCompositeComplexityAnalyzer(*cfg.AnalyzerConfig)
+		}
+	}
 }
 
 // NewCollector creates a Collector and registers its metrics on reg. It
 // returns an error if registration fails (e.g. duplicate registration).
-func NewCollector(reg prometheus.Registerer) (*Collector, error) {
+func NewCollector(reg prometheus.Registerer, opts ...Option) (*Collector, error) {
 	c := &Collector{
 		tokens: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "llm_tokens_total",
@@ -42,12 +72,16 @@ func NewCollector(reg prometheus.Registerer) (*Collector, error) {
 			Name: "llm_cost_usd_total",
 			Help: "Total LLM cost in USD, by model and agent.",
 		}, []string{"model", "agent"}),
+		reg: reg,
 	}
 	if err := reg.Register(c.tokens); err != nil {
 		return nil, err
 	}
 	if err := reg.Register(c.cost); err != nil {
 		return nil, err
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 	return c, nil
 }
@@ -87,6 +121,9 @@ func (c *Collector) Observe(model, agent string, se activity.StepEnded) {
 // same session can still have step.ended events mislabeled with whichever
 // step.started was observed last for that agent, since the wire format does
 // not correlate step.started/step.ended pairs by id.
+//
+// When cost saver is enabled, Watch also handles session.ended events to
+// analyze session complexity and record cost saver metrics.
 func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID string) {
 	if c == nil {
 		return
@@ -108,7 +145,30 @@ func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID strin
 				currentModel[e.Agent] = data.Model
 			case activity.StepEnded:
 				c.Observe(currentModel[e.Agent], e.Agent, data)
+			case *activity.SessionEnded:
+				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil {
+					go c.handleSessionEnded(ctx, sessionID, e.Agent, *data)
+				}
 			}
 		}
 	}
+}
+
+func (c *Collector) handleSessionEnded(ctx context.Context, sessionID, agent string, ended activity.SessionEnded) {
+	summary, err := c.summarizer.GetSummary(sessionID)
+	if err != nil {
+		logrus.WithError(err).Warn("metrics: failed to get session summary for cost saver")
+		return
+	}
+
+	analysis, err := c.analyzer.Analyze(ctx, summary)
+	if err != nil {
+		logrus.WithError(err).Warn("metrics: LLM complexity analysis failed, using fallback")
+		if c.costSaver != nil {
+			c.costSaver.RecordFallback("analysis_error")
+		}
+		return
+	}
+
+	c.costSaver.RecordAnalysis(sessionID, agent, analysis)
 }
