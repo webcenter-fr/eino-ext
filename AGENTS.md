@@ -8,7 +8,7 @@ When writing or modifying code in this repository, prioritize:
 
 1. **Maintainability**: Minimize code duplication. Extract common patterns into shared helpers under `libs/toolkit/`. Use generics when the same logic applies to different types.
 
-2. **Comprehensibility**: Write code that is easy for humans to read. Use descriptive names, add clear comments for complex logic, and follow Go naming conventions (e.g., `ToJSON` not `ToJson`, `URL` not `Url`).
+2. **Comprehensibility**: Write code that is easy for humans to read. Use descriptive names, add clear comments for complex logic, and follow Go naming conventions (e.g., `ToJSON` not `ToJson`, `URL` not `Url`, `OpenSearch` not `Opensearch`, `GitHub` not `Github`, `GitLab`, `PostgreSQL`, `gRPC`, `API`, `HTTP`).
 
 3. **Usability**: This is a library for eino. Users should be able to use features simply. Provide:
    - Factory functions to create all tools for a component at once (e.g., `NewAllTools`)
@@ -41,3 +41,5 @@ When writing or modifying code in this repository, prioritize:
 - **Weak security controls**: Blocklists like `^\s*rm\s` are bypassed with `/bin/rm` or `./rm`. Use word boundaries and multiple patterns.
 - **Missing error context**: Always wrap errors with `emperror.dev/errors` to include context about what operation failed.
 - **Inconsistent naming**: Follow Go conventions and existing patterns in the codebase.
+- **Validation tags without the call**: Adding `validate`/`jsonschema` tags to a `Config` struct but never calling `validate.Struct(cfg)` in the constructor. Every `New...` must call `libs/toolkit/validate.Struct` after applying defaults.
+- **Component shipped without test or README**: Every component package needs `xxx_test.go` and `README.md`. Without them the component is incomplete.

@@ -85,12 +85,58 @@ this project:
 - `components/memory/` — conversation-history persistence (no eino-ext
   equivalent).
 
+### OpenSearch clients
+
+- Two OpenSearch libraries coexist intentionally in this repository:
+  - `github.com/cloudwego/eino-ext/components/{retriever,indexer}/opensearch3`
+    for eino COMPONENTS (`Retriever`/`Indexer`). These use the eino
+    OpenSearch client scaffolding.
+  - `github.com/disaster37/opensearch/v4` when you need the full OpenSearch
+    CLIENT (scroll, delete-by-query, put-mapping, querydsl) that the eino
+    client does not cover.
+  Do not unify them. Each OpenSearch package README should recall which
+  client it uses and why.
+
 ## Components
 
 - Follow the existing component layout: a `Config` struct with `validate` and
   `jsonschema` tags, a `New...` constructor, `emperror.dev/errors` for error
-  wrapping, and `github.com/go-playground/validator/v10` for validation.
-- Add tests alongside the implementation and a `README.md` per component.
+  wrapping, and the shared validation helper.
+
+- Every `New...` constructor MUST validate its config by calling the shared
+  helper `github.com/webcenter-fr/eino-ext/libs/toolkit/validate`:
+
+  ```go
+  import "github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+
+  func NewXxx(ctx context.Context, cfg *Config) (*Xxx, error) {
+      if cfg == nil {
+          cfg = &Config{}
+      }
+      // ... apply defaults ...
+      if err := validate.Struct(cfg); err != nil {
+          return nil, err   // already wrapped by the helper
+      }
+      ...
+  }
+  ```
+
+- Do NOT instantiate `validator.New()` directly or write ad hoc manual checks
+  (`if len(cfg.URLs) == 0`): declare the constraint in the struct tag
+  (`validate:"..."`) and let `validate.Struct` enforce it.
+- Call `validate.Struct` AFTER applying defaults, so validation runs against
+  the final values. Do not use `required` on a field that receives a default
+  (use `omitempty,gte=1` instead).
+
+- A component is considered complete only when ALL of the following exist:
+  1. `xxx.go` with `Config` (tags `validate`+`jsonschema`), `New...`, and a
+     compile-time interface check `var _ <abstraction>.<Interface> = (*Xxx)(nil)`.
+  2. `xxx_test.go`: table-driven tests covering the normal case, parameter
+     errors, and (with mocks) external dependencies. No test should depend on a
+     live external service.
+  3. `README.md`: what the component does, a constructor snippet, and which
+     eino abstraction it implements.
+  4. A package comment `// Package xxx ...` at the top of the file.
 
 ## License Headers
 
@@ -121,9 +167,12 @@ go vet ./...
 go test ./...
 ```
 
-## Tool Design Principles
+## Component Design Principles
 
-When creating new tools (components under `components/tool/`), follow these principles to ensure maintainability, usability, and security.
+These principles apply to **every** component (`agent`, `document`,
+`embedding`, `indexer`, `model`, `prompt`, `retriever`, `tool`), to ADK
+middlewares (`components/middleware/`), to callbacks, and to `libs/`.
+Subsections marked **(tools only)** concern only `components/tool/`.
 
 ### Interfaces and Default Implementations
 
@@ -171,11 +220,15 @@ func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, er
 
 ### Naming Conventions
 
-- Follow Go naming conventions: `ToJSON` not `ToJson`, `ID` not `Id`, `URL` not `Url`.
+- Follow Go naming conventions: `ToJSON` not `ToJson`, `ID` not `Id`, `URL`
+  not `Url`, **`OpenSearch` not `Opensearch`, `GitHub` not `Github`, `GitLab`,
+  `PostgreSQL`, `gRPC`, `API`, `HTTP`**. When in doubt, use the official
+  casing of the product for all exported identifiers and `GetType()` return
+  values.
 - Use descriptive names that reveal intent: `ApplicationListOutput` is better than `Output`.
 - Keep parameter struct names consistent: `XxxParams` for input, `XxxOutput` for output.
 
-### Security Guidelines
+### Security Guidelines **(tools only)**
 
 Tools that execute commands or access external systems must implement security controls:
 
@@ -207,7 +260,7 @@ var blocklist = []string{
 ```go
 // Good: Simple API for common case
 tools, err := argocd.NewAllTools(ctx, argocd.Configs{
-    "prod": argocd.Config{Url: "https://argocd.example.com"},
+    "prod": argocd.Config{URL: "https://argocd.example.com"},
 })
 
 // Good: Builder for complex configuration
@@ -229,3 +282,17 @@ configs := builder.Build()
 - **Write table-driven tests** for tool invocations with various parameter combinations.
 - **Test error cases** including invalid parameters, network failures, and permission errors.
 - **Use mocks** for external dependencies to ensure tests are fast and reliable.
+
+## Checklist before PR
+
+- [ ] `go build ./...`, `go vet ./...`, `go test ./...` pass.
+- [ ] Every new `Config` has `validate`+`jsonschema` tags AND its `New...`
+      calls `validate.Struct(cfg)` after defaults.
+- [ ] Every new component has: table-driven test, README, package comment,
+      and a `var _ Interface = (*T)(nil)` compile-time check.
+- [ ] Naming: acronyms and brands use official casing (`OpenSearch`, `GitHub`,
+      `URL`, `ID`, `JSON`).
+- [ ] Errors are wrapped with `emperror.dev/errors` (include operation context).
+- [ ] No license banner added.
+- [ ] Component is placed under the correct eino abstraction (see Project structure).
+- [ ] No duplication of helpers already present in `libs/toolkit/`.

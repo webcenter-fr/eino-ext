@@ -13,6 +13,14 @@ ENVTEST_K8S_VERSION = 1.34.0
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+.PHONY: lint
+lint:
+	golangci-lint run ./...
+
+.PHONY: check-components
+check-components:
+	bash scripts/check_components.sh
+
 .PHONY: test
 test: envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./...
