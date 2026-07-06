@@ -23,12 +23,12 @@ const describeOutputGuidance = `
 Use ` + "`filter`" + ` (Go RE2 regex applied on alert label JSON) to narrow down to specific alerts.
 `
 
-func MustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
+func marshalOutputs(outputs []json.RawMessage) (string, error) {
+	data, err := json.Marshal(outputs)
 	if err != nil {
-		panic(err)
+		return "", errors.Wrap(err, "failed to marshal output")
 	}
-	return b
+	return string(data), nil
 }
 
 func instanceNotFoundError(instance string, known []string) error {

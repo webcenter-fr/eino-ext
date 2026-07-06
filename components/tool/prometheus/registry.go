@@ -31,9 +31,9 @@ func buildTools(ctx context.Context, configs Configs, constructors []toolConstru
 	return tools, nil
 }
 
-// NewAllTools creates all Prometheus tools (read-only in this component).
+// NewAllTools creates all Prometheus tools (currently all read-only).
 func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, error) {
-	return buildTools(ctx, configs, append(readOnlyConstructors, writeConstructors...))
+	return NewReadOnlyTools(ctx, configs)
 }
 
 // NewReadOnlyTools creates only the read-only Prometheus tools (all tools in this component).

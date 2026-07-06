@@ -12,6 +12,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
 
 const alertDescribeDescription = `
@@ -92,16 +93,11 @@ func (t *AlertDescribeTool) Invoke(ctx context.Context, params *AlertDescribePar
 		}
 
 		// Return full alert data with properly-cased JSON keys
-		outputJSON := json.RawMessage(MustMarshal(toAlertDescribeOutput(a)))
+		outputJSON := json.RawMessage(marshal.MustMarshal(toAlertDescribeOutput(a)))
 		outputs = append(outputs, outputJSON)
 	}
 
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	return marshalOutputs(outputs)
 }
 
 func NewAlertDescribeTool(ctx context.Context, configs Configs) (*AlertDescribeTool, error) {

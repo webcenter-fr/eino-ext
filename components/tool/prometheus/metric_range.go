@@ -12,6 +12,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
 
 const metricRangeDescription = `
@@ -109,19 +110,14 @@ func (t *MetricRangeTool) Invoke(ctx context.Context, params *MetricRangeParams)
 			Values: values,
 		}
 
-		outputJSON := json.RawMessage(MustMarshal(output))
+		outputJSON := json.RawMessage(marshal.MustMarshal(output))
 		if !filter.Match(outputJSON, re) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)
 	}
 
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	return marshalOutputs(outputs)
 }
 
 func NewMetricRangeTool(ctx context.Context, configs Configs) (*MetricRangeTool, error) {

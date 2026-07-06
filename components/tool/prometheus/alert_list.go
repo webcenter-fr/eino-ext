@@ -11,6 +11,7 @@ import (
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
 
 const alertListDescription = `
@@ -126,7 +127,7 @@ func (t *AlertListTool) Invoke(ctx context.Context, params *AlertListParams) (re
 			Value:       a.Value,
 		}
 
-		outputJSON := json.RawMessage(MustMarshal(output))
+		outputJSON := json.RawMessage(marshal.MustMarshal(output))
 		if !filter.Match(outputJSON, re) {
 			continue
 		}
@@ -134,16 +135,11 @@ func (t *AlertListTool) Invoke(ctx context.Context, params *AlertListParams) (re
 	}
 
 	if params.Paginate != nil && endIdx < len(alerts) {
-		tokenData := MustMarshal(alertPaginateToken{PaginateToken: endIdx})
+		tokenData := marshal.MustMarshal(alertPaginateToken{PaginateToken: endIdx})
 		outputs = append(outputs, json.RawMessage(tokenData))
 	}
 
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	return marshalOutputs(outputs)
 }
 
 func NewAlertListTool(ctx context.Context, configs Configs) (*AlertListTool, error) {

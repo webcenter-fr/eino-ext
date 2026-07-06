@@ -11,6 +11,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/prometheus/common/model"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
 
 const metricQueryDescription = `
@@ -81,7 +82,7 @@ func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams)
 			Value:  []any{sample.Timestamp.Time().UTC().Format(time.RFC3339), sample.Value.String()},
 		}
 
-		outputJSON := json.RawMessage(MustMarshal(output))
+		outputJSON := json.RawMessage(marshal.MustMarshal(output))
 		if !filter.Match(outputJSON, re) {
 			continue
 		}
@@ -92,12 +93,7 @@ func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams)
 		}
 	}
 
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	return marshalOutputs(outputs)
 }
 
 func NewMetricQueryTool(ctx context.Context, configs Configs) (*MetricQueryTool, error) {
