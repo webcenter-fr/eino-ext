@@ -1,0 +1,516 @@
+package opensearch
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"emperror.dev/errors"
+	"github.com/cloudwego/eino/schema"
+	opensearchv4 "github.com/disaster37/opensearch/v4"
+	"github.com/disaster37/opensearch/v4/api"
+	"github.com/disaster37/opensearch/v4/querydsl"
+	"github.com/goccy/go-json"
+	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/components/memory"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+)
+
+type Config struct {
+	URLs           []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
+	Username       string   `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
+	Password       string   `validate:"omitempty" jsonschema:"description=Password for basic authentication"`
+	TLSSkipVerify  bool     `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	IndexName      string   `validate:"omitempty" jsonschema:"description=OpenSearch index name for storing conversations,default=eino_memory"`
+	MaxWindowSize  int      `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
+	MaxWindowTokens int     `validate:"gte=0" jsonschema:"description=Maximum token budget for GetWindow, 0 means no cap"`
+	NumReplicas    int      `validate:"omitempty,gte=0,lte=10" jsonschema:"description=Number of replicas for the index,default=1"`
+	TokenCounter  memory.TokenCounter
+}
+
+type OpenSearchMemory struct {
+	mu              sync.Mutex
+	client          opensearchv4.Client
+	indexName       string
+	maxWindowSize   int
+	tokenCounter    memory.TokenCounter
+	maxWindowTokens int
+	conversations   map[string]map[string]*OpenSearchConversation
+}
+
+type OpenSearchConversation struct {
+	mu sync.Mutex
+
+	UserID         string
+	ConversationID string
+	Messages       []*schema.Message
+
+	client          opensearchv4.Client
+	indexName       string
+	maxWindowSize   int
+	tokenCounter    memory.TokenCounter
+	maxWindowTokens int
+}
+
+type conversationDoc struct {
+	UserID         string            `json:"userId"`
+	ConversationID string            `json:"conversationId"`
+	Messages       []*schema.Message `json:"messages"`
+	UpdatedAt      string            `json:"updatedAt"`
+}
+
+func documentID(userID, conversationID string) string {
+	return fmt.Sprintf("%s:%s", userID, conversationID)
+}
+
+func (c *OpenSearchConversation) toDoc() conversationDoc {
+	return conversationDoc{
+		UserID:         c.UserID,
+		ConversationID: c.ConversationID,
+		Messages:       c.Messages,
+		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func (m *OpenSearchMemory) newConversation(userID, conversationID string, messages []*schema.Message) *OpenSearchConversation {
+	return &OpenSearchConversation{
+		UserID:          userID,
+		ConversationID:  conversationID,
+		Messages:        messages,
+		client:          m.client,
+		indexName:       m.indexName,
+		maxWindowSize:   m.maxWindowSize,
+		tokenCounter:    m.tokenCounter,
+		maxWindowTokens: m.maxWindowTokens,
+	}
+}
+
+// NewOpenSearchMemory creates a new OpenSearch-backed memory instance. It creates the
+// OpenSearch index if it does not already exist.
+func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
+	if err := validate.Struct(&cfg); err != nil {
+		return nil, err
+	}
+
+	if cfg.IndexName == "" {
+		cfg.IndexName = "eino_memory"
+	}
+
+	tc := cfg.TokenCounter
+	if tc == nil {
+		tc = memory.DefaultTokenCounter
+	}
+
+	replicas := cfg.NumReplicas
+	if replicas == 0 {
+		replicas = 1
+	}
+
+	opensearchCfg := &opensearchv4.Config{
+		URL:           cfg.URLs[0],
+		Username:      cfg.Username,
+		Password:      cfg.Password,
+		TLSSkipVerify: cfg.TLSSkipVerify,
+	}
+
+	logger := logrus.NewEntry(logrus.StandardLogger())
+	client, err := opensearchv4.New(opensearchCfg, logger)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create OpenSearch client")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	exists, err := client.Indices().Exists(ctx, []string{cfg.IndexName})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to check if index %s exists", cfg.IndexName)
+	}
+
+	if !exists {
+		if err := createIndex(ctx, client, cfg.IndexName, replicas); err != nil {
+			return nil, err
+		}
+	}
+
+	return &OpenSearchMemory{
+		client:          client,
+		indexName:       cfg.IndexName,
+		maxWindowSize:   cfg.MaxWindowSize,
+		tokenCounter:    tc,
+		maxWindowTokens: cfg.MaxWindowTokens,
+		conversations:   make(map[string]map[string]*OpenSearchConversation),
+	}, nil
+}
+
+func createIndex(ctx context.Context, client opensearchv4.Client, indexName string, numReplicas int) error {
+	body := map[string]any{
+		"settings": map[string]any{
+			"number_of_shards":   1,
+			"number_of_replicas": numReplicas,
+		},
+		"mappings": map[string]any{
+			"dynamic": false,
+			"properties": map[string]any{
+				"userId": map[string]any{
+					"type": "keyword",
+				},
+				"conversationId": map[string]any{
+					"type": "keyword",
+				},
+				"messages": map[string]any{
+					"type":    "object",
+					"dynamic": false,
+				},
+				"updatedAt": map[string]any{
+					"type": "date",
+				},
+			},
+		},
+	}
+
+	_, err := client.Indices().Create(ctx, indexName, body)
+	if err != nil {
+		return errors.Wrapf(err, "failed to create index %s", indexName)
+	}
+
+	return nil
+}
+
+func (m *OpenSearchMemory) GetConversation(userID string, conversationID string, createIfNotExist bool) (memory.Conversation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	docID := documentID(userID, conversationID)
+
+	if _, ok := m.conversations[userID]; !ok {
+		m.conversations[userID] = make(map[string]*OpenSearchConversation)
+	}
+
+	if conv, ok := m.conversations[userID][conversationID]; ok {
+		return conv, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := m.client.Document().Get(ctx, &api.GetRequest{
+		Index: m.indexName,
+		Id:    docID,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get conversation document")
+	}
+
+	if result.Found {
+		var doc conversationDoc
+		if err := json.Unmarshal(result.Source, &doc); err != nil {
+			return nil, errors.Wrap(err, "failed to unmarshal conversation document")
+		}
+
+		if doc.Messages == nil {
+			doc.Messages = make([]*schema.Message, 0)
+		}
+
+		conv := m.newConversation(userID, conversationID, doc.Messages)
+		m.conversations[userID][conversationID] = conv
+		return conv, nil
+	}
+
+	if !createIfNotExist {
+		return nil, errors.Errorf("conversation %s not found for user %s", conversationID, userID)
+	}
+
+	conv := m.newConversation(userID, conversationID, make([]*schema.Message, 0))
+
+	doc := conv.toDoc()
+
+	_, err = m.client.Document().Create(ctx, &api.CreateRequest{
+		Index: m.indexName,
+		Id:    docID,
+		Body:  doc,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create conversation document")
+	}
+
+	m.conversations[userID][conversationID] = conv
+	return conv, nil
+}
+
+// ListConversations returns all conversation IDs for a user by paginating through OpenSearch results.
+func (m *OpenSearchMemory) ListConversations(userID string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var allIDs []string
+	const pageSize = 10000
+
+	for from := 0; ; from += pageSize {
+		sr := querydsl.NewSearchRequest().
+			Index(m.indexName).
+			Query(querydsl.NewTermQuery("userId", userID)).
+			FetchSourceIncludeExclude([]string{"conversationId"}, nil).
+			From(from).
+			Size(pageSize)
+
+		apiReq, err := api.NewSearchRequest(sr)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to build search request")
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+		result, err := m.client.Search().Search(ctx, apiReq)
+		cancel()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to search conversations")
+		}
+
+		for _, hit := range result.Hits.Hits {
+			var source struct {
+				ConversationID string `json:"conversationId"`
+			}
+			if err := json.Unmarshal(hit.Source, &source); err != nil {
+				return nil, errors.Wrap(err, "failed to unmarshal hit source")
+			}
+			allIDs = append(allIDs, source.ConversationID)
+		}
+
+		if result.Hits.TotalHits == nil || from+len(result.Hits.Hits) >= int(result.Hits.TotalHits.Value) {
+			break
+		}
+	}
+
+	return allIDs, nil
+}
+
+func (m *OpenSearchMemory) DeleteConversation(userID string, conversationID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	docID := documentID(userID, conversationID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := m.client.Document().Delete(ctx, &api.DeleteRequest{
+		Index: m.indexName,
+		Id:    docID,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to delete conversation document")
+	}
+
+	if m.conversations[userID] != nil {
+		delete(m.conversations[userID], conversationID)
+	}
+
+	return nil
+}
+
+// Append adds a message to the conversation and immediately persists the full
+// conversation document to OpenSearch via an upsert.
+func (c *OpenSearchConversation) Append(msg *schema.Message) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.Messages = append(c.Messages, msg)
+
+	c.Save(msg)
+}
+
+// GetFullMessages returns all messages in the conversation.
+func (c *OpenSearchConversation) GetFullMessages() []*schema.Message {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.Messages
+}
+
+// GetMessages returns messages bounded by MaxWindowSize (most recent messages).
+func (c *OpenSearchConversation) GetMessages() []*schema.Message {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.maxWindowSize > 0 && len(c.Messages) > c.maxWindowSize {
+		return c.Messages[len(c.Messages)-c.maxWindowSize:]
+	}
+
+	return c.Messages
+}
+
+// AppendSummary adds a summary-marked message to the conversation. It ensures the
+// summary marker is set before appending.
+func (c *OpenSearchConversation) AppendSummary(summary *schema.Message) {
+	if summary.Extra == nil {
+		summary.Extra = make(map[string]any)
+	}
+	summary.Extra[memory.SummaryMarkerKey] = true
+
+	c.Append(summary)
+}
+
+// LastSummaryIndex returns the index of the last summary message in Messages, or -1 if none.
+func (c *OpenSearchConversation) LastSummaryIndex() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.lastSummaryIndexLocked()
+}
+
+func (c *OpenSearchConversation) lastSummaryIndexLocked() int {
+	for i := len(c.Messages) - 1; i >= 0; i-- {
+		if memory.IsSummary(c.Messages[i]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// GetWindow returns [last summary + following messages], bounded by a token budget.
+// If budget <= 0, MaxWindowTokens is used; if that is also 0, no token cap is applied.
+//
+// Trimming uses binary search (O(log N) calls to tokenCounter) assuming the counter is
+// monotonically non-decreasing with more messages. The summary (if present) and the
+// last message are always preserved.
+func (c *OpenSearchConversation) GetWindow(budget int) []*schema.Message {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if budget <= 0 {
+		budget = c.maxWindowTokens
+	}
+
+	idx := c.lastSummaryIndexLocked()
+	startIdx := 0
+	if idx >= 0 {
+		startIdx = idx
+	}
+
+	window := c.Messages[startIdx:]
+
+	if budget <= 0 || len(window) == 0 {
+		return window
+	}
+
+	n := len(window)
+
+	if c.tokenCounter(window) <= budget {
+		return window
+	}
+
+	if n == 1 {
+		return window
+	}
+
+	hasSummary := memory.IsSummary(window[0])
+
+	if !hasSummary {
+		if c.tokenCounter(window[n-1:]) > budget {
+			return window[n-1:]
+		}
+		lo, hi := 0, n-1
+		for lo < hi {
+			mid := (lo + hi) / 2
+			if c.tokenCounter(window[mid:]) <= budget {
+				hi = mid
+			} else {
+				lo = mid + 1
+			}
+		}
+		return window[lo:]
+	}
+
+	if n == 2 {
+		return window
+	}
+
+	minWindow := []*schema.Message{window[0], window[n-1]}
+	if c.tokenCounter(minWindow) > budget {
+		return minWindow
+	}
+
+	scratch := make([]*schema.Message, n)
+	scratch[0] = window[0]
+
+	lo, hi := 1, n-1
+	for lo < hi {
+		mid := (lo + hi) / 2
+		sz := n - mid
+		copy(scratch[1:1+sz], window[mid:])
+		if c.tokenCounter(scratch[:1+sz]) <= budget {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+
+	trimStart := lo
+	sz := n - trimStart
+	result := make([]*schema.Message, 1+sz)
+	result[0] = window[0]
+	copy(result[1:], window[trimStart:])
+	return result
+}
+
+// CountTokens counts the tokens in the current window using the injected TokenCounter.
+func (c *OpenSearchConversation) CountTokens() int {
+	window := c.GetWindow(0)
+	return c.tokenCounter(window)
+}
+
+// Load loads the conversation from OpenSearch, replacing the in-memory Messages slice.
+func (c *OpenSearchConversation) Load() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	docID := documentID(c.UserID, c.ConversationID)
+
+	result, err := c.client.Document().Get(ctx, &api.GetRequest{
+		Index: c.indexName,
+		Id:    docID,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to load conversation document")
+	}
+
+	if !result.Found {
+		return errors.Errorf("conversation %s not found for user %s", c.ConversationID, c.UserID)
+	}
+
+	var doc conversationDoc
+	if err := json.Unmarshal(result.Source, &doc); err != nil {
+		return errors.Wrap(err, "failed to unmarshal conversation document")
+	}
+
+	if doc.Messages == nil {
+		doc.Messages = make([]*schema.Message, 0)
+	}
+
+	c.Messages = doc.Messages
+
+	return nil
+}
+
+// Save persists the conversation document to OpenSearch via a full-document upsert.
+func (c *OpenSearchConversation) Save(msg *schema.Message) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	docID := documentID(c.UserID, c.ConversationID)
+
+	doc := c.toDoc()
+
+	_, err := c.client.Document().Index(ctx, &api.IndexRequest{
+		Index: c.indexName,
+		Id:    docID,
+		Body:  doc,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to save conversation document")
+	}
+
+	return nil
+}
