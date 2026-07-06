@@ -31,8 +31,8 @@ type Config struct {
 	UserID                  string              `json:"user_id" jsonschema:"description=Static user ID for memory scoping; overridden by context value if set"`
 	SessionID               string              `json:"session_id" jsonschema:"description=Static session ID; overridden by context value if set"`
 	AutoExtract             bool                `json:"auto_extract" jsonschema:"description=Auto-extract memories after each turn,default=true when Store and Model are set"`
-	MaintenanceInterval     time.Duration       `json:"maintenance_interval" jsonschema:"description=Background maintenance tick interval, 0 disables"`
-	MaxMemoriesPerRetrieve  int                 `json:"max_memories_per_retrieve" jsonschema:"description=Max memories injected per turn,default=5"`
+	MaintenanceInterval     time.Duration       `json:"maintenance_interval" validate:"gte=0" jsonschema:"description=Background maintenance tick interval, 0 disables"`
+	MaxMemoriesPerRetrieve  int                 `json:"max_memories_per_retrieve" validate:"gte=0" jsonschema:"description=Max memories injected per turn,default=5"`
 	SystemPromptPrefix      string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
 }
 

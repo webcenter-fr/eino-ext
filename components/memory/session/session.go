@@ -1,19 +1,3 @@
-/*
- * Copyright 2025 CloudWeGo Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 // Package session provides the generic, cross-request lifecycle for persisting a
 // conversation history on top of a memory.Memory store.
 //
@@ -50,20 +34,20 @@ type Summarizer = summarizer.Summarizer
 // Config configures a SessionManager.
 type Config struct {
 	// Memory is the underlying cross-request store. Required.
-	Memory memory.Memory `validate:"required"`
+	Memory memory.Memory `validate:"required" jsonschema:"description=Underlying cross-request memory store"`
 
 	// Summarizer, when non-nil, enables condensation: Condense generates an
 	// anchored summary and appends it to the store. When nil, Condense is a no-op.
-	Summarizer Summarizer
+	Summarizer Summarizer `jsonschema:"description=Summarizer for condensation, nil disables summarization"`
 
 	// CondenseThreshold is the token count of the current window at (or above)
 	// which Condense triggers a summarization. <= 0 disables condensation.
-	CondenseThreshold int `validate:"gte=0"`
+	CondenseThreshold int `validate:"gte=0" jsonschema:"description=Token threshold at which Condense triggers summarization, 0 disables"`
 
 	// WindowBudget is the default token budget passed to GetWindow when a turn
 	// requests its window (and the budget used to evaluate condensation). 0 means
 	// "use the store's own default" (e.g. FileMemoryConfig.MaxWindowTokens).
-	WindowBudget int `validate:"gte=0"`
+	WindowBudget int `validate:"gte=0" jsonschema:"description=Default token budget for GetWindow, 0 uses store default"`
 
 	// TokenCounter estimates the token count of a window to decide when to
 	// condense. Defaults to memory.DefaultTokenCounter.
@@ -71,7 +55,7 @@ type Config struct {
 	// To guarantee a turn never pays the LLM summarization cost twice, inject the
 	// SAME counter here, in the memory store, and in the intra-run optimization
 	// middleware (see the plan's anti-double-cost invariant).
-	TokenCounter memory.TokenCounter
+	TokenCounter memory.TokenCounter `jsonschema:"description=Token estimator for condensation decisions, defaults to memory.DefaultTokenCounter"`
 }
 
 // SessionManager owns the per-session locking and turn lifecycle on top of a

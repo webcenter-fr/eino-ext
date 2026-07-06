@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/prometheus/client_golang/api"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
@@ -33,6 +34,10 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 
 // NewClient creates a new Prometheus API client from the given configuration.
 func NewClient(config Config) (promapi.API, error) {
+	if err := validate.Struct(&config); err != nil {
+		return nil, errors.Wrap(err, "invalid Prometheus config")
+	}
+
 	rt := api.DefaultRoundTripper
 
 	if config.InsecureSkipVerify {

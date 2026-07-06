@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"regexp"
+	"fmt"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -185,7 +186,7 @@ func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTo
 	}
 
 	// Infer tool
-	t, err := utils.InferTool("kubernetes_resources_list", resourceListDescription+"\n"+listOutputGuidance, listTool.Invoke)
+	t, err := utils.InferTool("kubernetes_resources_list", fmt.Sprintf("%s\n%s", resourceListDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

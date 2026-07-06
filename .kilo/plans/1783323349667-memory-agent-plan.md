@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build an eino `adk.Agent` component (`components/agent/memory`) that provides
+Build an eino `adk.Agent` component (`components/memory/agent`) that provides
 long-term memory and automatic learning, inspired by Hermes agent architecture.
 The agent wraps any existing agent and enriches it with:
 - Persistent semantic memory (facts, preferences, learnings)
@@ -16,7 +16,7 @@ The agent wraps any existing agent and enriches it with:
 |---|---|---|
 | Storage interface | Composite `MemoryStore` (Indexer + Retriever + Delete + Compact) | Simpler API; user explicitly requested RAG-interface reuse |
 | Session end signal | Explicit `EndSession(ctx)` called by supervisor | Supervisor orchestrates agents; needs a lifecycle hook |
-| Package location | `components/agent/memory` | New agent component, separate from conversation memory |
+| Package location | `components/memory/agent` | New agent component, separate from conversation memory |
 | Agent model | Wraps an inner `adk.Agent` as a decorator/proxy | Reuses any existing agent; memory is transparent enrichment |
 | Auto-learning | Post-turn extraction via LLM call | Like hermes, use a cheap model to extract facts after each exchange |
 | Maintenance | Background goroutine with ticker | Scheduled compaction/aggregation, configurable interval |
@@ -66,7 +66,7 @@ The agent wraps any existing agent and enriches it with:
 
 ### 1. Define `MemoryStore` interface
 
-File: `components/agent/memory/store.go`
+File: `components/memory/agent/store.go`
 
 ```go
 // MemoryStore is the composite storage interface for long-term agent memory.
@@ -93,7 +93,7 @@ Delete/List for maintenance operations.
 
 ### 2. Memory entry schema
 
-File: `components/agent/memory/types.go`
+File: `components/memory/agent/types.go`
 
 ```go
 type MemoryEntry struct {
@@ -112,7 +112,7 @@ Stored as `schema.Document` with these fields in `MetaData`.
 
 ### 3. Simple File-based MemoryStore
 
-File: `components/agent/memory/file/store.go`
+File: `components/memory/agent/file/store.go`
 
 Default implementation using `MEMORY.md`/`USER.md` files (like Hermes).
 
@@ -120,7 +120,7 @@ Uses JSONL for structured storage with in-memory index for fast retrieval.
 
 ### 4. MemoryAgent construction
 
-File: `components/agent/memory/agent.go`
+File: `components/memory/agent/agent.go`
 
 ```go
 type MemoryAgent struct {
@@ -204,7 +204,7 @@ Triggered by `EndSession(ctx)`:
 
 ### 8. Background maintenance
 
-File: `components/agent/memory/maintainer.go`
+File: `components/memory/agent/maintainer.go`
 
 Runs on a ticker (default: 1 hour):
 
@@ -260,7 +260,7 @@ memAgent.EndSession(ctx)  // Triggers compaction + aggregation
 ### 11. File structure
 
 ```
-components/agent/memory/
+components/memory/agent/
 ├── store.go           # MemoryStore interface
 ├── types.go           # MemoryEntry, categories, errors
 ├── agent.go           # MemoryAgent implementation
@@ -296,8 +296,8 @@ components/agent/memory/
 
 ## Validation
 
-1. `go build ./components/agent/memory/...` compiles
-2. `go test ./components/agent/memory/...` passes
-3. `go vet ./components/agent/memory/...` clean
+1. `go build ./components/memory/agent/...` compiles
+2. `go test ./components/memory/agent/...` passes
+3. `go vet ./components/memory/agent/...` clean
 4. Manual integration: supervisor creates MemoryAgent, runs turns, verifies
    memories persist, calls EndSession, verifies compaction.

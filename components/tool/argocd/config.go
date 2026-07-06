@@ -11,7 +11,7 @@ type Configs map[string]Config
 
 // Config represents the configuration for an ArgoCD instance.
 type Config struct {
-	Url     string
+	Url     string `validate:"required" jsonschema:"description=ArgoCD server URL with scheme (https:// or http://)"`
 	Options []goargocdclient.Option
 }
 

@@ -8,7 +8,7 @@ type Configs map[string]Config
 // Config holds the connection configuration for a single Prometheus instance.
 type Config struct {
 	// Address is the Prometheus server URL (e.g. "http://localhost:9090").
-	Address string
+	Address string `validate:"required" jsonschema:"description=Prometheus server URL, e.g. http://localhost:9090"`
 	// Username is the optional username for basic auth.
 	Username string
 	// Password is the optional password for basic auth.

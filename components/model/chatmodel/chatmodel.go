@@ -29,6 +29,7 @@ import (
 	openai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"k8s.io/utils/ptr"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 // ThinkingLevel is a provider-generic reasoning level. Providers that lack
@@ -83,27 +84,27 @@ func ParseThinkingLevel(s string) (ThinkingLevel, error) {
 type Config struct {
 	// Plan selects the provider: "ollama", "copilot", or "openai".
 	// "copilot" and "openai" share the OpenAI-compatible construction path.
-	Plan string
+	Plan string `validate:"required" jsonschema:"description=Provider plan: ollama, copilot, or openai"`
 
 	// BaseURL is the provider endpoint URL.
-	BaseURL string
+	BaseURL string `validate:"required" jsonschema:"description=Provider endpoint URL"`
 
 	// Model is the model ID to use.
-	Model string
+	Model string `validate:"required" jsonschema:"description=Model ID to use"`
 
 	// Temperature is the sampling temperature.
-	Temperature float32
+	Temperature float32 `validate:"gte=0,lte=2" jsonschema:"description=Sampling temperature"`
 
 	// Thinking is the reasoning level. Off omits reasoning.
-	Thinking ThinkingLevel
+	Thinking ThinkingLevel `jsonschema:"description=Reasoning level: off, low, medium, or high"`
 
 	// MaxOutputTokens caps generated output tokens. 0 leaves the provider
 	// default unset.
-	MaxOutputTokens int
+	MaxOutputTokens int `validate:"gte=0" jsonschema:"description=Maximum generated output tokens, 0 leaves provider default"`
 
 	// Timeout is the request timeout for the openai/copilot path. 0 uses the
 	// package default of 60m.
-	Timeout time.Duration
+	Timeout time.Duration `validate:"gte=0" jsonschema:"description=Request timeout for openai/copilot path, 0 uses default of 60m"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
@@ -114,6 +115,9 @@ type Config struct {
 func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
 		return nil, errors.New("chatmodel: config must not be nil")
+	}
+	if err := validate.Struct(cfg); err != nil {
+		return nil, errors.Wrap(err, "chatmodel: invalid config")
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Plan)) {

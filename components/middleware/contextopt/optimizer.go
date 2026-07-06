@@ -63,65 +63,65 @@ const (
 // defaults in NewOptimizer (see the Default* constants).
 type Config struct {
 	// ContextLimit is the model's total context window (in tokens).
-	ContextLimit int `validate:"gte=0"`
+	ContextLimit int `validate:"gte=0" jsonschema:"description=Model total context window in tokens"`
 	// MaxInputTokens, when > 0, takes precedence over ContextLimit-ReservedTokens
 	// (equivalent to kilocode's model.limit.input).
-	MaxInputTokens int `validate:"gte=0"`
+	MaxInputTokens int `validate:"gte=0" jsonschema:"description=Takes precedence over ContextLimit-ReservedTokens when >0"`
 	// ReservedTokens is the buffer reserved for the model output (default 20_000).
-	ReservedTokens int `validate:"gte=0"`
+	ReservedTokens int `validate:"gte=0" jsonschema:"description=Buffer reserved for model output, default 20000"`
 
 	// TailTurns is the number of most-recent turns to preserve verbatim.
 	// <= 0 disables tail truncation (default 2).
-	TailTurns int
+	TailTurns int `jsonschema:"description=Number of most-recent turns to preserve verbatim, default 2"`
 	// PreserveRecentTokens is the token budget for the preserved tail.
 	// Default: clamp(usable*0.25, 2_000, 8_000).
-	PreserveRecentTokens int `validate:"gte=0"`
+	PreserveRecentTokens int `validate:"gte=0" jsonschema:"description=Token budget for the preserved tail, default clamp(usable*0.25, 2000, 8000)"`
 
 	// PruneToolOutputs enables pruning of stale tool outputs.
-	PruneToolOutputs bool
+	PruneToolOutputs bool `jsonschema:"description=Enable pruning of stale tool outputs"`
 	// PruneProtectTokens is the protected recent window (default 40_000) inside
 	// which tool outputs are never pruned.
-	PruneProtectTokens int `validate:"gte=0"`
+	PruneProtectTokens int `validate:"gte=0" jsonschema:"description=Protected recent window in which tool outputs are never pruned, default 40000"`
 	// PruneMinimum is the minimum amount of eligible tokens required before any
 	// pruning is actually applied (default 20_000).
-	PruneMinimum int `validate:"gte=0"`
+	PruneMinimum int `validate:"gte=0" jsonschema:"description=Minimum eligible tokens before pruning is applied, default 20000"`
 	// ToolOutputMaxChars is the maximum number of characters kept when truncating
 	// a tool output (default 2_000).
-	ToolOutputMaxChars int `validate:"gte=0"`
+	ToolOutputMaxChars int `validate:"gte=0" jsonschema:"description=Maximum characters kept when truncating a tool output, default 2000"`
 	// ProtectedTools lists tool names whose outputs are never pruned.
-	ProtectedTools []string
+	ProtectedTools []string `jsonschema:"description=Tool names whose outputs are never pruned"`
 
 	// TokenCounter estimates the number of tokens for a set of messages.
 	// Default: memory.DefaultTokenCounter (~4 chars/token).
-	TokenCounter memory.TokenCounter
+	TokenCounter memory.TokenCounter `jsonschema:"description=Token estimator, defaults to memory.DefaultTokenCounter (~4 chars/token)"`
 	// Summarizer, when non-nil, performs LLM-backed compaction on overflow.
 	// When nil, Optimize never returns an error on overflow: it simply returns
 	// the trimmed/pruned history.
-	Summarizer Summarizer
+	Summarizer Summarizer `jsonschema:"description=LLM-backed compaction on overflow, nil disables summarization"`
 
 	// Backend, when non-nil, makes tool-output pruning reversible: instead of
 	// destructively truncating a stale tool output, the original is offloaded to
 	// the Store (content-addressed) and the message keeps a handle (PruneRefKey)
 	// so the original can be recovered via RestorePruned.
-	Backend contentcomp.Store
+	Backend contentcomp.Store `jsonschema:"description=Content-addressed store for reversible tool-output pruning"`
 	// ContentCompressors are deterministic per-message compressors applied to
 	// tool outputs BEFORE any truncation/pruning. They are reversible/lossless
 	// (e.g. jsoncrush) or Store-backed (e.g. shellout), reducing tokens without
 	// the destructive cost of a hard truncation. Applied in order.
-	ContentCompressors []contentcomp.Compressor
+	ContentCompressors []contentcomp.Compressor `jsonschema:"description=Deterministic per-message compressors applied to tool outputs before truncation"`
 
 	// VolatileCheck enables warn-only detection of volatile tokens (ISO-8601
 	// timestamps, UUIDs, *_id fields) in the cached prefix. It never mutates any
 	// message; findings are reported via VolatileObserver.
-	VolatileCheck bool
+	VolatileCheck bool `jsonschema:"description=Enable warn-only detection of volatile tokens in cached prefix"`
 	// VolatileObserver receives VolatileCheck findings. Required for VolatileCheck
 	// to have any effect.
-	VolatileObserver func(context.Context, VolatileFinding)
+	VolatileObserver func(context.Context, VolatileFinding) `jsonschema:"description=Receiver for VolatileCheck findings, required for VolatileCheck to have effect"`
 
 	// VerbositySteer, when non-empty, is appended (append-only) to the END of the
 	// first system message to steer the model toward concise output. The prefix
 	// before the append is unchanged (cache-safe). Disabled by default.
-	VerbositySteer string
+	VerbositySteer string `jsonschema:"description=Appends to the end of the first system message to steer toward concise output"`
 }
 
 // Optimizer applies context-window optimization strategies to a message history.

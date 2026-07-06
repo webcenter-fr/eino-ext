@@ -24,7 +24,7 @@ import (
 var _ memoryagent.MemoryStore = (*Store)(nil)
 
 type Config struct {
-	Dir string `json:"dir" jsonschema:"description=Directory for the memories.jsonl file,default=/tmp/eino/memory-agent"`
+	Dir string `json:"dir" validate:"required" jsonschema:"description=Directory for the memories.jsonl file,default=/tmp/eino/memory-agent"`
 }
 
 type Store struct {

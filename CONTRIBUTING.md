@@ -62,7 +62,7 @@ The repository follows the official
 according to what it implements:
 
 - `components/<abstraction>/<impl>` where `<abstraction>` is an eino component
-  type: one of `document`, `embedding`, `indexer`, `model`, `prompt`,
+  type: one of `agent`, `document`, `embedding`, `indexer`, `model`, `prompt`,
   `retriever`, `tool`.
   - A model decorator/wrapper — anything implementing `model.BaseChatModel` or
     `model.ToolCallingChatModel` — is a **model** component and belongs under

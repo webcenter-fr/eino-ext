@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"fmt"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -105,7 +106,7 @@ func (o *Optimizer) applyVerbositySteer(msgs []*schema.Message) []*schema.Messag
 		out := make([]*schema.Message, len(msgs))
 		copy(out, msgs)
 		clone := *msg
-		clone.Content = msg.Content + "\n\n" + steer
+		clone.Content = fmt.Sprintf("%s\n\n%s", msg.Content, steer)
 		extra := make(map[string]any, len(clone.Extra)+1)
 		for k, v := range clone.Extra {
 			extra[k] = v

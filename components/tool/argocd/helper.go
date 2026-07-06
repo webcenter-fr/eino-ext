@@ -1,25 +1,24 @@
 package argocd
 
 import (
+	_ "embed"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/goccy/go-json"
 )
 
-const listOutputGuidance = `
-** How to limit output (IMPORTANT) **
-Always narrow the query to avoid large responses:
-- Set ` + "`project`" + ` whenever you know it.
-- Use ` + "`selector`" + ` (e.g. 'app=nginx,env=prod') to target applications.
-- Use ` + "`filter`" + ` (Go RE2 regex, applied on each resource JSON) to keep only matches.
-`
+// listOutputGuidance is a shared guidance block appended to the description of all
+// list tools. It instructs the model to narrow queries to avoid large responses.
+//
+//go:embed prompts/list_output_guidance.md
+var listOutputGuidance string
 
-const describeOutputGuidance = `
-** How to limit output (IMPORTANT) **
-Use ` + "`excludeFieldsOutput`" + ` to drop large sections you do not need (any of
-'metadata', 'spec', 'status') instead of fetching the full resource.
-`
+// describeOutputGuidance is a shared guidance block appended to the description of all
+// describe tools. It instructs the model to narrow the output to avoid large responses.
+//
+//go:embed prompts/describe_output_guidance.md
+var describeOutputGuidance string
 
 // MustMarshal marshals v to JSON. Panics on error.
 // This is safe to use here because Go structs cannot fail JSON serialization in practice.

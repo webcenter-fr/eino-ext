@@ -19,23 +19,23 @@ const (
 // Config holds the configuration for web search and web fetch tools.
 type Config struct {
 	// Timeout for HTTP requests. Defaults to 30s if zero.
-	Timeout time.Duration
+	Timeout time.Duration `validate:"gte=0" jsonschema:"description=HTTP request timeout, defaults to 30s if zero"`
 	// MaxRetry is the maximum number of retry attempts on transient errors.
 	// Defaults to 3 if zero.
-	MaxRetry int
+	MaxRetry int `validate:"gte=0" jsonschema:"description=Maximum retry attempts on transient errors, defaults to 3 if zero"`
 	// UserAgent is the User-Agent header sent with requests.
 	// Defaults to Chrome 143 on Windows if empty.
-	UserAgent string
+	UserAgent string `jsonschema:"description=User-Agent header sent with requests, defaults to Chrome 143 if empty"`
 	// MaxBodySize is the maximum response body size in bytes.
 	// Defaults to 5MB if zero.
-	MaxBodySize int64
+	MaxBodySize int64 `validate:"gte=0" jsonschema:"description=Maximum response body size in bytes, defaults to 5MB if zero"`
 	// HTTPClient is an optional custom HTTP client. If nil, a default client
 	// with the configured Timeout and SSRF-safe transport is used.
 	// Useful for testing with custom transports (e.g. httptest.Server).
-	HTTPClient *http.Client
+	HTTPClient *http.Client `json:"-" jsonschema:"-"`
 	// SkipSSRFCheck disables SSRF protection. Only set this for testing
 	// against local servers.
-	SkipSSRFCheck bool
+	SkipSSRFCheck bool `jsonschema:"description=Disable SSRF protection, only for testing"`
 }
 
 // DefaultConfig returns a Config with safe default values.

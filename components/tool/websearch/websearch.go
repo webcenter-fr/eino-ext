@@ -6,6 +6,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 )
@@ -57,6 +58,9 @@ func NewWebSearchTool(cfg *Config) (tool.InvokableTool, error) {
 	if cfg == nil {
 		c := DefaultConfig()
 		cfg = &c
+	}
+	if err := validate.Struct(cfg); err != nil {
+		return nil, errors.Wrap(err, "invalid websearch config")
 	}
 	// Make a local copy so the caller's config is not mutated.
 	localCfg := cfg.applyDefaults(DefaultConfig())

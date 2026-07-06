@@ -1,19 +1,3 @@
-/*
- * Copyright 2025 CloudWeGo Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 // Package runner bridges an eino adk.Runner run to the cross-request session
 // lifecycle (session.Turn) so that any eino project gets streaming + history
 // persistence out of the box, without re-implementing the glue per project.
@@ -66,26 +50,26 @@ type Config struct {
 	// Required. The bridge takes ownership: it calls CommitAssistant or Discard
 	// exactly once, so the caller must NOT also release the turn (a plain
 	// `defer turn.Discard()` stays safe thanks to its idempotent release).
-	Turn *session.Turn `validate:"required"`
+	Turn *session.Turn `validate:"required" jsonschema:"description=Locked session turn that persists the assistant answer"`
 
 	// Iterator is the async iterator returned by adk.Runner.Run. Required.
-	Iterator *adk.AsyncIterator[*adk.AgentEvent] `validate:"required"`
+	Iterator *adk.AsyncIterator[*adk.AgentEvent] `validate:"required" jsonschema:"description=Async iterator returned by adk.Runner.Run"`
 
 	// Predicate selects which events are streamed and persisted, keyed by the
 	// emitting agent name and message role. When nil, the bridge streams and
 	// persists every assistant-role message (assistant-only default).
-	Predicate MessagePredicate
+	Predicate MessagePredicate `jsonschema:"description=Event filter keyed by agent name and message role, defaults to assistant-only"`
 
 	// OnError, when non-nil, is invoked with an iterator error to build an
 	// ephemeral notice streamed to the client (never persisted). When nil, the
 	// error is only forwarded on the stream and the answer marked incomplete.
-	OnError func(err error) *schema.Message
+	OnError func(err error) *schema.Message `jsonschema:"description=Error handler that builds ephemeral notices streamed to client, never persisted"`
 
 	// OnSkip, when non-nil, observes events filtered out by Predicate (debug/trace).
-	OnSkip func(event *adk.AgentEvent)
+	OnSkip func(event *adk.AgentEvent) `jsonschema:"description=Debug/trace observer for events filtered out by Predicate"`
 
 	// BufferSize overrides the pipe buffer size. <= 0 uses DefaultBufferSize.
-	BufferSize int `validate:"gte=0"`
+	BufferSize int `validate:"gte=0" jsonschema:"description=Pipe buffer size, defaults to 1000 if zero"`
 }
 
 // Run starts the bridge and returns the StreamReader the caller forwards to the

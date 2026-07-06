@@ -1,21 +1,5 @@
 package file
 
-/*
- * Copyright 2025 CloudWeGo Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import (
 	"bufio"
 	"github.com/goccy/go-json"
@@ -26,19 +10,20 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"github.com/webcenter-fr/eino-ext/components/memory"
 )
 
 // FileMemoryConfig defines the configuration for FileMemory.
 type FileMemoryConfig struct {
-	Dir           string
-	MaxWindowSize int
+	Dir           string `validate:"omitempty" jsonschema:"description=Directory path for storing memory files,default=/tmp/eino/memory"`
+	MaxWindowSize int `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
 
 	// TokenCounter is the function used to count tokens. Defaults to memory.DefaultTokenCounter.
 	TokenCounter memory.TokenCounter
 
 	// MaxWindowTokens is the maximum token budget for GetWindow. 0 means no token cap.
-	MaxWindowTokens int
+	MaxWindowTokens int `validate:"gte=0" jsonschema:"description=Maximum token budget for GetWindow, 0 means no cap"`
 }
 
 // FileMemory can store messages of each conversation
@@ -73,6 +58,9 @@ func GetDefaultMemory() memory.Memory {
 }
 
 func NewFileMemory(cfg FileMemoryConfig) memory.Memory {
+	if err := validate.Struct(&cfg); err != nil {
+		return nil
+	}
 	if cfg.Dir == "" {
 		cfg.Dir = "/tmp/eino/memory"
 	}
