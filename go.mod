@@ -24,7 +24,6 @@ require (
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/hertz-contrib/sse v0.1.0
 	github.com/kubeflow/spark-operator v0.0.0-20250528053318-61510642af54
-	github.com/opensearch-project/opensearch-go/v4 v4.6.0
 	github.com/openshift/api v0.0.0-20260702005605-1ebdd3deac8c
 	github.com/operator-framework/api v0.44.0
 	github.com/prometheus/client_golang v1.23.2

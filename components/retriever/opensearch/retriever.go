@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 	opensearchv4 "github.com/disaster37/opensearch/v4"
 	"github.com/disaster37/opensearch/v4/api"
 	"github.com/disaster37/opensearch/v4/querydsl"
 	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 const (
@@ -46,22 +48,53 @@ type Config struct {
 	// SearchPipeline is an optional search pipeline name applied to every
 	// search request (added via the request body).
 	SearchPipeline string `validate:"omitempty" jsonschema:"description=Optional search pipeline name"`
+
+	// Embedding, when set, enables kNN vector search. If Hybrid is also true,
+	// the vector search is combined with a BM25 match on ContentField via a
+	// bool "should" query (the OpenSearch search pipeline, if configured, then
+	// combines/normalizes the two sub-scores).
+	Embedding embedding.Embedder `validate:"-" jsonschema:"-"`
+
+	// VectorField is the knn_vector field to search. Required when Embedding is set.
+	VectorField string `validate:"omitempty" jsonschema:"description=knn_vector field name for kNN search"`
+
+	// ContentField is the text field used for the BM25 side of a hybrid query
+	// (also the field defaultResultParser reads as Content). Defaults to "content".
+	ContentField string `validate:"omitempty" jsonschema:"description=Text field for BM25 match, defaults to content"`
+
+	// Hybrid combines the kNN query with a BM25 match on ContentField (requires
+	// Embedding and VectorField). If false and Embedding is set, pure kNN only.
+	Hybrid bool `validate:"omitempty" jsonschema:"description=Combine kNN with BM25 on ContentField"`
+
+	// K is the number of nearest neighbors requested from the kNN query.
+	// Defaults to TopK (see Retrieve) when zero.
+	K int `validate:"omitempty" jsonschema:"description=Number of nearest neighbors for kNN"`
 }
 
 // Retriever implements retriever.Retriever backed by OpenSearch.
 type Retriever struct {
-	client         opensearchv4.Client
-	resultParser   ResultParser
-	searchPipeline string
+	client       opensearchv4.Client
+	resultParser ResultParser
+	config       Config
 }
+
+// Compile-time check that Retriever implements retriever.Retriever.
+var _ retriever.Retriever = (*Retriever)(nil)
 
 // NewRetriever creates a new OpenSearch retriever.
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	if config == nil {
-		return nil, errors.New("config is required")
+		config = &Config{}
 	}
-	if len(config.URLs) == 0 {
-		return nil, errors.New("at least one URL is required")
+	if config.ContentField == "" {
+		config.ContentField = "content"
+	}
+	if err := validate.Struct(config); err != nil {
+		return nil, err
+	}
+
+	if config.Embedding != nil && config.VectorField == "" {
+		return nil, errors.New("VectorField is required when Embedding is set")
 	}
 
 	opensearchCfg := &opensearchv4.Config{
@@ -83,9 +116,9 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	}
 
 	return &Retriever{
-		client:         client,
-		resultParser:   rp,
-		searchPipeline: config.SearchPipeline,
+		client:       client,
+		resultParser: rp,
+		config:       *config,
 	}, nil
 }
 
@@ -97,6 +130,11 @@ func (r *Retriever) GetType() string {
 // IsCallbacksEnabled reports that this retriever supports callbacks.
 func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
+}
+
+// Client returns the underlying OpenSearch client.
+func (r *Retriever) Client() opensearchv4.Client {
+	return r.client
 }
 
 // Retrieve performs a search against OpenSearch and returns matching documents.
@@ -117,19 +155,16 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	body := map[string]any{
-		"query": map[string]any{
-			"query_string": map[string]any{
-				"query":            query,
-				"default_operator": "AND",
-			},
-		},
-		"size": topK,
+	var vectors [][]float64
+	if r.config.Embedding != nil {
+		var embedErr error
+		vectors, embedErr = r.config.Embedding.EmbedStrings(ctx, []string{query})
+		if embedErr != nil {
+			return nil, errors.Wrap(embedErr, "failed to embed query")
+		}
 	}
 
-	if r.searchPipeline != "" {
-		body["search_pipeline"] = r.searchPipeline
-	}
+	body := r.buildSearchBody(query, topK, vectors)
 
 	req := &api.SearchRequest{
 		Indices: []string{*commonOpts.Index},
@@ -142,6 +177,57 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 
 	return r.parseSearchResult(ctx, result)
+}
+
+// buildSearchBody constructs the OpenSearch request body based on the
+// configured search mode (pure BM25, pure kNN, or hybrid).
+func (r *Retriever) buildSearchBody(query string, topK int, vectors [][]float64) map[string]any {
+	var queryPart map[string]any
+
+	if r.config.Embedding == nil {
+		queryPart = map[string]any{
+			"query_string": map[string]any{
+				"query":            query,
+				"default_operator": "AND",
+			},
+		}
+	} else {
+		k := r.config.K
+		if k == 0 {
+			k = topK
+		}
+		knn := map[string]any{
+			"knn": map[string]any{
+				r.config.VectorField: map[string]any{
+					"vector": vectors[0],
+					"k":      k,
+				},
+			},
+		}
+		if r.config.Hybrid {
+			queryPart = map[string]any{
+				"bool": map[string]any{
+					"should": []any{
+						knn,
+						map[string]any{
+							"match": map[string]any{r.config.ContentField: query},
+						},
+					},
+				},
+			}
+		} else {
+			queryPart = knn
+		}
+	}
+
+	body := map[string]any{
+		"query": queryPart,
+		"size":  topK,
+	}
+	if r.config.SearchPipeline != "" {
+		body["search_pipeline"] = r.config.SearchPipeline
+	}
+	return body
 }
 
 // parseSearchResult converts OpenSearch search hits into schema.Document

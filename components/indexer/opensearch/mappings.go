@@ -1,12 +1,11 @@
 package opensearch
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 
 	"emperror.dev/errors"
-	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+	"github.com/disaster37/opensearch/v4"
+	"github.com/disaster37/opensearch/v4/api"
 )
 
 // EnsureMappings merges the given field properties into an already-existing
@@ -22,31 +21,18 @@ import (
 //	    "source_id":   map[string]any{"type": "keyword"},
 //	    "source_hash": map[string]any{"type": "keyword"},
 //	}
-func EnsureMappings(ctx context.Context, client *opensearchapi.Client, index string, properties map[string]any) error {
-	res, err := client.Indices.Exists(ctx, opensearchapi.IndicesExistsReq{Indices: []string{index}})
+func EnsureMappings(ctx context.Context, client opensearch.Client, index string, properties map[string]any) error {
+	exists, err := client.Indices().Exists(ctx, []string{index})
 	if err != nil {
-		// The v4 SDK returns an error even on a 404 (index not found); treat
-		// that as "nothing to retrofit yet".
-		if res != nil && res.StatusCode == 404 {
-			return nil
-		}
 		return errors.Wrap(err, "failed to check index existence")
 	}
-	if res.Body != nil {
-		defer res.Body.Close()
-	}
-	if res.StatusCode == 404 {
+	if !exists {
 		return nil
 	}
 
-	body, err := json.Marshal(map[string]any{"properties": properties})
-	if err != nil {
-		return errors.Wrap(err, "failed to marshal mapping update")
-	}
-
-	if _, err = client.Indices.Mapping.Put(ctx, opensearchapi.MappingPutReq{
+	if _, err = client.Indices().PutMapping(ctx, &api.PutMappingRequest{
 		Indices: []string{index},
-		Body:    bytes.NewReader(body),
+		Body:    map[string]any{"properties": properties},
 	}); err != nil {
 		return errors.Wrap(err, "failed to update index mapping")
 	}
