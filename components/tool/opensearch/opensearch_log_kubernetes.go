@@ -10,11 +10,11 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/disaster37/opensearch/v3/config"
 	opensearchv4 "github.com/disaster37/opensearch/v4"
 	opensearchv4api "github.com/disaster37/opensearch/v4/api"
 	"github.com/disaster37/opensearch/v4/querydsl"
 	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -213,7 +213,7 @@ func fieldAsString(v interface{}) string {
 }
 
 // NewOpensearchLogKubernetesTool creates a new instance of the OpensearchLogKubernetesTool.
-func NewOpensearchLogKubernetesTool(ctx context.Context, cfg *config.Config) (*OpensearchLogKubernetesTool, error) {
+func NewOpensearchLogKubernetesTool(ctx context.Context, cfg *osclient.Config) (*OpensearchLogKubernetesTool, error) {
 
 	c, err := NewClient(cfg)
 	if err != nil {

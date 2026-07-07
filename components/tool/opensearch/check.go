@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/disaster37/opensearch/v3/config"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 )
 
 const osCheckTimeout = 10 * time.Second
 
-func Check(ctx context.Context, cfg *config.Config) checkup.Results {
+func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 	if cfg == nil || len(cfg.URLs) == 0 {
 		return checkup.Results{
 			{

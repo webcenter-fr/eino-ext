@@ -91,8 +91,6 @@ github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313 h1:mahRY
 github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313/go.mod h1:LpDhXR4manwbarSAaIP0zxdkjIlYcc4BM6j1Wa0bxwE=
 github.com/disaster37/k8s-objectmatcher v1.8.8 h1:W6BN4Rkx2NCWOZaWGGEHjE3xaN6ur6mwL/V7wK9jf5Y=
 github.com/disaster37/k8s-objectmatcher v1.8.8/go.mod h1:2nRtPBxwgkwCBjerqlRF4oV9pqAVC1bxtl6Y4/iAt3U=
-github.com/disaster37/opensearch/v3 v3.4.3 h1:kXGtzshppHvqaAxdUGLe9+VaxeFt1oSYnEQswuW4cTI=
-github.com/disaster37/opensearch/v3 v3.4.3/go.mod h1:3ftuIJYcrwcB2QOI0mOuXllwCPQfjMp6OTCzT0XCAOk=
 github.com/disaster37/opensearch/v4 v4.0.0-7 h1:OzefzQkY166+E6RQA0+qwVG++LK+Q6/FvL/TQ6hN1vY=
 github.com/disaster37/opensearch/v4 v4.0.0-7/go.mod h1:DEdvp+3xHQFCF5F6ckreRiDtorTplF7fSiI3FoXnBrY=
 github.com/disaster37/operator-sdk-extra/v2 v2.0.10 h1:FZv5YTW3QWkOBkSuJ3Wh6vb1W09Eb2mUAViEKCRfFIo=

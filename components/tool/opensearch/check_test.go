@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/disaster37/opensearch/v3/config"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 )
 
 func TestCheckNilConfig(t *testing.T) {
@@ -23,7 +23,7 @@ func TestCheckNilConfig(t *testing.T) {
 
 func TestCheckEmptyURLs(t *testing.T) {
 	ctx := context.Background()
-	results := Check(ctx, &config.Config{URLs: nil})
+	results := Check(ctx, &osclient.Config{URLs: nil})
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results for empty URLs, got %d", len(results))
 	}
