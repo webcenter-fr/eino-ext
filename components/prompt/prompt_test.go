@@ -18,6 +18,7 @@ func TestConstructorsKindAndContent(t *testing.T) {
 		{"troubleshoot", NewTroubleshoot(""), KindTroubleshoot, "troubleshooting infrastructure"},
 		{"check", NewCheck(""), KindCheck, "verification agent"},
 		{"architecture", NewArchitecture(""), KindArchitecture, "architect"},
+		{"pull_request_review", NewPullRequestReview(""), KindPullRequestReview, "code reviewer"},
 	}
 
 	for _, tc := range cases {

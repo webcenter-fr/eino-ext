@@ -23,6 +23,8 @@ const (
 	KindCheck Kind = "check"
 	// KindArchitecture is an architecture documentation prompt.
 	KindArchitecture Kind = "architecture"
+	// KindPullRequestReview is a pull-request reviewer persona prompt.
+	KindPullRequestReview Kind = "pull_request_review"
 )
 
 //go:embed prompts/question.md
@@ -36,6 +38,9 @@ var baseCheck string
 
 //go:embed prompts/architecture.md
 var baseArchitecture string
+
+//go:embed prompts/pull_request_review.md
+var basePullRequestReview string
 
 // section is an optional additional named block appended to the prompt.
 type section struct {
