@@ -131,16 +131,16 @@ func TestNewOpenAIConfig(t *testing.T) {
 
 	// High reasoning + explicit cap should also construct cleanly.
 	m, err = New(ctx, &Config{
-		Plan:            "copilot",
+		Plan:            "github-copilot",
 		BaseURL:         "http://localhost:0",
 		Model:           "gpt-x",
 		Thinking:        High,
 		MaxOutputTokens: 1234,
 	})
 	if err != nil {
-		t.Fatalf("New(copilot, High): unexpected error: %v", err)
+		t.Fatalf("New(github-copilot, High): unexpected error: %v", err)
 	}
 	if m == nil {
-		t.Fatal("New(copilot, High): nil model")
+		t.Fatal("New(github-copilot, High): nil model")
 	}
 }

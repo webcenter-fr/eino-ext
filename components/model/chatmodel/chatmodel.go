@@ -4,7 +4,7 @@
 // It maps a thinking *level* (Off/Low/Medium/High) onto the underlying
 // provider's reasoning configuration and caps output tokens, so the same
 // construction logic can be reused across eino projects regardless of the
-// concrete provider (Ollama, OpenAI, or an OpenAI-compatible "copilot"
+// concrete provider (Ollama, OpenAI, or an OpenAI-compatible "github-copilot"
 // endpoint).
 //
 // The factory is intentionally minimal and additive: the returned model is a
@@ -12,7 +12,7 @@
 // example with components/model/cachestab).
 //
 // Provider notes:
-//   - OpenAI/copilot (openai@v0.1.13) supports only Low/Medium/High reasoning
+//   - OpenAI/github-copilot (openai@v0.1.13) supports only Low/Medium/High reasoning
 //     effort. Off means "omit reasoning" (the field is left unset), which keeps
 //     non-reasoning models unaffected.
 //   - Ollama has no reasoning *levels*; it only exposes a boolean "think"
@@ -37,7 +37,7 @@ import (
 type ThinkingLevel string
 
 const (
-	// Off disables reasoning. For OpenAI/copilot the reasoning effort field is
+	// Off disables reasoning. For OpenAI/github-copilot the reasoning effort field is
 	// left unset; for Ollama the think toggle is false.
 	Off ThinkingLevel = "off"
 	// Low maps to the provider's lowest reasoning effort.
@@ -53,7 +53,7 @@ const (
 // kilocode's OUTPUT_TOKEN_MAX. Used by CapOutputTokens when no ceiling is given.
 const OutputTokenMax = 32_000
 
-// defaultTimeout is the request timeout applied to the openai/copilot path when
+// defaultTimeout is the request timeout applied to the openai/github-copilot path when
 // Config.Timeout is zero.
 const defaultTimeout = 60 * time.Minute
 
@@ -82,9 +82,9 @@ func ParseThinkingLevel(s string) (ThinkingLevel, error) {
 // Config describes how to construct a model.ToolCallingChatModel. It is a struct
 // of options so future fields can be added without breaking callers.
 type Config struct {
-	// Plan selects the provider: "ollama", "copilot", or "openai".
-	// "copilot" and "openai" share the OpenAI-compatible construction path.
-	Plan string `validate:"required" jsonschema:"description=Provider plan: ollama, copilot, or openai"`
+	// Plan selects the provider: "ollama", "github-copilot", or "openai".
+	// "github-copilot" and "openai" share the OpenAI-compatible construction path.
+	Plan string `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
 
 	// BaseURL is the provider endpoint URL.
 	BaseURL string `validate:"required" jsonschema:"description=Provider endpoint URL"`
@@ -102,16 +102,16 @@ type Config struct {
 	// default unset.
 	MaxOutputTokens int `validate:"gte=0" jsonschema:"description=Maximum generated output tokens, 0 leaves provider default"`
 
-	// Timeout is the request timeout for the openai/copilot path. 0 uses the
+	// Timeout is the request timeout for the openai/github-copilot path. 0 uses the
 	// package default of 60m.
-	Timeout time.Duration `validate:"gte=0" jsonschema:"description=Request timeout for openai/copilot path, 0 uses default of 60m"`
+	Timeout time.Duration `validate:"gte=0" jsonschema:"description=Request timeout for openai/github-copilot path, 0 uses default of 60m"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
 //
-// Supported plans are "ollama", "copilot", and "openai"; copilot and openai
-// share the OpenAI-compatible path. Construction errors are wrapped with
-// emperror.dev/errors.
+// Supported plans are "ollama", "github-copilot", and "openai"; github-copilot
+// and openai share the OpenAI-compatible path. Construction errors are wrapped
+// with emperror.dev/errors.
 func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
 		return nil, errors.New("chatmodel: config must not be nil")
@@ -123,7 +123,7 @@ func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Plan)) {
 	case "ollama":
 		return newOllama(ctx, cfg)
-	case "copilot", "openai":
+	case "github-copilot", "openai":
 		return newOpenAI(ctx, cfg)
 	default:
 		return nil, errors.Errorf("chatmodel: unsupported plan: %s", cfg.Plan)

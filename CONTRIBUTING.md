@@ -228,6 +228,26 @@ func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, er
 - Use descriptive names that reveal intent: `ApplicationListOutput` is better than `Output`.
 - Keep parameter struct names consistent: `XxxParams` for input, `XxxOutput` for output.
 
+#### Provider and product names in configuration strings
+
+Configuration string values that name a provider, product, or service (e.g.
+`Plan`, `Provider`) must use the official full name in lowercase kebab-case, not
+an abbreviation:
+
+```go
+// Good: official name, full form
+Plan: "github-copilot"
+
+// Bad: abbreviation, not the canonical name
+Plan: "copilot"
+```
+
+This ensures:
+- **Consistency** with `libs/modelsdev` provider buckets (which use the official
+  models.dev naming) and with other components in the repository.
+- **Clarity**: "github-copilot" is unambiguous; "copilot" could mean any number
+  of products.
+
 ### Security Guidelines **(tools only)**
 
 Tools that execute commands or access external systems must implement security controls:

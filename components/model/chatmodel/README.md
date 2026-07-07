@@ -26,7 +26,7 @@ Parsing is case-insensitive and trims whitespace.
 
 ### Provider semantics
 
-- **OpenAI / copilot** (`openai@v0.1.13`) supports only `Low`/`Medium`/`High`
+- **OpenAI / github-copilot** (`openai@v0.1.13`) supports only `Low`/`Medium`/`High`
   reasoning effort — there is no `none`/`minimal`/`xhigh`. `Off` means *omit
   reasoning*: the `ReasoningEffort` field is left unset, so non-reasoning models
   are unaffected.
@@ -37,19 +37,18 @@ Parsing is case-insensitive and trims whitespace.
 
 | field             | meaning                                                         |
 | ----------------- | --------------------------------------------------------------- |
-| `Plan`            | provider: `ollama`, `copilot`, or `openai`                      |
+| `Plan`            | provider: `ollama`, `github-copilot`, or `openai`               |
 | `BaseURL`         | provider endpoint URL                                           |
 | `Model`           | model ID                                                        |
 | `Temperature`     | sampling temperature                                            |
 | `Thinking`        | `ThinkingLevel` (`Off` omits reasoning)                         |
 | `MaxOutputTokens` | output-token cap; `0` leaves the provider default unset         |
-| `Timeout`         | request timeout (openai/copilot path); `0` uses the 60m default |
+| `Timeout`         | request timeout (openai/github-copilot path); `0` uses the 60m default |
 
-`copilot` and `openai` share the OpenAI-compatible construction path.
+`github-copilot` and `openai` share the OpenAI-compatible construction path.
 
 For the Ollama path, `MaxOutputTokens` maps to `Options.NumPredict` (Ollama's
-output-token equivalent) when greater than zero; `Timeout` is openai/copilot
-only.
+output-token equivalent) when greater than zero; `Timeout` is openai/github-copilot only.
 
 ## Output-token capping
 
@@ -66,7 +65,7 @@ output-token capping:
 ctx := context.Background()
 
 m, err := chatmodel.New(ctx, &chatmodel.Config{
-    Plan:            "openai", // or "copilot" / "ollama"
+    Plan:            "openai", // or "github-copilot" / "ollama"
     BaseURL:         baseURL,
     Model:           modelID,
     Temperature:     0.7,
