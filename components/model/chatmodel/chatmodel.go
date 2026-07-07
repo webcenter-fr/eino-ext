@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	copilot "github.com/webcenter-fr/eino-ext/components/model/copilot"
 	ollama "github.com/cloudwego/eino-ext/components/model/ollama"
 	openai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -111,6 +112,9 @@ type Config struct {
 	// TLSSkipVerify disables TLS certificate verification. Useful for self-hosted
 	// providers with self-signed certificates.
 	TLSSkipVerify bool `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+
+	// APIKey is the provider API key or token (Copilot bearer token for github-copilot).
+	APIKey string `validate:"omitempty" jsonschema:"description=Provider API key or token (Copilot bearer token for github-copilot)"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
@@ -129,7 +133,9 @@ func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Plan)) {
 	case "ollama":
 		return newOllama(ctx, cfg)
-	case "github-copilot", "openai":
+	case "github-copilot":
+		return newCopilot(ctx, cfg)
+	case "openai":
 		return newOpenAI(ctx, cfg)
 	default:
 		return nil, errors.Errorf("chatmodel: unsupported plan: %s", cfg.Plan)
@@ -157,6 +163,21 @@ func newOllama(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, er
 	return m, nil
 }
 
+func newCopilot(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
+	copilotCfg := &copilot.Config{
+		CopilotToken:  cfg.APIKey,
+		BaseURL:       cfg.BaseURL,
+		Timeout:       cfg.Timeout,
+		TLSSkipVerify: cfg.TLSSkipVerify,
+	}
+
+	m, err := copilot.NewCopilotChatModel(ctx, copilotCfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "chatmodel: building copilot model")
+	}
+	return m, nil
+}
+
 func newOpenAI(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	timeout := cfg.Timeout
 	if timeout <= 0 {
@@ -164,9 +185,10 @@ func newOpenAI(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, er
 	}
 
 	conf := &openai.ChatModelConfig{
-		BaseURL:    cfg.BaseURL,
-		Model:      cfg.Model,
-		Timeout:    timeout,
+		APIKey:    cfg.APIKey,
+		BaseURL:   cfg.BaseURL,
+		Model:     cfg.Model,
+		Timeout:   timeout,
 		HTTPClient: insecureHTTPClient(cfg.TLSSkipVerify, timeout),
 	}
 

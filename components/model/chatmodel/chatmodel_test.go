@@ -128,12 +128,50 @@ func TestNewOpenAIConfig(t *testing.T) {
 	if m == nil {
 		t.Fatal("New(openai, Off): nil model")
 	}
+}
 
-	// High reasoning + explicit cap should also construct cleanly.
-	m, err = New(ctx, &Config{
+// TestNewCopilotConfig asserts the Copilot config mapping without hitting a
+// network.
+func TestNewCopilotConfig(t *testing.T) {
+	ctx := context.Background()
+
+	m, err := New(ctx, &Config{
+		Plan:    "github-copilot",
+		BaseURL: "http://localhost:0",
+		Model:   "gpt-x",
+		APIKey:  "test-copilot-token",
+	})
+	if err != nil {
+		t.Fatalf("New(github-copilot): unexpected error: %v", err)
+	}
+	if m == nil {
+		t.Fatal("New(github-copilot): nil model")
+	}
+}
+
+// TestNewCopilotMissingAPIKey asserts that github-copilot plan fails without APIKey.
+func TestNewCopilotMissingAPIKey(t *testing.T) {
+	ctx := context.Background()
+
+	_, err := New(ctx, &Config{
+		Plan:    "github-copilot",
+		BaseURL: "http://localhost:0",
+		Model:   "gpt-x",
+	})
+	if err == nil {
+		t.Fatal("New(github-copilot) without APIKey: expected error, got nil")
+	}
+}
+
+// TestNewCopilotWithThinking asserts reasoning config passthrough.
+func TestNewCopilotWithThinking(t *testing.T) {
+	ctx := context.Background()
+
+	m, err := New(ctx, &Config{
 		Plan:            "github-copilot",
 		BaseURL:         "http://localhost:0",
 		Model:           "gpt-x",
+		APIKey:          "test-copilot-token",
 		Thinking:        High,
 		MaxOutputTokens: 1234,
 	})
