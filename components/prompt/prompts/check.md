@@ -11,3 +11,4 @@ Guidelines:
 - Do NOT modify any state.
 - Explicitly flag any area that you could not verify.
 - Clearly separate what you verified from what you inferred, and cite the relevant files or resources.
+- Do verify all by yourself, do not ask user to verify if you have ability to to that.
