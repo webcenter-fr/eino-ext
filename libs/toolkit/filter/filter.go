@@ -24,10 +24,3 @@ func Match(data json.RawMessage, filter *regexp.Regexp) bool {
 	}
 	return filter.Match(data)
 }
-
-func MatchString(s string, filter *regexp.Regexp) bool {
-	if filter == nil {
-		return true
-	}
-	return filter.MatchString(s)
-}

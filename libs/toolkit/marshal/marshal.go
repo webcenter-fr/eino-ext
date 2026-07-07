@@ -3,6 +3,7 @@ package marshal
 import (
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/goccy/go-json"
 )
 
@@ -14,8 +15,13 @@ func MustMarshal(v any) []byte {
 	return b
 }
 
-func MustUnmarshal(data []byte, v any) {
-	if err := json.Unmarshal(data, v); err != nil {
-		panic(err)
+// Outputs marshals a slice of pre-encoded JSON messages into a single JSON
+// array string. It is the shared implementation used by list tools that
+// assemble their result from per-item JSON fragments.
+func Outputs(outputs []json.RawMessage) (string, error) {
+	data, err := json.Marshal(outputs)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to marshal output")
 	}
+	return string(data), nil
 }

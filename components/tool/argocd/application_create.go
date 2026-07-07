@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/goccy/go-json"
 	"k8s.io/utils/ptr"
 )
@@ -89,8 +90,8 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": %s}`, string(data)), nil
 	}
 
-	if !params.Confirmed {
-		return "", errors.Errorf("create aborted: Confirmed must be true. Use DryRun first to preview, then set Confirmed=true to proceed.")
+	if err := confirm.RequireConfirmationForAction("create", params.Confirmed); err != nil {
+		return "", err
 	}
 
 	app, err := c.Application().Create(appModel, &api.ApplicationCreateOptions{

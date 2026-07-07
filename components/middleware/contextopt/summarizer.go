@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/webcenter-fr/eino-ext/libs/summarizer"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 )
 
 // DefaultSummaryTemplate is the anchored Markdown summary template (faithful copy
@@ -89,8 +90,8 @@ func (s *modelSummarizer) renderHistory(history []*schema.Message) string {
 			continue
 		}
 		content := msg.Content
-		if msg.Role == schema.Tool && s.toolOutputMaxChars > 0 && len(content) > s.toolOutputMaxChars {
-			content = fmt.Sprintf("%s\n\n[output truncated]", content[:s.toolOutputMaxChars])
+		if msg.Role == schema.Tool {
+			content = strutil.Truncate(content, s.toolOutputMaxChars, "\n\n[output truncated]")
 		}
 		fmt.Fprintf(&b, "%s: %s\n", msg.Role, content)
 		for _, tc := range msg.ToolCalls {

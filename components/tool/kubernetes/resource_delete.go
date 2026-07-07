@@ -7,10 +7,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const resourceDeleteDescription = `
@@ -75,8 +75,8 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 	}
 
 	// Enforce safety gate: require confirmation for non-dry-run operations.
-	if !params.DryRun && !params.Confirmed {
-		return "", errors.New("confirmed must be true to execute (set dryRun=true first to preview)")
+	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+		return "", err
 	}
 
 	c, err := t.dynamicClient(params.Cluster)
@@ -84,11 +84,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 		return "", err
 	}
 
-	gvr := schema.GroupVersionResource{
-		Group:    params.ApiGroup,
-		Version:  params.ApiVersion,
-		Resource: params.Resource,
-	}
+	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
 
 	// Dry-run: fetch the resource and return what would be deleted.
 	if params.DryRun {
@@ -137,20 +133,13 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 // NewResourceDeleteTool creates a new instance of the ResourceDeleteTool.
 func NewResourceDeleteTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	clients, err := BuildClientDynamics(configs, nil)
-	if err != nil {
-		return nil, err
-	}
-	base, err := newBaseTool(configs)
+	base, err := newBaseToolWithDynamic(configs)
 	if err != nil {
 		return nil, err
 	}
 
 	deleteTool := &ResourceDeleteTool{
-		baseToolWithDynamic: &baseToolWithDynamic{
-			baseTool: base,
-			dynamics: clients,
-		},
+		baseToolWithDynamic: base,
 	}
 
 	// Infer tool

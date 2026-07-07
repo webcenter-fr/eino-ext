@@ -16,7 +16,6 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const resourceListDescription = `
@@ -59,10 +58,7 @@ type ResourceListTool struct {
 
 // IsMatch returns true if the JSON data matches the compiled regex filter. A nil filter matches everything.
 func (t *ResourceListTool) IsMatch(o json.RawMessage, re *regexp.Regexp) bool {
-	if re == nil {
-		return true
-	}
-	return re.Match(o)
+	return filter.Match(o, re)
 }
 
 // ToJSON converts the given unstructured.Unstructured object to a JSON representation of ResourceListOutput.
@@ -120,11 +116,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 		}
 	}
 
-	namespaceResource := schema.GroupVersionResource{
-		Group:    params.ApiGroup,
-		Version:  params.ApiVersion,
-		Resource: params.Resource,
-	}
+	namespaceResource := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
 
 	listOpts := v1.ListOptions{}
 	if ls != nil {
@@ -168,21 +160,14 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 
 // NewResourceListTool creates a new instance of the ResourceListTool.
 func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	clients, err := BuildClientDynamics(configs, nil)
-	if err != nil {
-		return nil, err
-	}
-	base, err := newBaseTool(configs)
+	base, err := newBaseToolWithDynamic(configs)
 	if err != nil {
 		return nil, err
 	}
 
 	listTool := &ResourceListTool{
-		baseToolWithDynamic: &baseToolWithDynamic{
-			baseTool: base,
-			dynamics: clients,
-		},
-		output: &ResourceListOutput{},
+		baseToolWithDynamic: base,
+		output:              &ResourceListOutput{},
 	}
 
 	// Infer tool

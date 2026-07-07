@@ -235,7 +235,7 @@ func (t *ToolTestSuite) SetupSuite() {
 
 	t.configs = Configs{
 		"test": {
-			Url: t.server.URL,
+			URL: t.server.URL,
 		},
 	}
 }

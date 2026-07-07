@@ -10,7 +10,6 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const resourceDescribeDescription = `
@@ -31,15 +30,6 @@ type ResourceDescribeParams struct {
 	ApiGroup            string   `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps'."`
 	Resource            string   `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase. For example, 'deployments', 'pods'."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
-}
-
-// ResourceDescribeOutput defines the structure of the output returned by the ResourceDescribe function.
-type ResourceDescribeOutput struct {
-	metav1.TypeMeta `json:",inline"`
-	Metadata        *metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec            any                `json:"spec,omitempty"`
-	Status          any                `json:"status,omitempty"`
-	Data            any                `json:"data,omitempty"`
 }
 
 // ResourceDescribeTool is a tool that gets the details of a specific resource in a specified Kubernetes cluster.
@@ -71,11 +61,7 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 		return "", err
 	}
 
-	namespaceResource := schema.GroupVersionResource{
-		Group:    params.ApiGroup,
-		Version:  params.ApiVersion,
-		Resource: params.Resource,
-	}
+	namespaceResource := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
 
 	o, err := c.Resource(namespaceResource).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
@@ -100,19 +86,8 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 	output.Status = o.Object["status"]
 	output.Data = o.Object["data"]
 
-	for _, excludeField := range params.ExcludeFieldsOutput {
-		switch excludeField {
-		case "metadata":
-			output.Metadata = nil
-		case "spec":
-			output.Spec = nil
-		case "status":
-			output.Status = nil
-		case "data":
-			output.Data = nil
-		default:
-			return "", errors.Errorf("invalid exclude field: %s", excludeField)
-		}
+	if err := output.applyFieldExclusions(params.ExcludeFieldsOutput); err != nil {
+		return "", err
 	}
 
 	data, err := json.Marshal(output)
@@ -127,20 +102,13 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 // NewResourceDescribeTool creates a new instance of the ResourceDescribeTool.
 func NewResourceDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	clients, err := BuildClientDynamics(configs, nil)
-	if err != nil {
-		return nil, err
-	}
-	base, err := newBaseTool(configs)
+	base, err := newBaseToolWithDynamic(configs)
 	if err != nil {
 		return nil, err
 	}
 
 	describeTool := &ResourceDescribeTool{
-		baseToolWithDynamic: &baseToolWithDynamic{
-			baseTool: base,
-			dynamics: clients,
-		},
+		baseToolWithDynamic: base,
 	}
 
 	// Infer tool

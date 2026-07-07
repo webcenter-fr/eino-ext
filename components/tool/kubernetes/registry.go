@@ -15,6 +15,9 @@ type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 
 // readOnlyConstructors lists all read-only Kubernetes tools (list + describe + pod logs).
 var readOnlyConstructors = []toolConstructor{
+	// Cluster discovery
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewClusterListTool(ctx, c) },
+
 	// Core list tools
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPodListTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDeploymentListTool(ctx, c) },

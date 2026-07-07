@@ -2,7 +2,6 @@ package file
 
 import (
 	"bufio"
-	"github.com/goccy/go-json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,14 +9,15 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/components/memory"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 // FileMemoryConfig defines the configuration for FileMemory.
 type FileMemoryConfig struct {
 	Dir           string `validate:"omitempty" jsonschema:"description=Directory path for storing memory files,default=/tmp/eino/memory"`
-	MaxWindowSize int `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
+	MaxWindowSize int    `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
 
 	// TokenCounter is the function used to count tokens. Defaults to memory.DefaultTokenCounter.
 	TokenCounter memory.TokenCounter
@@ -51,21 +51,21 @@ type FileConversation struct {
 	maxWindowTokens int
 }
 
-func GetDefaultMemory() memory.Memory {
+func GetDefaultMemory() (memory.Memory, error) {
 	return NewFileMemory(FileMemoryConfig{
 		MaxWindowSize: 10,
 	})
 }
 
-func NewFileMemory(cfg FileMemoryConfig) memory.Memory {
-	if err := validate.Struct(&cfg); err != nil {
-		return nil
-	}
+func NewFileMemory(cfg FileMemoryConfig) (memory.Memory, error) {
 	if cfg.Dir == "" {
 		cfg.Dir = "/tmp/eino/memory"
 	}
+	if err := validate.Struct(&cfg); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
-		return nil
+		return nil, errors.Wrap(err, "failed to create memory directory")
 	}
 
 	tc := cfg.TokenCounter
@@ -79,7 +79,7 @@ func NewFileMemory(cfg FileMemoryConfig) memory.Memory {
 		tokenCounter:    tc,
 		maxWindowTokens: cfg.MaxWindowTokens,
 		conversations:   make(map[string]map[string]*FileConversation),
-	}
+	}, nil
 }
 
 func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist bool) (memory.Conversation, error) {
@@ -219,12 +219,7 @@ func (c *FileConversation) LastSummaryIndex() int {
 
 // lastSummaryIndexLocked is the non-locking version for internal use.
 func (c *FileConversation) lastSummaryIndexLocked() int {
-	for i := len(c.Messages) - 1; i >= 0; i-- {
-		if memory.IsSummary(c.Messages[i]) {
-			return i
-		}
-	}
-	return -1
+	return memory.LastSummaryIndex(c.Messages)
 }
 
 // GetWindow returns [last summary + following messages], bounded by a token budget.
@@ -237,91 +232,7 @@ func (c *FileConversation) GetWindow(budget int) []*schema.Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if budget <= 0 {
-		budget = c.maxWindowTokens
-	}
-
-	idx := c.lastSummaryIndexLocked()
-	startIdx := 0
-	if idx >= 0 {
-		startIdx = idx
-	}
-
-	window := c.Messages[startIdx:]
-
-	if budget <= 0 || len(window) == 0 {
-		return window
-	}
-
-	n := len(window)
-
-	// Fast path: already fits within budget.
-	if c.tokenCounter(window) <= budget {
-		return window
-	}
-
-	// Nothing more we can trim if there is only one message.
-	if n == 1 {
-		return window
-	}
-
-	hasSummary := memory.IsSummary(window[0])
-
-	if !hasSummary {
-		// Find the leftmost trimStart such that window[trimStart:] fits within budget.
-		// Always keep at least the last message.
-		if c.tokenCounter(window[n-1:]) > budget {
-			return window[n-1:]
-		}
-		lo, hi := 0, n-1
-		for lo < hi {
-			mid := (lo + hi) / 2
-			if c.tokenCounter(window[mid:]) <= budget {
-				hi = mid
-			} else {
-				lo = mid + 1
-			}
-		}
-		return window[lo:]
-	}
-
-	// Has summary: candidate window is [window[0]] + window[trimStart:] for trimStart in [1, n-1].
-	// Always preserve the summary (window[0]) and the last message (window[n-1]).
-
-	if n == 2 {
-		// Summary + one message; cannot trim further.
-		return window
-	}
-
-	// Check whether even the minimal window [summary, last] fits.
-	minWindow := []*schema.Message{window[0], window[n-1]}
-	if c.tokenCounter(minWindow) > budget {
-		return minWindow
-	}
-
-	// Binary search for the leftmost trimStart in [1, n-1] whose candidate fits.
-	// Use a single pre-allocated scratch slice to avoid per-iteration heap allocations.
-	scratch := make([]*schema.Message, n)
-	scratch[0] = window[0]
-
-	lo, hi := 1, n-1
-	for lo < hi {
-		mid := (lo + hi) / 2
-		sz := n - mid
-		copy(scratch[1:1+sz], window[mid:])
-		if c.tokenCounter(scratch[:1+sz]) <= budget {
-			hi = mid
-		} else {
-			lo = mid + 1
-		}
-	}
-
-	trimStart := lo
-	sz := n - trimStart
-	result := make([]*schema.Message, 1+sz)
-	result[0] = window[0]
-	copy(result[1:], window[trimStart:])
-	return result
+	return memory.SelectWindow(c.Messages, c.tokenCounter, budget, c.maxWindowTokens)
 }
 
 // CountTokens counts the tokens of the current window using the injected TokenCounter.
@@ -360,14 +271,14 @@ func (c *FileConversation) Save(msg *schema.Message) error {
 	// Append to file
 	f, err := os.OpenFile(c.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return errors.Wrap(err, "Failed when save message")
+		return errors.Wrap(err, "failed to open message file")
 	}
 	defer f.Close()
 	if _, err := f.Write(str); err != nil {
-		return errors.Wrap(err, "Failed when save message")
+		return errors.Wrap(err, "failed to write message")
 	}
 	if _, err := f.WriteString("\n"); err != nil {
-		return errors.Wrap(err, "Failed when save message")
+		return errors.Wrap(err, "failed to write message newline")
 	}
 	return nil
 }

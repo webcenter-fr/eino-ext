@@ -64,118 +64,21 @@ func (m *Middleware) WrapInvokableToolCall(_ context.Context, endpoint adk.Invok
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 		args := argumentsInJSON
 
-		// Parse arguments for policy evaluation.
-		params, parseErr := parseArgs(argumentsInJSON)
-		if parseErr != nil {
-			// If we can't parse, still allow through — tools do their own validation.
-			params = map[string]any{}
-		}
-
-		// Policy evaluation (applies to ALL tools).
-		if m.cfg.Policy != nil {
-			if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: false,
-				})
-				return "", err
-			}
-		}
-
-		// Gate check (write tools only).
-		if isWrite {
-			gp, gpErr := safety.ExtractGateParams(argumentsInJSON)
-			if gpErr != nil {
-				// Can't parse gate params — reject the write call.
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      gpErr.Error(),
-					PolicyPass: true,
-				})
-				return "", gpErr
-			}
-			if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return "", err
-			}
-
-			// Determine phase based on gate params.
-			phase := safety.PhaseExecute
-			if gp.DryRun {
-				phase = safety.PhaseDryRun
-			}
-
-			// Execute.
-			result, err := endpoint(ctx, argumentsInJSON, opts...)
-			if err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      phase,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return "", err
-			}
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      phase,
-				Arguments:  json.RawMessage(args),
-				Result:     result,
-				PolicyPass: true,
-			})
-
-			// Append dry-run guidance.
-			if gp.DryRun {
-				result = fmt.Sprintf("%s\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true.", result)
-			}
-			return result, nil
-		}
-
-		// Read-only tool.
-		result, err := endpoint(ctx, argumentsInJSON, opts...)
+		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      safety.PhaseRead,
-				Arguments:  json.RawMessage(args),
-				Error:      err.Error(),
-				PolicyPass: true,
-			})
 			return "", err
 		}
-		m.audit(safety.AuditEvent{
-			Timestamp:  time.Now(),
-			ToolName:   toolName,
-			CallID:     callID,
-			Phase:      safety.PhaseRead,
-			Arguments:  json.RawMessage(args),
-			Result:     result,
-			PolicyPass: true,
-		})
+
+		result, err := endpoint(ctx, argumentsInJSON, opts...)
+		m.auditResult(toolName, callID, phase, args, result, err)
+		if err != nil {
+			return "", err
+		}
+
+		// Append dry-run guidance.
+		if phase == safety.PhaseDryRun {
+			result = fmt.Sprintf("%s\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true.", result)
+		}
 		return result, nil
 	}, nil
 }
@@ -190,93 +93,17 @@ func (m *Middleware) WrapStreamableToolCall(_ context.Context, endpoint adk.Stre
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (*schema.StreamReader[string], error) {
 		args := argumentsInJSON
 
-		params, parseErr := parseArgs(argumentsInJSON)
-		if parseErr != nil {
-			params = map[string]any{}
-		}
-
-		// Policy evaluation.
-		if m.cfg.Policy != nil {
-			if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: false,
-				})
-				return nil, err
-			}
-		}
-
-		// Gate check for write tools.
-		if isWrite {
-			gp, gpErr := safety.ExtractGateParams(argumentsInJSON)
-			if gpErr != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      gpErr.Error(),
-					PolicyPass: true,
-				})
-				return nil, gpErr
-			}
-			if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-
-			phase := safety.PhaseExecute
-			if gp.DryRun {
-				phase = safety.PhaseDryRun
-			}
-
-			sr, err := endpoint(ctx, argumentsInJSON, opts...)
-			if err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      phase,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-
-			// Wrap the stream to audit on completion.
-			return wrapStreamAudit(sr, toolName, callID, phase, args, gp.DryRun, m.audit), nil
-		}
-
-		// Read-only streaming.
-		sr, err := endpoint(ctx, argumentsInJSON, opts...)
+		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      safety.PhaseRead,
-				Arguments:  json.RawMessage(args),
-				Error:      err.Error(),
-				PolicyPass: true,
-			})
 			return nil, err
 		}
-		return wrapStreamAudit(sr, toolName, callID, safety.PhaseRead, args, false, m.audit), nil
+
+		sr, err := endpoint(ctx, argumentsInJSON, opts...)
+		if err != nil {
+			m.auditResult(toolName, callID, phase, args, "", err)
+			return nil, err
+		}
+		return wrapStreamAudit(sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
 	}, nil
 }
 
@@ -289,106 +116,16 @@ func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint a
 	return func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
 		args := toolArg.Text
 
-		params, parseErr := parseArgs(args)
-		if parseErr != nil {
-			params = map[string]any{}
-		}
-
-		// Policy evaluation.
-		if m.cfg.Policy != nil {
-			if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: false,
-				})
-				return nil, err
-			}
-		}
-
-		// Gate check for write tools.
-		if isWrite {
-			gp, gpErr := safety.ExtractGateParams(args)
-			if gpErr != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      gpErr.Error(),
-					PolicyPass: true,
-				})
-				return nil, gpErr
-			}
-			if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-
-			phase := safety.PhaseExecute
-			if gp.DryRun {
-				phase = safety.PhaseDryRun
-			}
-
-			result, err := endpoint(ctx, toolArg, opts...)
-			if err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      phase,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      phase,
-				Arguments:  json.RawMessage(args),
-				PolicyPass: true,
-			})
-			return result, nil
-		}
-
-		// Read-only enhanced.
-		result, err := endpoint(ctx, toolArg, opts...)
+		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      safety.PhaseRead,
-				Arguments:  json.RawMessage(args),
-				Error:      err.Error(),
-				PolicyPass: true,
-			})
 			return nil, err
 		}
-		m.audit(safety.AuditEvent{
-			Timestamp:  time.Now(),
-			ToolName:   toolName,
-			CallID:     callID,
-			Phase:      safety.PhaseRead,
-			Arguments:  json.RawMessage(args),
-			PolicyPass: true,
-		})
+
+		result, err := endpoint(ctx, toolArg, opts...)
+		m.auditResult(toolName, callID, phase, args, "", err)
+		if err != nil {
+			return nil, err
+		}
 		return result, nil
 	}, nil
 }
@@ -402,91 +139,17 @@ func (m *Middleware) WrapEnhancedStreamableToolCall(_ context.Context, endpoint 
 	return func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
 		args := toolArg.Text
 
-		params, parseErr := parseArgs(args)
-		if parseErr != nil {
-			params = map[string]any{}
-		}
-
-		// Policy evaluation.
-		if m.cfg.Policy != nil {
-			if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: false,
-				})
-				return nil, err
-			}
-		}
-
-		// Gate check for write tools.
-		if isWrite {
-			gp, gpErr := safety.ExtractGateParams(args)
-			if gpErr != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      gpErr.Error(),
-					PolicyPass: true,
-				})
-				return nil, gpErr
-			}
-			if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      safety.PhaseRejected,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-
-			phase := safety.PhaseExecute
-			if gp.DryRun {
-				phase = safety.PhaseDryRun
-			}
-
-			sr, err := endpoint(ctx, toolArg, opts...)
-			if err != nil {
-				m.audit(safety.AuditEvent{
-					Timestamp:  time.Now(),
-					ToolName:   toolName,
-					CallID:     callID,
-					Phase:      phase,
-					Arguments:  json.RawMessage(args),
-					Error:      err.Error(),
-					PolicyPass: true,
-				})
-				return nil, err
-			}
-			return wrapEnhancedStreamAudit(sr, toolName, callID, phase, args, m.audit), nil
-		}
-
-		// Read-only enhanced streaming.
-		sr, err := endpoint(ctx, toolArg, opts...)
+		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
-			m.audit(safety.AuditEvent{
-				Timestamp:  time.Now(),
-				ToolName:   toolName,
-				CallID:     callID,
-				Phase:      safety.PhaseRead,
-				Arguments:  json.RawMessage(args),
-				Error:      err.Error(),
-				PolicyPass: true,
-			})
 			return nil, err
 		}
-		return wrapEnhancedStreamAudit(sr, toolName, callID, safety.PhaseRead, args, m.audit), nil
+
+		sr, err := endpoint(ctx, toolArg, opts...)
+		if err != nil {
+			m.auditResult(toolName, callID, phase, args, "", err)
+			return nil, err
+		}
+		return wrapEnhancedStreamAudit(sr, toolName, callID, phase, args, m.audit), nil
 	}, nil
 }
 
@@ -496,6 +159,87 @@ func (m *Middleware) WrapModel(_ context.Context, cm model.BaseChatModel, _ *adk
 }
 
 // --- internal helpers ---
+
+// preflight runs policy evaluation for every tool and, for write tools, the
+// dry-run/confirm gate. It emits reject audit events on failure. On success it
+// returns the phase the call should be audited under. proceed is false only
+// when an error is returned.
+func (m *Middleware) preflight(ctx context.Context, toolName, callID, args string, isWrite bool) (safety.Phase, error) {
+	params, parseErr := parseArgs(args)
+	if parseErr != nil {
+		// If we can't parse, still allow through — tools do their own validation.
+		params = map[string]any{}
+	}
+
+	// Policy evaluation (applies to ALL tools).
+	if m.cfg.Policy != nil {
+		if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
+			m.audit(safety.AuditEvent{
+				Timestamp:  time.Now(),
+				ToolName:   toolName,
+				CallID:     callID,
+				Phase:      safety.PhaseRejected,
+				Arguments:  json.RawMessage(args),
+				Error:      err.Error(),
+				PolicyPass: false,
+			})
+			return "", err
+		}
+	}
+
+	if !isWrite {
+		return safety.PhaseRead, nil
+	}
+
+	// Gate check (write tools only).
+	gp, gpErr := safety.ExtractGateParams(args)
+	if gpErr != nil {
+		m.auditReject(toolName, callID, args, gpErr)
+		return "", gpErr
+	}
+	if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
+		m.auditReject(toolName, callID, args, err)
+		return "", err
+	}
+
+	if gp.DryRun {
+		return safety.PhaseDryRun, nil
+	}
+	return safety.PhaseExecute, nil
+}
+
+// auditReject emits a rejection audit event for a write tool whose gate parsing
+// or gate check failed (policy already passed at that point).
+func (m *Middleware) auditReject(toolName, callID, args string, err error) {
+	m.audit(safety.AuditEvent{
+		Timestamp:  time.Now(),
+		ToolName:   toolName,
+		CallID:     callID,
+		Phase:      safety.PhaseRejected,
+		Arguments:  json.RawMessage(args),
+		Error:      err.Error(),
+		PolicyPass: true,
+	})
+}
+
+// auditResult emits the terminal audit event for a completed call: an error
+// event when err is non-nil, otherwise a success event carrying result.
+func (m *Middleware) auditResult(toolName, callID string, phase safety.Phase, args, result string, err error) {
+	event := safety.AuditEvent{
+		Timestamp:  time.Now(),
+		ToolName:   toolName,
+		CallID:     callID,
+		Phase:      phase,
+		Arguments:  json.RawMessage(args),
+		PolicyPass: true,
+	}
+	if err != nil {
+		event.Error = err.Error()
+	} else {
+		event.Result = result
+	}
+	m.audit(event)
+}
 
 // audit sends an audit event to the configured sink. Errors from the sink are
 // silently dropped (audit is best-effort, not a critical path).

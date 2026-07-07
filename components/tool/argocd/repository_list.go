@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
-	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
@@ -33,7 +32,7 @@ type RepositoryListOutput struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Type   string `json:"type"`
-	Url    string `json:"url"`
+	URL    string `json:"url"`
 }
 
 type RepositoryListTool struct {
@@ -61,28 +60,14 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 		return "", errors.Wrap(err, "failed to list repositories")
 	}
 
-	outputs := make([]json.RawMessage, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		output := RepositoryListOutput{
+	return filterMapMarshal(resp.Items, re, func(item *api.RepositoryModel) RepositoryListOutput {
+		return RepositoryListOutput{
 			Name:   item.Name,
 			Status: item.ConnectionState.Status,
 			Type:   item.Type,
-			Url:    item.Repo,
+			URL:    item.Repo,
 		}
-
-		outputJSON := json.RawMessage(MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
-			continue
-		}
-		outputs = append(outputs, outputJSON)
-	}
-
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	})
 }
 
 func NewRepositoryListTool(ctx context.Context, configs Configs) (*RepositoryListTool, error) {

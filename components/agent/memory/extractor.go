@@ -10,6 +10,8 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 )
 
 // ExtractionSystemPrompt is the system prompt for the memory extraction LLM call.
@@ -117,46 +119,14 @@ func parseExtractionResponse(content string) ([]ExtractionResult, error) {
 // extractJSONBlock strips markdown code fences, then extracts the first
 // JSON array or object from the remaining text via bracket matching.
 func extractJSONBlock(content string) string {
-	content = stripMarkdownFences(content)
-	content = strings.TrimSpace(content)
-
-	start := strings.Index(content, "[")
-	end := strings.LastIndex(content, "]")
-	if start >= 0 && end > start {
-		return content[start : end+1]
-	}
-
-	start = strings.Index(content, "{")
-	end = strings.LastIndex(content, "}")
-	if start >= 0 && end > start {
-		return content[start : end+1]
-	}
-
-	return ""
+	return strutil.ExtractJSONBlock(content)
 }
 
 // stripMarkdownFences removes surrounding ```json ... ``` or ``` ... ``` blocks.
 func stripMarkdownFences(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		nl := strings.IndexByte(s, '\n')
-		if nl >= 0 {
-			s = s[nl+1:]
-		} else if len(s) > 3 {
-			s = s[3:]
-		}
-	}
-	s = strings.TrimSpace(s)
-	if strings.HasSuffix(s, "```") {
-		s = s[:len(s)-3]
-		s = strings.TrimSpace(s)
-	}
-	return s
+	return strutil.StripMarkdownFences(s)
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
+	return strutil.Truncate(s, maxLen, "...")
 }

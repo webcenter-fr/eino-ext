@@ -17,7 +17,11 @@ import (
 func newManager(t *testing.T, cfg Config) *SessionManager {
 	t.Helper()
 	if cfg.Memory == nil {
-		cfg.Memory = file.NewFileMemory(file.FileMemoryConfig{Dir: t.TempDir()})
+		mem, err := file.NewFileMemory(file.FileMemoryConfig{Dir: t.TempDir()})
+		if err != nil {
+			t.Fatalf("NewFileMemory: %v", err)
+		}
+		cfg.Memory = mem
 	}
 	sm, err := NewSessionManager(cfg)
 	if err != nil {

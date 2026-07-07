@@ -12,8 +12,8 @@ import (
 	"github.com/disaster37/opensearch/v4/api"
 	"github.com/disaster37/opensearch/v4/querydsl"
 	"github.com/goccy/go-json"
-	"github.com/sirupsen/logrus"
 	"github.com/webcenter-fr/eino-ext/components/memory"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -107,17 +107,14 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 		replicas = 1
 	}
 
-	opensearchCfg := &opensearchv4.Config{
-		URL:           cfg.URLs[0],
+	client, err := osclient.New(osclient.Config{
+		URLs:          cfg.URLs,
 		Username:      cfg.Username,
 		Password:      cfg.Password,
 		TLSSkipVerify: cfg.TLSSkipVerify,
-	}
-
-	logger := logrus.NewEntry(logrus.StandardLogger())
-	client, err := opensearchv4.New(opensearchCfg, logger)
+	}, 0)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create OpenSearch client")
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -361,12 +358,7 @@ func (c *OpenSearchConversation) LastSummaryIndex() int {
 }
 
 func (c *OpenSearchConversation) lastSummaryIndexLocked() int {
-	for i := len(c.Messages) - 1; i >= 0; i-- {
-		if memory.IsSummary(c.Messages[i]) {
-			return i
-		}
-	}
-	return -1
+	return memory.LastSummaryIndex(c.Messages)
 }
 
 // GetWindow returns [last summary + following messages], bounded by a token budget.
@@ -379,80 +371,7 @@ func (c *OpenSearchConversation) GetWindow(budget int) []*schema.Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if budget <= 0 {
-		budget = c.maxWindowTokens
-	}
-
-	idx := c.lastSummaryIndexLocked()
-	startIdx := 0
-	if idx >= 0 {
-		startIdx = idx
-	}
-
-	window := c.Messages[startIdx:]
-
-	if budget <= 0 || len(window) == 0 {
-		return window
-	}
-
-	n := len(window)
-
-	if c.tokenCounter(window) <= budget {
-		return window
-	}
-
-	if n == 1 {
-		return window
-	}
-
-	hasSummary := memory.IsSummary(window[0])
-
-	if !hasSummary {
-		if c.tokenCounter(window[n-1:]) > budget {
-			return window[n-1:]
-		}
-		lo, hi := 0, n-1
-		for lo < hi {
-			mid := (lo + hi) / 2
-			if c.tokenCounter(window[mid:]) <= budget {
-				hi = mid
-			} else {
-				lo = mid + 1
-			}
-		}
-		return window[lo:]
-	}
-
-	if n == 2 {
-		return window
-	}
-
-	minWindow := []*schema.Message{window[0], window[n-1]}
-	if c.tokenCounter(minWindow) > budget {
-		return minWindow
-	}
-
-	scratch := make([]*schema.Message, n)
-	scratch[0] = window[0]
-
-	lo, hi := 1, n-1
-	for lo < hi {
-		mid := (lo + hi) / 2
-		sz := n - mid
-		copy(scratch[1:1+sz], window[mid:])
-		if c.tokenCounter(scratch[:1+sz]) <= budget {
-			hi = mid
-		} else {
-			lo = mid + 1
-		}
-	}
-
-	trimStart := lo
-	sz := n - trimStart
-	result := make([]*schema.Message, 1+sz)
-	result[0] = window[0]
-	copy(result[1:], window[trimStart:])
-	return result
+	return memory.SelectWindow(c.Messages, c.tokenCounter, budget, c.maxWindowTokens)
 }
 
 // CountTokens counts the tokens in the current window using the injected TokenCounter.

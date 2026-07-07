@@ -82,9 +82,6 @@ func (t *OpensearchLogKubernetesTool) runSearch(ctx context.Context, params *Ope
 	}
 
 	boolQuery := t.buildQuery(params)
-	if boolQuery == nil {
-		return nil, errors.New("at least one of podName or containerName must be provided")
-	}
 
 	searchReq := querydsl.NewSearchRequest().
 		Query(boolQuery).

@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+
+	memcore "github.com/webcenter-fr/eino-ext/components/memory"
 )
 
 const (
@@ -99,24 +101,13 @@ func EntryFromDocument(doc *schema.Document) *MemoryEntry {
 }
 
 func IsMemoryContext(msg *schema.Message) bool {
-	if msg == nil || msg.Extra == nil {
-		return false
-	}
-	v, ok := msg.Extra[MemoryContextMarkerKey]
-	if !ok {
-		return false
-	}
-	b, _ := v.(bool)
-	return b
+	return memcore.HasBoolMarker(msg, MemoryContextMarkerKey)
 }
 
 // NewMemoryContextMessage creates a system message marked as memory context.
 // schema.SystemMessage does not initialize Extra, so we must create it.
 func NewMemoryContextMessage(content string) *schema.Message {
 	msg := schema.SystemMessage(content)
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]any)
-	}
-	msg.Extra[MemoryContextMarkerKey] = true
+	memcore.SetBoolMarker(msg, MemoryContextMarkerKey)
 	return msg
 }

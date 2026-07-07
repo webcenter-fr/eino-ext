@@ -7,10 +7,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const resourceCreateDescription = `
@@ -52,8 +52,8 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 	}
 
 	// Enforce safety gate: require confirmation for non-dry-run operations.
-	if !params.DryRun && !params.Confirmed {
-		return "", errors.New("confirmed must be true to execute (set dryRun=true first to preview)")
+	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+		return "", err
 	}
 
 	c, err := t.dynamicClient(params.Cluster)
@@ -77,11 +77,7 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		obj.SetNamespace(params.Namespace)
 	}
 
-	gvr := schema.GroupVersionResource{
-		Group:    params.ApiGroup,
-		Version:  params.ApiVersion,
-		Resource: params.Resource,
-	}
+	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
 
 	opts := metav1.CreateOptions{}
 	if params.DryRun {
@@ -107,20 +103,13 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 // NewResourceCreateTool creates a new instance of the ResourceCreateTool.
 func NewResourceCreateTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	clients, err := BuildClientDynamics(configs, nil)
-	if err != nil {
-		return nil, err
-	}
-	base, err := newBaseTool(configs)
+	base, err := newBaseToolWithDynamic(configs)
 	if err != nil {
 		return nil, err
 	}
 
 	createTool := &ResourceCreateTool{
-		baseToolWithDynamic: &baseToolWithDynamic{
-			baseTool: base,
-			dynamics: clients,
-		},
+		baseToolWithDynamic: base,
 	}
 
 	// Infer tool

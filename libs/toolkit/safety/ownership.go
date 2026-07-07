@@ -17,11 +17,11 @@ type OwnershipInfo struct {
 
 // Well-known annotation and label keys for operator/controller detection.
 const (
-	argoCDAnnotation   = "argocd.argoproj.io/instance"
-	helmAnnotation     = "meta.helm.sh/release-name"
-	fluxAnnotation     = "kustomize.toolkit.fluxcd.io/name"
-	kubectlAnnotation  = "kubectl.kubernetes.io/last-applied-configuration"
-	managedByLabel     = "app.kubernetes.io/managed-by"
+	argoCDAnnotation  = "argocd.argoproj.io/instance"
+	helmAnnotation    = "meta.helm.sh/release-name"
+	fluxAnnotation    = "kustomize.toolkit.fluxcd.io/name"
+	kubectlAnnotation = "kubectl.kubernetes.io/last-applied-configuration"
+	managedByLabel    = "app.kubernetes.io/managed-by"
 )
 
 // CheckOwnership inspects a Kubernetes object for controller/operator management.

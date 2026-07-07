@@ -18,7 +18,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -59,8 +58,6 @@ type PodExecTool struct {
 	streamable tool.StreamableTool
 	blocklist  []*regexp.Regexp
 }
-
-var _ *rest.Config // ensure import is not removed
 
 // defaultBlocklist contains regex patterns for destructive commands that are always blocked.
 // Uses word boundaries to catch variations like /bin/rm, ./rm, etc.

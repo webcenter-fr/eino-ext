@@ -121,7 +121,7 @@ func (t *ToolTestSuite) TestRepositoryList() {
 	assert.Equal(t.T(), "myapp-repo", outputs[0].Name)
 	assert.Equal(t.T(), "Successful", outputs[0].Status)
 	assert.Equal(t.T(), "git", outputs[0].Type)
-	assert.Equal(t.T(), "https://github.com/myorg/myapp.git", outputs[0].Url)
+	assert.Equal(t.T(), "https://github.com/myorg/myapp.git", outputs[0].URL)
 	assert.Equal(t.T(), "otherapp-repo", outputs[1].Name)
 	assert.Equal(t.T(), "Failed", outputs[1].Status)
 

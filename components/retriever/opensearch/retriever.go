@@ -12,8 +12,9 @@ import (
 	opensearchv4 "github.com/disaster37/opensearch/v4"
 	"github.com/disaster37/opensearch/v4/api"
 	"github.com/disaster37/opensearch/v4/querydsl"
-	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -97,17 +98,14 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		return nil, errors.New("VectorField is required when Embedding is set")
 	}
 
-	opensearchCfg := &opensearchv4.Config{
-		URL:           config.URLs[0],
+	client, err := osclient.New(osclient.Config{
+		URLs:          config.URLs,
 		Username:      config.Username,
 		Password:      config.Password,
 		TLSSkipVerify: config.TLSSkipVerify,
-	}
-
-	logger := logrus.NewEntry(logrus.StandardLogger())
-	client, err := opensearchv4.New(opensearchCfg, logger)
+	}, 0)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create OpenSearch client")
+		return nil, err
 	}
 
 	rp := config.ResultParser
@@ -140,8 +138,8 @@ func (r *Retriever) Client() opensearchv4.Client {
 // Retrieve performs a search against OpenSearch and returns matching documents.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	commonOpts := retriever.GetCommonOptions(&retriever.Options{
-		Index: stringPtr(""),
-		TopK:  intPtr(defaultTopK),
+		Index: ptr.To(""),
+		TopK:  ptr.To(defaultTopK),
 	}, opts...)
 
 	topK := defaultTopK
@@ -286,6 +284,3 @@ func defaultResultParser(_ context.Context, hit map[string]any) (*schema.Documen
 		MetaData: meta,
 	}, nil
 }
-
-func stringPtr(s string) *string { return &s }
-func intPtr(i int) *int          { return &i }

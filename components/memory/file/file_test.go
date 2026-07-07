@@ -25,7 +25,8 @@ func newConv(t *testing.T, cfg FileMemoryConfig) *FileConversation {
 	t.Helper()
 	dir := t.TempDir()
 	cfg.Dir = dir
-	m := NewFileMemory(cfg)
+	m, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	require.NotNil(t, m)
 	conv, err := m.GetConversation("user1", "conv1", true)
 	require.NoError(t, err)
@@ -72,7 +73,8 @@ func TestDefaultTokenCounter(t *testing.T) {
 func TestRoundTripSummaryMarker(t *testing.T) {
 	dir := t.TempDir()
 	cfg := FileMemoryConfig{Dir: dir}
-	m := NewFileMemory(cfg)
+	m, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	require.NotNil(t, m)
 
 	conv, err := m.GetConversation("u", "c", true)
@@ -83,7 +85,8 @@ func TestRoundTripSummaryMarker(t *testing.T) {
 	conv.AppendSummary(sum)
 
 	// Reload from disk by creating a new FileMemory pointing to the same dir
-	m2 := NewFileMemory(cfg)
+	m2, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	conv2, err := m2.GetConversation("u", "c", false)
 	require.NoError(t, err)
 
@@ -148,7 +151,8 @@ func TestGetWindowBudgetKeepsSummaryAndLastUser(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := FileMemoryConfig{Dir: dir, TokenCounter: onePerMsg}
-	m := NewFileMemory(cfg)
+	m, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	conv, err := m.GetConversation("u", "c", true)
 	require.NoError(t, err)
 	fc := conv.(*FileConversation)
@@ -249,7 +253,8 @@ func TestGetWindowUsesMaxWindowTokensFromConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := FileMemoryConfig{Dir: dir, TokenCounter: onePerMsg, MaxWindowTokens: 2}
-	m := NewFileMemory(cfg)
+	m, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	conv, err := m.GetConversation("u", "c", true)
 	require.NoError(t, err)
 	fc := conv.(*FileConversation)
@@ -274,14 +279,16 @@ func TestGetConversationLoadsExisting(t *testing.T) {
 	cfg := FileMemoryConfig{Dir: dir}
 
 	// First instance: write some messages
-	m1 := NewFileMemory(cfg)
+	m1, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	conv1, err := m1.GetConversation("u", "c", true)
 	require.NoError(t, err)
 	conv1.AppendSummary(memory.NewSummaryMessage("persisted summary"))
 	conv1.Append(userMsg("hello"))
 
 	// Second instance: load from disk
-	m2 := NewFileMemory(cfg)
+	m2, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 	conv2, err := m2.GetConversation("u", "c", false)
 	require.NoError(t, err)
 
@@ -296,9 +303,10 @@ func TestGetConversationLoadsExisting(t *testing.T) {
 func TestDeleteConversation(t *testing.T) {
 	dir := t.TempDir()
 	cfg := FileMemoryConfig{Dir: dir}
-	m := NewFileMemory(cfg)
+	m, err := NewFileMemory(cfg)
+	require.NoError(t, err)
 
-	_, err := m.GetConversation("u", "c", true)
+	_, err = m.GetConversation("u", "c", true)
 	require.NoError(t, err)
 
 	err = m.DeleteConversation("u", "c")

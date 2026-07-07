@@ -11,9 +11,10 @@ import (
 	"github.com/cloudwego/eino/schema"
 	opensearchv4 "github.com/disaster37/opensearch/v4"
 	"github.com/disaster37/opensearch/v4/api"
-	"github.com/sirupsen/logrus"
 
 	osparser "github.com/webcenter-fr/eino-ext/components/document/parser/opensearch"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 const loaderType = "OpensearchLoader"
@@ -45,23 +46,20 @@ type Loader struct {
 // NewOpensearchLoader creates a new OpenSearch document loader.
 func NewOpensearchLoader(ctx context.Context, config *Config) (*Loader, error) {
 	if config == nil {
-		return nil, errors.New("config is required")
+		config = &Config{}
 	}
-	if len(config.URLs) == 0 {
-		return nil, errors.New("at least one URL is required")
+	if err := validate.Struct(config); err != nil {
+		return nil, err
 	}
 
-	opensearchCfg := &opensearchv4.Config{
-		URL:           config.URLs[0],
+	client, err := osclient.New(osclient.Config{
+		URLs:          config.URLs,
 		Username:      config.Username,
 		Password:      config.Password,
 		TLSSkipVerify: config.TLSSkipVerify,
-	}
-
-	logger := logrus.NewEntry(logrus.StandardLogger())
-	client, err := opensearchv4.New(opensearchCfg, logger)
+	}, 0)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create OpenSearch client")
+		return nil, err
 	}
 
 	parser, err := osparser.NewParser(ctx, nil)

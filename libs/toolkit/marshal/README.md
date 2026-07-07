@@ -8,11 +8,13 @@ where invalid JSON is a programmer error, not a runtime condition.
 
 ```go
 func MustMarshal(v any) []byte
-func MustUnmarshal(data []byte, v any)
+func Outputs(outputs []json.RawMessage) (string, error)
 ```
 
 - `MustMarshal` — calls `json.Marshal` and panics on error.
-- `MustUnmarshal` — calls `json.Unmarshal` and panics on error.
+- `Outputs` — marshals a slice of pre-encoded JSON messages into a single JSON
+  array string, wrapping any error with context. Shared by list tools that
+  assemble their result from per-item JSON fragments.
 
 ## Usage
 

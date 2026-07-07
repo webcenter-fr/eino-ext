@@ -14,8 +14,12 @@ import (
 
 func newTurn(t *testing.T) (*session.SessionManager, *session.Turn) {
 	t.Helper()
+	mem, err := file.NewFileMemory(file.FileMemoryConfig{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewFileMemory: %v", err)
+	}
 	sm, err := session.NewSessionManager(session.Config{
-		Memory: file.NewFileMemory(file.FileMemoryConfig{Dir: t.TempDir()}),
+		Memory: mem,
 	})
 	if err != nil {
 		t.Fatalf("NewSessionManager: %v", err)

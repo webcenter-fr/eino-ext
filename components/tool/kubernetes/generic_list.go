@@ -55,10 +55,7 @@ type ListTool[resourceList client.ObjectList, resource client.Object, outputObje
 
 // IsMatch returns true if the JSON data matches the compiled regex filter. A nil filter matches everything.
 func (t *ListTool[resourceList, resource, outputObject]) IsMatch(o json.RawMessage, re *regexp.Regexp) bool {
-	if re == nil {
-		return true
-	}
-	return re.Match(o)
+	return filter.Match(o, re)
 }
 
 // Invoke executes the ListTool with the given parameters.

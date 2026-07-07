@@ -1,14 +1,25 @@
 package kubernetes
 
 import (
-	"strings"
-
-	"emperror.dev/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 )
+
+// toGVR builds a schema.GroupVersionResource from its string parts. It
+// centralizes the group/version/resource field naming used by the generic
+// resource tools.
+func toGVR(group, version, resource string) schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+}
 
 // baseTool holds shared client bundles for all Kubernetes tools.
 type baseTool struct {
@@ -47,7 +58,7 @@ func (b *baseTool) restConfig(cluster string) (*rest.Config, error) {
 
 // clusterNotFoundError returns a formatted error for an unknown cluster.
 func clusterNotFoundError(cluster string, known []string) error {
-	return errors.Errorf("Kubernetes cluster not found: %s. Cluster must be one of: %s", cluster, strings.Join(known, ", "))
+	return toolutil.NotFoundError("Kubernetes cluster", cluster, known)
 }
 
 // baseToolWithDynamic extends baseTool with a dynamic client bundle.
@@ -76,5 +87,22 @@ func newBaseTool(configs Configs) (*baseTool, error) {
 		clients:       clients,
 		configs:       configs,
 		knownClusters: configs.GetClusterNames(),
+	}, nil
+}
+
+// newBaseToolWithDynamic builds both the controller-runtime base tool and the
+// dynamic client bundle used by the generic resource tools.
+func newBaseToolWithDynamic(configs Configs) (*baseToolWithDynamic, error) {
+	dynamics, err := BuildClientDynamics(configs, nil)
+	if err != nil {
+		return nil, err
+	}
+	base, err := newBaseTool(configs)
+	if err != nil {
+		return nil, err
+	}
+	return &baseToolWithDynamic{
+		baseTool: base,
+		dynamics: dynamics,
 	}, nil
 }

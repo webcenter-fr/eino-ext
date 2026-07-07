@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
-	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
@@ -72,9 +71,8 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 		return "", errors.Wrap(err, "failed to list applications")
 	}
 
-	outputs := make([]json.RawMessage, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		output := ApplicationListOutput{
+	return filterMapMarshal(resp.Items, re, func(item *api.ApplicationModel) ApplicationListOutput {
+		return ApplicationListOutput{
 			Name:       item.Name,
 			Namespace:  item.Namespace,
 			Project:    item.Spec.Project,
@@ -82,20 +80,7 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 			SyncStatus: string(item.Status.Sync.Status),
 			Revision:   item.Status.Sync.Revision,
 		}
-
-		outputJSON := json.RawMessage(MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
-			continue
-		}
-		outputs = append(outputs, outputJSON)
-	}
-
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	})
 }
 
 func NewApplicationListTool(ctx context.Context, configs Configs) (*ApplicationListTool, error) {

@@ -34,6 +34,26 @@ type DescribeOutput struct {
 	Data            any                `json:"data,omitempty"`
 }
 
+// applyFieldExclusions clears the requested top-level fields (metadata, spec,
+// status, data) from the output. It returns an error for an unknown field.
+func (o *DescribeOutput) applyFieldExclusions(excludeFields []string) error {
+	for _, excludeField := range excludeFields {
+		switch excludeField {
+		case "metadata":
+			o.Metadata = nil
+		case "spec":
+			o.Spec = nil
+		case "status":
+			o.Status = nil
+		case "data":
+			o.Data = nil
+		default:
+			return errors.Errorf("invalid exclude field: %s", excludeField)
+		}
+	}
+	return nil
+}
+
 // DescribeTool is a tool that gets the details of a specific resource in a specified Kubernetes cluster. It contains a map of Kubernetes clients for different clusters and implements the InvokableTool interface.
 type DescribeTool[resource client.Object] struct {
 	clients map[string]client.Client
@@ -81,19 +101,8 @@ func (t *DescribeTool[resource]) Invoke(ctx context.Context, params *DescribePar
 		return "", errors.Wrap(err, "failed to convert object to describe output")
 	}
 
-	for _, excludeField := range params.ExcludeFieldsOutput {
-		switch excludeField {
-		case "metadata":
-			output.Metadata = nil
-		case "spec":
-			output.Spec = nil
-		case "status":
-			output.Status = nil
-		case "data":
-			output.Data = nil
-		default:
-			return "", errors.Errorf("invalid exclude field: %s", excludeField)
-		}
+	if err := output.applyFieldExclusions(params.ExcludeFieldsOutput); err != nil {
+		return "", err
 	}
 
 	data, err := json.Marshal(output)

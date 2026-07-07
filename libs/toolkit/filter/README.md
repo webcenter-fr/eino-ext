@@ -7,15 +7,13 @@ results by name, labels, or other fields.
 ## Functions
 
 ```go
-func Compile(pattern string) *regexp.Regexp
+func Compile(pattern string) (*regexp.Regexp, error)
 func Match(data json.RawMessage, filter *regexp.Regexp) bool
-func MatchString(s string, filter *regexp.Regexp) bool
 ```
 
 - `Compile` — compiles a Go RE2 regex pattern; returns `nil` for empty strings.
 - `Match` — returns `true` if the filter is `nil` or the JSON data contains a
   match.
-- `MatchString` — same for plain string input.
 
 ## Usage
 

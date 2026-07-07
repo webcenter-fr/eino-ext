@@ -106,11 +106,14 @@ func run(turns int) []int64 {
 	}
 	defer os.RemoveAll(dir)
 
-	mem := file.NewFileMemory(file.FileMemoryConfig{
+	mem, err := file.NewFileMemory(file.FileMemoryConfig{
 		Dir:             dir,
 		TokenCounter:    counter,      // (1) same counter
 		MaxWindowTokens: usableWindow, // GetWindow(0) budget
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	sm, err := session.NewSessionManager(session.Config{
 		Memory:            mem,

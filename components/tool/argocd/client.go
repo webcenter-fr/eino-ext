@@ -15,15 +15,15 @@ func NewClient(config Config) (c api.API, err error) {
 		return nil, errors.Wrap(err, "invalid ArgoCD config")
 	}
 
-	if !strings.HasPrefix(config.Url, "https://") && !strings.HasPrefix(config.Url, "http://") {
-		return nil, errors.Errorf("ArgoCD URL must include scheme (https:// or http://): %s", config.Url)
+	if !strings.HasPrefix(config.URL, "https://") && !strings.HasPrefix(config.URL, "http://") {
+		return nil, errors.Errorf("ArgoCD URL must include scheme (https:// or http://): %s", config.URL)
 	}
 
 	// client
 	if config.Options != nil {
-		c, err = goargocdclient.New(config.Url, config.Options...)
+		c, err = goargocdclient.New(config.URL, config.Options...)
 	} else {
-		c, err = goargocdclient.New(config.Url)
+		c, err = goargocdclient.New(config.URL)
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create ArgoCD client")

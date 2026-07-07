@@ -75,17 +75,12 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 		ConnectionState: &repository.ConnectionState,
 	}
 
-	for _, excludeField := range params.ExcludeFieldsOutput {
-		switch excludeField {
-		case "metadata":
-			output.Metadata = nil
-		case "spec":
-			output.Spec = nil
-		case "connexionState":
-			output.ConnectionState = nil
-		default:
-			return "", errors.Errorf("invalid exclude field: %s", excludeField)
-		}
+	if err := applyExcludes(params.ExcludeFieldsOutput, map[string]func(){
+		"metadata":       func() { output.Metadata = nil },
+		"spec":           func() { output.Spec = nil },
+		"connexionState": func() { output.ConnectionState = nil },
+	}); err != nil {
+		return "", err
 	}
 
 	data, err := json.Marshal(output)

@@ -2,6 +2,7 @@ package safety
 
 import (
 	"context"
+	"slices"
 
 	"emperror.dev/errors"
 	"github.com/google/cel-go/cel"
@@ -34,7 +35,6 @@ type CELRule struct {
 // Rules are evaluated in order; the first failing rule stops evaluation.
 type CELPolicy struct {
 	rules []CELRule
-	env   *cel.Env
 }
 
 // NewCELPolicy compiles the given CEL rules into a reusable policy.
@@ -52,7 +52,7 @@ func NewCELPolicy(rules []CELRule) (*CELPolicy, error) {
 		return nil, errors.Wrap(err, "failed to create CEL environment")
 	}
 
-		// Pre-compile all expressions to validate them at construction time.
+	// Pre-compile all expressions to validate them at construction time.
 	for i, rule := range rules {
 		ast, iss := env.Compile(rule.Expression)
 		if iss.Err() != nil {
@@ -65,14 +65,14 @@ func NewCELPolicy(rules []CELRule) (*CELPolicy, error) {
 		rules[i].program = prog
 	}
 
-	return &CELPolicy{rules: rules, env: env}, nil
+	return &CELPolicy{rules: rules}, nil
 }
 
 // Evaluate checks all rules against the given tool invocation.
 // Returns nil if all rules pass, or an error describing the first failed rule.
 func (p *CELPolicy) Evaluate(_ context.Context, toolName string, params map[string]any) error {
-	protoParams := &structpb.Struct{Fields: make(map[string]*structpb.Value)}
-	if err := mapToProtoStruct(protoParams, params); err != nil {
+	protoParams, err := structpb.NewStruct(params)
+	if err != nil {
 		return errors.Wrap(err, "failed to convert params to proto struct")
 	}
 
@@ -106,27 +106,7 @@ func (p *CELPolicy) Evaluate(_ context.Context, toolName string, params map[stri
 // matchesTool returns true if the rule applies to the given tool name.
 // An empty ToolNames means the rule applies to all tools.
 func matchesTool(toolNames []string, toolName string) bool {
-	if len(toolNames) == 0 {
-		return true
-	}
-	for _, t := range toolNames {
-		if t == toolName {
-			return true
-		}
-	}
-	return false
-}
-
-// mapToProtoStruct converts a Go map[string]any into a protobuf Struct.
-func mapToProtoStruct(s *structpb.Struct, m map[string]any) error {
-	for k, v := range m {
-		pv, err := structpb.NewValue(v)
-		if err != nil {
-			return errors.Wrapf(err, "key %q", k)
-		}
-		s.Fields[k] = pv
-	}
-	return nil
+	return len(toolNames) == 0 || slices.Contains(toolNames, toolName)
 }
 
 // PolicyChain evaluates multiple policies in order. The first failure stops

@@ -19,11 +19,11 @@ import (
 
 configs := argocd.Configs{
     "prod": argocd.Config{
-        Url:    "https://argocd.example.com",
+        URL:    "https://argocd.example.com",
         Option: goargocdclient.WithToken("eyJhbGciOiJIUzI1NiIs..."),
     },
     "staging": argocd.Config{
-        Url:    "https://argocd-staging.example.com",
+        URL:    "https://argocd-staging.example.com",
         Option: goargocdclient.WithInsecure(),
         // Option: goargocdclient.WithToken("eyJhbGciOiJIUzI1NiIs..."),
     },

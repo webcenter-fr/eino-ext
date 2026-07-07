@@ -19,10 +19,11 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 
-	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 	"github.com/webcenter-fr/eino-ext/components/memory"
+	"github.com/webcenter-fr/eino-ext/libs/contentcomp"
 )
 
 // PruneMarkerKey is the key used in schema.Message.Extra to mark a tool message
@@ -279,11 +280,7 @@ func (o *Optimizer) selectTail(msgs []*schema.Message) (head []*schema.Message, 
 // truncateToolOutput truncates a tool output to ToolOutputMaxChars, appending a
 // terse marker (port of TOOL_OUTPUT_MAX_CHARS).
 func (o *Optimizer) truncateToolOutput(content string) string {
-	limit := o.cfg.ToolOutputMaxChars
-	if limit <= 0 || len(content) <= limit {
-		return content
-	}
-	return fmt.Sprintf("%s\n\n[output pruned to save context]", content[:limit])
+	return strutil.Truncate(content, o.cfg.ToolOutputMaxChars, "\n\n[output pruned to save context]")
 }
 
 // toolNamesByCallID maps tool call IDs to the tool name issued by the assistant.
@@ -304,21 +301,13 @@ func toolNamesByCallID(msgs []*schema.Message) map[string]string {
 
 // isPruned reports whether a message's output has already been pruned.
 func isPruned(msg *schema.Message) bool {
-	if msg == nil || msg.Extra == nil {
-		return false
-	}
-	b, ok := msg.Extra[PruneMarkerKey].(bool)
-	return ok && b
+	return memory.HasBoolMarker(msg, PruneMarkerKey)
 }
 
 // isCompressed reports whether a message's content has already been processed by
 // the content compressors (see CompressedMarkerKey).
 func isCompressed(msg *schema.Message) bool {
-	if msg == nil || msg.Extra == nil {
-		return false
-	}
-	b, ok := msg.Extra[CompressedMarkerKey].(bool)
-	return ok && b
+	return memory.HasBoolMarker(msg, CompressedMarkerKey)
 }
 
 // pruneToolOutputs erases (truncates) outputs of older tool calls beyond the

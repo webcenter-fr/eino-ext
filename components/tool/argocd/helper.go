@@ -2,10 +2,13 @@ package argocd
 
 import (
 	_ "embed"
-	"strings"
+	"regexp"
 
 	"emperror.dev/errors"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 )
 
 // listOutputGuidance is a shared guidance block appended to the description of all
@@ -20,17 +23,36 @@ var listOutputGuidance string
 //go:embed prompts/describe_output_guidance.md
 var describeOutputGuidance string
 
-// MustMarshal marshals v to JSON. Panics on error.
-// This is safe to use here because Go structs cannot fail JSON serialization in practice.
-func MustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return b
-}
-
 // instanceNotFoundError returns an error indicating the requested instance is unknown.
 func instanceNotFoundError(instance string, known []string) error {
-	return errors.Errorf("ArgoCD instance not found: %s. Instance must be one of: %s", instance, strings.Join(known, ", "))
+	return toolutil.NotFoundError("ArgoCD instance", instance, known)
+}
+
+// filterMapMarshal maps each source item to an output value, marshals it, keeps
+// only items whose JSON matches re, and returns the JSON array of survivors. It
+// captures the per-item filter/marshal loop shared by all list tools.
+func filterMapMarshal[T, O any](items []T, re *regexp.Regexp, toOutput func(T) O) (string, error) {
+	outputs := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		outputJSON := json.RawMessage(marshal.MustMarshal(toOutput(item)))
+		if !filter.Match(outputJSON, re) {
+			continue
+		}
+		outputs = append(outputs, outputJSON)
+	}
+	return marshal.Outputs(outputs)
+}
+
+// applyExcludes clears each requested field using the provided setter map. It
+// returns an error for a field name not present in the map. Each setter nils
+// out its corresponding output field.
+func applyExcludes(excludeFields []string, setters map[string]func()) error {
+	for _, field := range excludeFields {
+		setter, ok := setters[field]
+		if !ok {
+			return errors.Errorf("invalid exclude field: %s", field)
+		}
+		setter()
+	}
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 // Config holds the splitter configuration.
 type Config struct {
 	// ChunkSize is the maximum number of runes per chunk.
-	ChunkSize int `validate:"required,gte=1" jsonschema:"description=Maximum runes per chunk,default=1000"`
+	ChunkSize int `validate:"omitempty,gte=1" jsonschema:"description=Maximum runes per chunk,default=1000"`
 
 	// ChunkOverlap is the number of runes to overlap between consecutive chunks.
 	ChunkOverlap int `validate:"omitempty,gte=0" jsonschema:"description=Overlap runes between chunks,default=200"`
@@ -43,6 +44,10 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	}
 	if config.ChunkOverlap >= config.ChunkSize {
 		config.ChunkOverlap = 0
+	}
+
+	if err := validate.Struct(config); err != nil {
+		return nil, err
 	}
 
 	return &sizeSplitter{

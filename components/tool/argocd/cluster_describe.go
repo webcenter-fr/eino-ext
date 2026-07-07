@@ -57,15 +57,11 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 		Info:     &cluster.Info,
 	}
 
-	for _, excludeField := range params.ExcludeFieldsOutput {
-		switch excludeField {
-		case "metadata":
-			output.Metadata = nil
-		case "info":
-			output.Info = nil
-		default:
-			return "", errors.Errorf("invalid exclude field: %s", excludeField)
-		}
+	if err := applyExcludes(params.ExcludeFieldsOutput, map[string]func(){
+		"metadata": func() { output.Metadata = nil },
+		"info":     func() { output.Info = nil },
+	}); err != nil {
+		return "", err
 	}
 
 	data, err := json.Marshal(output)

@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
-	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
@@ -59,27 +58,13 @@ func (t *CertificateListTool) Invoke(ctx context.Context, params *CertificateLis
 		return "", errors.Wrap(err, "failed to list certificates")
 	}
 
-	outputs := make([]json.RawMessage, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		output := CertificateListOutput{
+	return filterMapMarshal(resp.Items, re, func(item api.CertificateModel) CertificateListOutput {
+		return CertificateListOutput{
 			CertInfo:   item.CertInfo,
 			CertType:   item.CertType,
 			ServerName: item.ServerName,
 		}
-
-		outputJSON := json.RawMessage(MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
-			continue
-		}
-		outputs = append(outputs, outputJSON)
-	}
-
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	})
 }
 
 func NewCertificateListTool(ctx context.Context, configs Configs) (*CertificateListTool, error) {

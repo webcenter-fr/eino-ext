@@ -2,10 +2,10 @@ package prometheus
 
 import (
 	_ "embed"
-	"strings"
 
-	"emperror.dev/errors"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -22,15 +22,11 @@ var listOutputGuidance string
 var describeOutputGuidance string
 
 func marshalOutputs(outputs []json.RawMessage) (string, error) {
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-	return string(data), nil
+	return marshal.Outputs(outputs)
 }
 
 func instanceNotFoundError(instance string, known []string) error {
-	return errors.Errorf("Prometheus instance not found: %s. Instance must be one of: %s", instance, strings.Join(known, ", "))
+	return toolutil.NotFoundError("Prometheus instance", instance, known)
 }
 
 func validateParams(v any) error {

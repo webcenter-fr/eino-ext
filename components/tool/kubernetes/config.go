@@ -1,9 +1,9 @@
 package kubernetes
 
 import (
-	"sort"
-
 	"k8s.io/client-go/rest"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 )
 
 // Configs is a map of Kubernetes cluster configurations, where the key is the cluster name.
@@ -16,10 +16,5 @@ func (c Configs) GetConfig(clusterName string) *rest.Config {
 
 // GetClusterNames returns a slice of all cluster names present in the Configs map.
 func (c Configs) GetClusterNames() []string {
-	names := make([]string, 0, len(c))
-	for name := range c {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return toolutil.SortedKeys(c)
 }

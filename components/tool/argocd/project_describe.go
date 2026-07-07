@@ -57,17 +57,12 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 		Status:   &project.Status,
 	}
 
-	for _, excludeField := range params.ExcludeFieldsOutput {
-		switch excludeField {
-		case "metadata":
-			output.Metadata = nil
-		case "spec":
-			output.Spec = nil
-		case "status":
-			output.Status = nil
-		default:
-			return "", errors.Errorf("invalid exclude field: %s", excludeField)
-		}
+	if err := applyExcludes(params.ExcludeFieldsOutput, map[string]func(){
+		"metadata": func() { output.Metadata = nil },
+		"spec":     func() { output.Spec = nil },
+		"status":   func() { output.Status = nil },
+	}); err != nil {
+		return "", err
 	}
 
 	data, err := json.Marshal(output)

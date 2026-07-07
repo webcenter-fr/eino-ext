@@ -2,9 +2,9 @@ package contextopt
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
-	"fmt"
 
 	"github.com/cloudwego/eino/schema"
 )

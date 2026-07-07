@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/disaster37/goargocdclient/api"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/goccy/go-json"
 )
 
@@ -64,8 +65,8 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 		return fmt.Sprintf(`{"dryRun": true, "wouldDelete": %s}`, string(data)), nil
 	}
 
-	if !params.Confirmed {
-		return "", errors.Errorf("delete aborted: Confirmed must be true. Use DryRun first to preview, then set Confirmed=true to proceed.")
+	if err := confirm.RequireConfirmationForAction("delete", params.Confirmed); err != nil {
+		return "", err
 	}
 
 	if err := c.Application().Delete(params.Name, &api.ApplicationDeleteOptions{

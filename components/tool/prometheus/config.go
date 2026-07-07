@@ -1,6 +1,6 @@
 package prometheus
 
-import "sort"
+import "github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 
 // Configs is a map of Prometheus instance configurations, where the key is the instance name.
 type Configs map[string]Config
@@ -26,10 +26,5 @@ func (c Configs) GetConfig(instanceName string) Config {
 
 // GetInstanceNames returns a sorted slice of all instance names in the Configs map.
 func (c Configs) GetInstanceNames() []string {
-	names := make([]string, 0, len(c))
-	for name := range c {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return toolutil.SortedKeys(c)
 }

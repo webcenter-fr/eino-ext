@@ -17,7 +17,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	opensearchv4 "github.com/disaster37/opensearch/v4"
 	"github.com/disaster37/opensearch/v4/api"
-	"github.com/sirupsen/logrus"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -106,18 +106,14 @@ func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 		return nil, err
 	}
 
-	opensearchCfg := &opensearchv4.Config{
-		URL:           config.URLs[0],
+	client, err := osclient.New(osclient.Config{
+		URLs:          config.URLs,
 		Username:      config.Username,
 		Password:      config.Password,
 		TLSSkipVerify: config.TLSSkipVerify,
-		Timeout:       30 * time.Second,
-	}
-
-	logger := logrus.NewEntry(logrus.StandardLogger())
-	client, err := opensearchv4.New(opensearchCfg, logger)
+	}, 30*time.Second)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create OpenSearch client")
+		return nil, err
 	}
 
 	mapper := config.DocumentToFields

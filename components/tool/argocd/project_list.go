@@ -7,7 +7,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/goccy/go-json"
+	"github.com/disaster37/goargocdclient/api"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 )
 
@@ -56,26 +56,12 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", errors.Wrap(err, "failed to list projects")
 	}
 
-	outputs := make([]json.RawMessage, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		output := ProjectListOutput{
+	return filterMapMarshal(resp.Items, re, func(item *api.ProjectModel) ProjectListOutput {
+		return ProjectListOutput{
 			Name:        item.Name,
 			Description: item.Spec.Description,
 		}
-
-		outputJSON := json.RawMessage(MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
-			continue
-		}
-		outputs = append(outputs, outputJSON)
-	}
-
-	data, err := json.Marshal(outputs)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-
-	return string(data), nil
+	})
 }
 
 func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {

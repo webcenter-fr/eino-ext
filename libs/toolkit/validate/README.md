@@ -7,11 +7,9 @@ validating structs with `validate` tags.
 
 ```go
 func Struct(s interface{}) error
-func StructName(s interface{}, name string) error
 ```
 
 - `Struct` — validates a struct and wraps any error with the type name.
-- `StructName` — validates a struct and wraps any error with a custom label.
 
 ## Usage
 
@@ -29,4 +27,4 @@ if err := validate.Struct(cfg); err != nil {
 ```
 
 Errors are wrapped with `emperror.dev/errors` and include the validated struct's
-type name or the custom name for easier debugging.
+type name for easier debugging.
