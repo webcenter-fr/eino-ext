@@ -25,7 +25,7 @@ type Config struct {
 	IndexName      string   `validate:"omitempty" jsonschema:"description=OpenSearch index name for storing conversations,default=eino_memory"`
 	MaxWindowSize  int      `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
 	MaxWindowTokens int     `validate:"gte=0" jsonschema:"description=Maximum token budget for GetWindow, 0 means no cap"`
-	NumReplicas    int      `validate:"omitempty,gte=0,lte=10" jsonschema:"description=Number of replicas for the index,default=1"`
+
 	TokenCounter  memory.TokenCounter
 }
 
@@ -102,11 +102,6 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 		tc = memory.DefaultTokenCounter
 	}
 
-	replicas := cfg.NumReplicas
-	if replicas == 0 {
-		replicas = 1
-	}
-
 	client, err := osclient.New(osclient.Config{
 		URLs:          cfg.URLs,
 		Username:      cfg.Username,
@@ -126,7 +121,7 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 	}
 
 	if !exists {
-		if err := createIndex(ctx, client, cfg.IndexName, replicas); err != nil {
+		if err := createIndex(ctx, client, cfg.IndexName); err != nil {
 			return nil, err
 		}
 	}
@@ -141,11 +136,11 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 	}, nil
 }
 
-func createIndex(ctx context.Context, client opensearchv4.Client, indexName string, numReplicas int) error {
+func createIndex(ctx context.Context, client opensearchv4.Client, indexName string) error {
 	body := map[string]any{
 		"settings": map[string]any{
-			"number_of_shards":   1,
-			"number_of_replicas": numReplicas,
+			"number_of_shards":          1,
+			"index.auto_expand_replicas": "0-2",
 		},
 		"mappings": map[string]any{
 			"dynamic": false,

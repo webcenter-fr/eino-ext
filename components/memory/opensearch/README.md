@@ -6,7 +6,7 @@ An OpenSearch-backed implementation of the eino `memory.Memory` interface for co
 
 Each conversation is stored as a single document in an OpenSearch index. The document ID is `{userId}:{conversationId}`. Messages are stored as a JSON array within the document. On first access, the document is loaded into memory.
 
-- **Index creation** — On construction, the index is created automatically if it does not exist, with the configured number of replicas (default 1) and appropriate mappings.
+- **Index creation** — On construction, the index is created automatically if it does not exist, with `auto_expand_replicas: "0-2"` and appropriate mappings.
 - **Window management** — `GetMessages` returns up to `MaxWindowSize` most recent messages. `GetWindow(budget)` returns the last summary + following messages bounded by a token budget (binary search over an additive `TokenCounter`).
 - **Summaries** — `AppendSummary` marks a message as a summary. `GetWindow` always preserves the most recent summary as a fixed prefix.
 - **Persistence** — Messages are persisted to OpenSearch immediately on `Append`.
@@ -24,7 +24,6 @@ mem, err := opensearch.NewOpenSearchMemory(opensearch.Config{
     Username:        "admin",
     Password:        "admin",
     IndexName:       "eino_memory",         // defaults to "eino_memory"
-    NumReplicas:     1,                     // defaults to 1
     MaxWindowSize:   20,                    // max messages in GetMessages
     MaxWindowTokens: 8192,                  // token budget for GetWindow, 0 disables
     TokenCounter:    memory.DefaultTokenCounter,
