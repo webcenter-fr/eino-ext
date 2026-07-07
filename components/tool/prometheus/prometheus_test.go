@@ -40,7 +40,7 @@ func TestConfigs_GetConfig(t *testing.T) {
 				Username:           "admin",
 				Password:           "secret",
 				BearerToken:        "token123",
-				InsecureSkipVerify: true,
+				TLSSkipVerify: true,
 			},
 		}
 		cfg := configs.GetConfig("prod")
@@ -48,7 +48,7 @@ func TestConfigs_GetConfig(t *testing.T) {
 		assert.Equal(t, "admin", cfg.Username)
 		assert.Equal(t, "secret", cfg.Password)
 		assert.Equal(t, "token123", cfg.BearerToken)
-		assert.True(t, cfg.InsecureSkipVerify)
+		assert.True(t, cfg.TLSSkipVerify)
 	})
 
 	t.Run("non-existent instance returns zero value", func(t *testing.T) {

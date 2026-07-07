@@ -9,7 +9,7 @@ eino tools for querying Prometheus metrics and alerts via the
   `Configs` map, matching the Kubernetes/ArgoCD tool patterns.
 - **Authentication** — supports Basic auth (username/password) and Bearer
   token auth. Bearer takes priority over Basic.
-- **TLS** — optional `InsecureSkipVerify` for self-signed certificates.
+- **TLS** — optional `TLSSkipVerify` for self-signed certificates.
 - **Output limiting** — all tools support Go RE2 regex filters on result JSON.
   List tools support pagination.
 - **Read-only** — all tools are read-only (no `WriteToolNames`).

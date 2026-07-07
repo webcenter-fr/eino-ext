@@ -26,6 +26,10 @@ type Config struct {
 
 	// Timeout for API calls. Defaulted; validated as gte=1s.
 	Timeout time.Duration `validate:"omitempty,gte=1000000000" jsonschema:"description=Per-request timeout"`
+
+	// TLSSkipVerify disables TLS certificate verification. Useful for GitHub Enterprise
+	// Server instances with self-signed certificates.
+	TLSSkipVerify bool `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
 }
 
 // GetConfig retrieves the configuration for a given instance name.

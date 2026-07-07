@@ -21,6 +21,8 @@ package chatmodel
 
 import (
 	"context"
+	"crypto/tls"
+	"net/http"
 	"strings"
 	"time"
 
@@ -105,6 +107,10 @@ type Config struct {
 	// Timeout is the request timeout for the openai/github-copilot path. 0 uses the
 	// package default of 60m.
 	Timeout time.Duration `validate:"gte=0" jsonschema:"description=Request timeout for openai/github-copilot path, 0 uses default of 60m"`
+
+	// TLSSkipVerify disables TLS certificate verification. Useful for self-hosted
+	// providers with self-signed certificates.
+	TLSSkipVerify bool `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
@@ -132,18 +138,16 @@ func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 
 func newOllama(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	options := &ollama.Options{Temperature: cfg.Temperature}
-	// Ollama exposes NumPredict as the output-token equivalent; only set it
-	// when an explicit cap is requested.
 	if cfg.MaxOutputTokens > 0 {
 		options.NumPredict = cfg.MaxOutputTokens
 	}
 
 	conf := &ollama.ChatModelConfig{
-		BaseURL: cfg.BaseURL,
-		Model:   cfg.Model,
-		Options: options,
-		// Ollama has no reasoning levels: non-Off collapses to true.
-		Thinking: &ollama.ThinkValue{Value: cfg.Thinking != Off},
+		BaseURL:    cfg.BaseURL,
+		Model:      cfg.Model,
+		Options:    options,
+		HTTPClient: insecureHTTPClient(cfg.TLSSkipVerify, 0),
+		Thinking:   &ollama.ThinkValue{Value: cfg.Thinking != Off},
 	}
 
 	m, err := ollama.NewChatModel(ctx, conf)
@@ -160,9 +164,10 @@ func newOpenAI(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, er
 	}
 
 	conf := &openai.ChatModelConfig{
-		BaseURL: cfg.BaseURL,
-		Model:   cfg.Model,
-		Timeout: timeout,
+		BaseURL:    cfg.BaseURL,
+		Model:      cfg.Model,
+		Timeout:    timeout,
+		HTTPClient: insecureHTTPClient(cfg.TLSSkipVerify, timeout),
 	}
 
 	// Only set Temperature when explicitly requested (> 0); leaving it unset
@@ -220,4 +225,20 @@ func CapOutputTokens(modelOutputLimit, ceiling int) int {
 		return ceiling
 	}
 	return min(modelOutputLimit, ceiling)
+}
+
+// insecureHTTPClient returns an *http.Client with TLS certificate verification
+// disabled when skip is true. The client honors the given timeout.
+// When skip is false it returns nil, letting the model library use its default
+// (which respects the Timeout field).
+func insecureHTTPClient(skip bool, timeout time.Duration) *http.Client {
+	if !skip {
+		return nil
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
 }

@@ -40,10 +40,10 @@ func NewClient(config Config) (promapi.API, error) {
 
 	rt := api.DefaultRoundTripper
 
-	if config.InsecureSkipVerify {
+	if config.TLSSkipVerify {
 		t, ok := rt.(*http.Transport)
 		if !ok {
-			return nil, errors.New("cannot set InsecureSkipVerify: DefaultRoundTripper is not *http.Transport")
+			return nil, errors.New("cannot set TLSSkipVerify: DefaultRoundTripper is not *http.Transport")
 		}
 		clone := t.Clone()
 		if clone.TLSClientConfig == nil {

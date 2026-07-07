@@ -1,6 +1,7 @@
 package github
 
 import (
+	"crypto/tls"
 	"net/http"
 	"time"
 
@@ -23,7 +24,17 @@ func NewClient(cfg *Config) (*github.Client, error) {
 		return nil, err
 	}
 
-	httpClient := &http.Client{Timeout: cfg.Timeout}
+	var httpClient *http.Client
+	if cfg.TLSSkipVerify {
+		httpClient = &http.Client{
+			Timeout: cfg.Timeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
+	} else {
+		httpClient = &http.Client{Timeout: cfg.Timeout}
+	}
 	gh := github.NewClient(httpClient).WithAuthToken(cfg.Token)
 
 	if cfg.BaseURL != "" {

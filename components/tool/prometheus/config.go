@@ -15,8 +15,8 @@ type Config struct {
 	Password string
 	// BearerToken is the optional bearer token for authentication.
 	BearerToken string
-	// InsecureSkipVerify disables TLS certificate verification.
-	InsecureSkipVerify bool
+	// TLSSkipVerify disables TLS certificate verification.
+	TLSSkipVerify bool
 }
 
 // GetConfig retrieves the configuration for a given instance name.
