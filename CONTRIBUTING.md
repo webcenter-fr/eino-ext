@@ -137,6 +137,10 @@ this project:
   3. `README.md`: what the component does, a constructor snippet, and which
      eino abstraction it implements.
   4. A package comment `// Package xxx ...` at the top of the file.
+  5. **Checkup**: `check.go` + `check_test.go` with a `Check()` function that
+     probes connectivity and RBAC permissions for all configured instances.
+     Returns `checkup.Results` from `libs/toolkit/checkup/`. See existing
+     components (e.g. `components/tool/argocd/check.go`) for patterns.
 
 ## License Headers
 
@@ -310,6 +314,10 @@ configs := builder.Build()
       calls `validate.Struct(cfg)` after defaults.
 - [ ] Every new component has: table-driven test, README, package comment,
       and a `var _ Interface = (*T)(nil)` compile-time check.
+- [ ] Every new component has a checkup: `check.go` + `check_test.go` with a
+      `Check()` function returning `checkup.Results` (see `libs/toolkit/checkup/`).
+      Probe each read endpoint, use list→describe chains, and handle "no
+      resources" as `"limited"` not `"error"`.
 - [ ] Naming: acronyms and brands use official casing (`OpenSearch`, `GitHub`,
       `URL`, `ID`, `JSON`).
 - [ ] Errors are wrapped with `emperror.dev/errors` (include operation context).
