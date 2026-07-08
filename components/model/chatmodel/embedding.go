@@ -23,7 +23,7 @@ const (
 
 type EmbeddingConfig struct {
 	Provider      EmbeddingProvider `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
-	BaseURL       string            `validate:"required" jsonschema:"description=Provider endpoint URL"`
+	BaseURL       string            `jsonschema:"description=Provider endpoint URL, uses provider default when empty"`
 	Model         string            `validate:"required" jsonschema:"description=Model ID to use"`
 	Timeout       time.Duration     `validate:"gte=0" jsonschema:"description=Request timeout in seconds (0 uses default)"`
 	TLSSkipVerify bool              `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`

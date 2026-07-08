@@ -79,3 +79,34 @@ func TestNewEmbeddingMissingAPIKey(t *testing.T) {
 		t.Fatal("NewEmbedding(openai, no APIKey): nil embedder")
 	}
 }
+
+func TestNewEmbeddingDefaultBaseURL(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("openai", func(t *testing.T) {
+		emb, err := NewEmbedding(ctx, &EmbeddingConfig{
+			Provider: OpenAIEmbeddingProvider,
+			Model:    "text-embedding-3-small",
+		})
+		if err != nil {
+			t.Fatalf("NewEmbedding(openai, no BaseURL): unexpected error: %v", err)
+		}
+		if emb == nil {
+			t.Fatal("NewEmbedding(openai, no BaseURL): nil embedder")
+		}
+	})
+
+	t.Run("copilot", func(t *testing.T) {
+		emb, err := NewEmbedding(ctx, &EmbeddingConfig{
+			Provider: CopilotEmbeddingProvider,
+			Model:    "text-embedding-3-small",
+			APIKey:   "test-copilot-token",
+		})
+		if err != nil {
+			t.Fatalf("NewEmbedding(github-copilot, no BaseURL): unexpected error: %v", err)
+		}
+		if emb == nil {
+			t.Fatal("NewEmbedding(github-copilot, no BaseURL): nil embedder")
+		}
+	})
+}

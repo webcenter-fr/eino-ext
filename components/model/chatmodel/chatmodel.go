@@ -97,8 +97,9 @@ type Config struct {
 	// "github-copilot" and "openai" share the OpenAI-compatible construction path.
 	Provider Provider `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
 
-	// BaseURL is the provider endpoint URL.
-	BaseURL string `validate:"required" jsonschema:"description=Provider endpoint URL"`
+	// BaseURL is the provider endpoint URL. When empty, a provider-specific
+	// default is used (e.g. https://api.openai.com for openai).
+	BaseURL string `jsonschema:"description=Provider endpoint URL, uses provider default when empty"`
 
 	// Model is the model ID to use.
 	Model string `validate:"required" jsonschema:"description=Model ID to use"`
@@ -130,6 +131,10 @@ type Config struct {
 // Supported plans are "ollama", "github-copilot", and "openai"; github-copilot
 // and openai share the OpenAI-compatible path. Construction errors are wrapped
 // with emperror.dev/errors.
+//
+// BaseURL is optional; when empty the underlying provider uses its native
+// default (e.g. https://api.openai.com for openai, https://api.githubcopilot.com
+// for copilot, http://localhost:11434 for ollama).
 func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
 		return nil, errors.New("chatmodel: config must not be nil")

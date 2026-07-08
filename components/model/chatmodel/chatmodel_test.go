@@ -108,6 +108,50 @@ func TestNewValidation(t *testing.T) {
 	}
 }
 
+func TestNewDefaultBaseURL(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("ollama", func(t *testing.T) {
+		m, err := New(ctx, &Config{
+			Provider: OllamaProvider,
+			Model:    "gpt-x",
+		})
+		if err != nil {
+			t.Fatalf("New(ollama, no BaseURL): unexpected error: %v", err)
+		}
+		if m == nil {
+			t.Fatal("New(ollama, no BaseURL): nil model")
+		}
+	})
+
+	t.Run("openai", func(t *testing.T) {
+		m, err := New(ctx, &Config{
+			Provider: OpenAIProvider,
+			Model:    "gpt-x",
+		})
+		if err != nil {
+			t.Fatalf("New(openai, no BaseURL): unexpected error: %v", err)
+		}
+		if m == nil {
+			t.Fatal("New(openai, no BaseURL): nil model")
+		}
+	})
+
+	t.Run("copilot", func(t *testing.T) {
+		m, err := New(ctx, &Config{
+			Provider: CopilotProvider,
+			Model:    "gpt-x",
+			APIKey:   "test-copilot-token",
+		})
+		if err != nil {
+			t.Fatalf("New(github-copilot, no BaseURL): unexpected error: %v", err)
+		}
+		if m == nil {
+			t.Fatal("New(github-copilot, no BaseURL): nil model")
+		}
+	})
+}
+
 // TestNewOpenAIConfig asserts the OpenAI config mapping without hitting a
 // network: NewChatModel for the openai plan does not dial on construction.
 func TestNewOpenAIConfig(t *testing.T) {
