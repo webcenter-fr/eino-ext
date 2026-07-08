@@ -14,8 +14,12 @@ conversion and SSRF protection.
 
 - **Dual backend** — `web_search` tries DuckDuckGo HTML first, falls back to
   DDG Lite on failure.
+- **Anti-bot mitigation** — `web_search` uses cookie jar persistence, browser-like
+  headers (Accept, Accept-Language, etc.), and session warm-up to reduce DuckDuckGo
+  HTTP 202 anti-bot challenge responses.
 - **Retry** — Both tools retry on transient errors (202, 403, 429) with
-  exponential backoff up to `MaxRetry` attempts.
+  exponential backoff up to `MaxRetry` attempts. On retry, the session is
+  refreshed to reduce further 202 probability.
 - **SSRF protection** — The HTTP transport blocks connections to private IP
   ranges (loopback, link-local, private, 169.254.0.0/16). Can be disabled with
   `SkipSSRFCheck` for testing.

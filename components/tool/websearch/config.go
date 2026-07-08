@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"time"
 )
 
@@ -97,8 +98,11 @@ func getHTTPClient(cfg *Config) *http.Client {
 		}
 	}
 
+	jar, _ := cookiejar.New(nil)
+
 	return &http.Client{
 		Transport: transport,
 		Timeout:   cfg.Timeout,
+		Jar:       jar,
 	}
 }

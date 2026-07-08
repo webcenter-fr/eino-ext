@@ -26,9 +26,43 @@ type SearchResult struct {
 	Description string `json:"description"`
 }
 
+// applyBrowserHeaders sets browser-like headers (Accept, Accept-Language, etc.)
+// on the request so DuckDuckGo treats it as a normal browser tab rather than
+// a bot. We intentionally omit Sec-Ch-Ua* headers because their version
+// numbers must match the User-Agent, and we cannot guarantee consistency
+// across arbitrary user-configured UAs. Without these headers DDG is far
+// more likely to return HTTP 202 (anti-bot challenge).
+func applyBrowserHeaders(req *http.Request, ua string) {
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("Accept",
+		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+}
+
+// warmUpDDG performs a best-effort GET to the DuckDuckGo HTML frontend so that
+// DDG issues session cookies into the client's jar. Having a session cookie
+// (vqd token) before searching significantly reduces HTTP 202 responses.
+func warmUpDDG(ctx context.Context, client *http.Client, ua string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ddgHTMLURL, nil)
+	if err != nil {
+		return
+	}
+	applyBrowserHeaders(req, ua)
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
+}
+
 // search performs a DuckDuckGo HTML search with retry and fallback.
 func search(ctx context.Context, query string, cfg Config) ([]SearchResult, error) {
 	client := getHTTPClient(&cfg)
+
+	// Best-effort warm-up to obtain session cookies before searching.
+	// A session cookie (vqd token) significantly reduces HTTP 202 responses.
+	warmUpDDG(ctx, client, cfg.UserAgent)
 
 	backends := []struct {
 		name string
@@ -61,6 +95,9 @@ func searchWithRetry(
 	var lastErr error
 	for attempt := 0; attempt <= cfg.MaxRetry; attempt++ {
 		if attempt > 0 {
+			// Refresh session cookies before retrying to reduce 202 probability.
+			warmUpDDG(ctx, client, cfg.UserAgent)
+
 			backoff := time.Duration(1<<(attempt-1)) * time.Second
 			select {
 			case <-ctx.Done():
@@ -118,7 +155,7 @@ func doSearchRequest(ctx context.Context, urlStr string, client *http.Client, ua
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create search request")
 	}
-	req.Header.Set("User-Agent", ua)
+	applyBrowserHeaders(req, ua)
 
 	resp, err := client.Do(req)
 	if err != nil {

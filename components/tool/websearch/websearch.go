@@ -1,3 +1,6 @@
+// Package websearch provides eino tools for DuckDuckGo web search and URL
+// fetching with anti-bot mitigations (cookie jar, browser headers, session
+// warm-up), HTML-to-Markdown conversion, and SSRF protection.
 package websearch
 
 import (
