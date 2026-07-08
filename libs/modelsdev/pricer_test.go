@@ -82,3 +82,31 @@ func TestCatalogPricer_Cost_NilFields(t *testing.T) {
 		t.Errorf("Cost = %v, want 0 for zero-value CatalogPricer", got)
 	}
 }
+
+func TestCatalogPricer_Cost_OllamaToCloud(t *testing.T) {
+	c := testCatalog()
+	pricer := CatalogPricer{
+		Catalog: c,
+		Resolve: func(gatewayModel string) (provider, id string, ok bool) {
+			return "ollama", "deepseek-v4-flash", true
+		},
+	}
+	got := pricer.Cost("ollama-deepseek", activity.Tokens{Input: 1_000_000, Output: 1_000_000})
+	want := 0.89 + 1.79
+	if got != want {
+		t.Errorf("Cost = %v, want %v (ollama→ollama-cloud conversion)", got, want)
+	}
+}
+
+func TestCatalogPricer_Cost_OllamaLocalNoPrice(t *testing.T) {
+	c := testCatalog()
+	pricer := CatalogPricer{
+		Catalog: c,
+		Resolve: func(gatewayModel string) (provider, id string, ok bool) {
+			return "ollama", "llama3.2:3b", true
+		},
+	}
+	if got := pricer.Cost("ollama-llama", activity.Tokens{Input: 1_000_000, Output: 500_000}); got != 0 {
+		t.Errorf("Cost = %v, want 0 (local ollama model not in ollama-cloud)", got)
+	}
+}

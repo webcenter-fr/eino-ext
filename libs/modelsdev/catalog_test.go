@@ -31,6 +31,16 @@ func testCatalog() *Catalog {
 					},
 				},
 			},
+			"ollama-cloud": {
+				ID: "ollama-cloud",
+				Models: map[string]Model{
+					"deepseek-v4-flash": {
+						ID:    "deepseek-v4-flash",
+						Limit: Limit{Context: 1048576, Output: 1048576},
+						Cost:  &Cost{Input: 0.89, Output: 1.79},
+					},
+				},
+			},
 		},
 	}
 }

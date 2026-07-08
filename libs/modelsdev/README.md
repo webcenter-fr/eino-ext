@@ -57,6 +57,20 @@ cache_write. **Reasoning tokens are a subset of output (CompletionTokens) and
 are never priced separately.** An unresolvable model, an unknown catalog
 entry, or a nil `Cost` all price at `0`.
 
+### Ollama auto-conversion
+
+When a `NameResolver` returns `"ollama"` as the provider, `CatalogPricer.Cost`
+auto-converts it to `"ollama-cloud"` before the catalog lookup. This means:
+
+- **Ollama Cloud models** (listed in the ollama-cloud provider bucket) are
+  priced at their catalog rates.
+- **Local ollama models** not present in the ollama-cloud bucket price at
+  `0` — local ollama has no price.
+
+Callers do not need to special-case ollama in their `NameResolver`: returning
+`"ollama"` is sufficient; the conversion and local-model gating are handled
+automatically.
+
 ## Design: cost breakdown, cache savings & context-window usage (planned)
 
 > Status: **designed, not yet implemented.** `CatalogPricer.Cost` today
