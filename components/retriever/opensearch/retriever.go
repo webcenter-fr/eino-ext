@@ -3,6 +3,7 @@ package opensearch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"emperror.dev/errors"
@@ -70,6 +71,16 @@ type Config struct {
 	// K is the number of nearest neighbors requested from the kNN query.
 	// Defaults to TopK (see Retrieve) when zero.
 	K int `validate:"omitempty" jsonschema:"description=Number of nearest neighbors for kNN"`
+
+	// Index is the OpenSearch index to search. A per-call
+	// retriever.WithIndex option overrides this default.
+	Index string `validate:"required" jsonschema:"description=OpenSearch index to search"`
+
+	// EnsureSearchPipeline, when true, idempotently creates SearchPipeline
+	// on the cluster during NewRetriever if it does not already exist.
+	// Failures are not fatal: the retriever still returns successfully and
+	// falls back to un-fused hybrid scoring. Requires SearchPipeline.
+	EnsureSearchPipeline bool `validate:"omitempty" jsonschema:"description=Idempotently create SearchPipeline on startup"`
 }
 
 // Retriever implements retriever.Retriever backed by OpenSearch.
@@ -113,11 +124,19 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		rp = defaultResultParser
 	}
 
-	return &Retriever{
+	r := &Retriever{
 		client:       client,
 		resultParser: rp,
 		config:       *config,
-	}, nil
+	}
+
+	if config.EnsureSearchPipeline && config.SearchPipeline != "" {
+		if _, ensureErr := EnsureRRFPipeline(ctx, r.client, config.SearchPipeline); ensureErr != nil {
+			fmt.Printf("[WARN] opensearch retriever: failed to ensure RRF search pipeline %q (hybrid search runs without pipeline-based score fusion): %v\n", config.SearchPipeline, ensureErr)
+		}
+	}
+
+	return r, nil
 }
 
 // GetType returns the component type identifier.
@@ -138,16 +157,13 @@ func (r *Retriever) Client() opensearchv4.Client {
 // Retrieve performs a search against OpenSearch and returns matching documents.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	commonOpts := retriever.GetCommonOptions(&retriever.Options{
-		Index: ptr.To(""),
+		Index: ptr.To(r.config.Index),
 		TopK:  ptr.To(defaultTopK),
 	}, opts...)
 
 	topK := defaultTopK
 	if commonOpts.TopK != nil {
 		topK = *commonOpts.TopK
-	}
-	if *commonOpts.Index == "" {
-		return nil, errors.New("index is required: use retriever.WithIndex(\"your-index-name\")")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
