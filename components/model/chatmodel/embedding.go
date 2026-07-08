@@ -40,7 +40,7 @@ func NewEmbedding(ctx context.Context, cfg *EmbeddingConfig) (embedding.Embedder
 
 	switch cfg.Provider {
 	case CopilotEmbeddingProvider:
-		return newCopilotEmbedding(cfg)
+		return newCopilotEmbedding(ctx, cfg)
 	case OpenAIEmbeddingProvider:
 		return newOpenAIEmbedding(cfg)
 	case OllamaEmbeddingProvider:
@@ -62,14 +62,14 @@ func newOpenAIEmbedding(cfg *EmbeddingConfig) (embedding.Embedder, error) {
 	return openai.NewEmbeddingClient(context.Background(), embCfg)
 }
 
-func newCopilotEmbedding(cfg *EmbeddingConfig) (embedding.Embedder, error) {
+func newCopilotEmbedding(ctx context.Context, cfg *EmbeddingConfig) (embedding.Embedder, error) {
 
 	copilotCfg := &copilot.EmbedderConfig{
 		Model:         cfg.Model,
 		TLSSkipVerify: cfg.TLSSkipVerify,
 	}
 
-	return copilot.NewEmbedder(copilotCfg, cfg.APIKey, cfg.BaseURL, cfg.Timeout), nil
+	return copilot.NewEmbedder(ctx, copilotCfg, cfg.APIKey, cfg.BaseURL, cfg.Timeout)
 }
 
 func newOllamaEmbedding(cfg *EmbeddingConfig) (embedding.Embedder, error) {

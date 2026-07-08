@@ -152,7 +152,11 @@ func startTokenRefresh(
 	return cancel
 }
 
-func resolveBaseURL(enterpriseURL string) string {
+// ResolveBaseURL returns the Copilot API base URL for the given enterprise URL.
+// When enterpriseURL is empty, it returns the default public Copilot API base
+// (https://api.githubcopilot.com). When enterpriseURL is set, it returns
+// https://copilot-api.{enterpriseURL}.
+func ResolveBaseURL(enterpriseURL string) string {
 	if enterpriseURL != "" {
 		return fmt.Sprintf("https://copilot-api.%s", enterpriseURL)
 	}

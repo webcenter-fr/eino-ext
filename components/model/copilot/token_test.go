@@ -142,9 +142,9 @@ func TestResolveBaseURL(t *testing.T) {
 		{"internal.example.com", "https://copilot-api.internal.example.com"},
 	}
 	for _, tt := range tests {
-		got := resolveBaseURL(tt.enterprise)
+		got := ResolveBaseURL(tt.enterprise)
 		if got != tt.want {
-			t.Errorf("resolveBaseURL(%q) = %q, want %q", tt.enterprise, got, tt.want)
+			t.Errorf("ResolveBaseURL(%q) = %q, want %q", tt.enterprise, got, tt.want)
 		}
 	}
 }

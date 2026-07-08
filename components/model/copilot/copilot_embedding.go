@@ -10,6 +10,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 type copilotEmbedRequest struct {
@@ -48,13 +49,33 @@ type EmbedderConfig struct {
 	TLSSkipVerify bool   `validate:"omitempty"`
 }
 
-func NewEmbedder(cfg *EmbedderConfig, copilotToken, baseURL string, timeout time.Duration) *CopilotEmbedder {
+func NewEmbedder(ctx context.Context, cfg *EmbedderConfig, copilotToken, baseURL string, timeout time.Duration) (*CopilotEmbedder, error) {
+	if cfg == nil {
+		return nil, errors.New("copilot: embedder config must not be nil")
+	}
+
+	if copilotToken == "" {
+		return nil, errors.New("copilot: copilotToken must not be empty")
+	}
+
+	if baseURL == "" {
+		baseURL = ResolveBaseURL("")
+	}
+
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+
+	if err := validate.Struct(cfg); err != nil {
+		return nil, errors.Wrap(err, "copilot: invalid embedder config")
+	}
+
 	return &CopilotEmbedder{
 		httpClient: newHTTPClient(timeout, cfg.TLSSkipVerify),
 		baseURL:    baseURL,
 		model:      cfg.Model,
 		token:      copilotToken,
-	}
+	}, nil
 }
 
 func (e *CopilotEmbedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {

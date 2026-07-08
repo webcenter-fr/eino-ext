@@ -83,7 +83,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
-		baseURL = resolveBaseURL(cfg.EnterpriseURL)
+		baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 	}
 	lockedToken := &copilotLockedToken{}
 	var cancelRefresh context.CancelFunc

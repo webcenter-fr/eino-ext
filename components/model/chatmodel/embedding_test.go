@@ -67,17 +67,31 @@ func TestNewEmbeddingOllama(t *testing.T) {
 
 func TestNewEmbeddingMissingAPIKey(t *testing.T) {
 	ctx := context.Background()
-	emb, err := NewEmbedding(ctx, &EmbeddingConfig{
-		Provider: OpenAIEmbeddingProvider,
-		BaseURL:  "http://localhost:0",
-		Model:    "text-embedding-3-small",
+
+	t.Run("openai", func(t *testing.T) {
+		emb, err := NewEmbedding(ctx, &EmbeddingConfig{
+			Provider: OpenAIEmbeddingProvider,
+			BaseURL:  "http://localhost:0",
+			Model:    "text-embedding-3-small",
+		})
+		if err != nil {
+			t.Fatalf("NewEmbedding(openai, no APIKey): unexpected error: %v", err)
+		}
+		if emb == nil {
+			t.Fatal("NewEmbedding(openai, no APIKey): nil embedder")
+		}
 	})
-	if err != nil {
-		t.Fatalf("NewEmbedding(openai, no APIKey): unexpected error: %v", err)
-	}
-	if emb == nil {
-		t.Fatal("NewEmbedding(openai, no APIKey): nil embedder")
-	}
+
+	t.Run("copilot", func(t *testing.T) {
+		_, err := NewEmbedding(ctx, &EmbeddingConfig{
+			Provider: CopilotEmbeddingProvider,
+			BaseURL:  "http://localhost:0",
+			Model:    "text-embedding-3-small",
+		})
+		if err == nil {
+			t.Fatal("NewEmbedding(github-copilot, no APIKey): expected error, got nil")
+		}
+	})
 }
 
 func TestNewEmbeddingDefaultBaseURL(t *testing.T) {

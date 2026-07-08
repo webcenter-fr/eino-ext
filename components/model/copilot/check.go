@@ -35,7 +35,7 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
-		baseURL = resolveBaseURL(cfg.EnterpriseURL)
+		baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 	}
 
 	var results checkup.Results
