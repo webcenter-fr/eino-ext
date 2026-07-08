@@ -97,6 +97,30 @@ this project:
   Do not unify them. Each OpenSearch package README should recall which
   client it uses and why.
 
+### OpenSearch shared library patterns
+
+When implementing OpenSearch-backed tools:
+
+- **Use PIT scrolling**: Always use Point-in-Time (`POST
+  /_search/point_in_time`) with `search_after` for result pagination instead
+  of the legacy Scroll API. PIT provides a consistent snapshot view and is
+  the recommended approach for deep pagination.
+
+- **Provide a ResultParser callback**: Every OpenSearch tool that returns
+  search results MUST accept an optional `ResultParser` function (type
+  `func(ctx context.Context, hit map[string]any) (string, error)`) in its
+  constructor config. The parser receives the full hit map (source fields +
+  `_id`, `_index`, `_score`, `_version`) and returns a formatted string.
+  When `ResultParser` is nil, the default formatter serializes each hit as
+  compact JSON.
+
+- **Propose both stream and regular modes**: Every OpenSearch tool MUST
+  implement both `tool.InvokableTool` and `tool.StreamableTool`.
+
+- **Keep tools generic**: Tool parameters should accept arbitrary query
+  strings and indices. Project-specific wrappers (e.g., Kubernetes log search)
+  should be built on top of the generic tool.
+
 ## Components
 
 - Follow the existing component layout: a `Config` struct with `validate` and

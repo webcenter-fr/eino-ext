@@ -21,7 +21,7 @@ func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 				Error:     "no OpenSearch URLs configured",
 			},
 			{
-				Component: "opensearch_log_kubernetes",
+				Component: "opensearch_search",
 				Status:    checkup.StatusError,
 				Error:     "no OpenSearch URLs configured",
 			},
@@ -36,7 +36,7 @@ func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 		errStr := err.Error()
 		return checkup.Results{
 			{Component: "opensearch", Status: checkup.StatusError, Error: errStr},
-			{Component: "opensearch_log_kubernetes", Status: checkup.StatusError, Error: errStr},
+			{Component: "opensearch_search", Status: checkup.StatusError, Error: errStr},
 		}
 	}
 
@@ -58,9 +58,9 @@ func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 	}
 
 	results = append(results, checkup.Result{
-		Component: "opensearch_log_kubernetes",
+		Component: "opensearch_search",
 		Status:    checkup.StatusLimited,
-		Message:   fmt.Sprintf("requires pod-specific parameters for invoke, connectivity verified via %s", cfg.URLs),
+		Message:   fmt.Sprintf("requires search parameters for invocation, connectivity verified via %s", cfg.URLs),
 	})
 
 	return results
