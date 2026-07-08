@@ -121,7 +121,7 @@ func (t *PRGetTool) Invoke(ctx context.Context, params *PRGetParams) (result str
 }
 
 func NewPRGetTool(ctx context.Context, configs Configs) (*PRGetTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

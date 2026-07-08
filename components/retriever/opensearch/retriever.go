@@ -98,7 +98,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		return nil, errors.New("VectorField is required when Embedding is set")
 	}
 
-	client, err := osclient.New(osclient.Config{
+	client, err := osclient.New(ctx, osclient.Config{
 		URLs:          config.URLs,
 		Username:      config.Username,
 		Password:      config.Password,

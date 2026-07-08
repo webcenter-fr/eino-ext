@@ -79,7 +79,7 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 }
 
 func NewApplicationDescribeTool(ctx context.Context, configs Configs) (*ApplicationDescribeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -83,7 +83,7 @@ func (t *ReleaseCreateTool) Invoke(ctx context.Context, params *ReleaseCreatePar
 }
 
 func NewReleaseCreateTool(ctx context.Context, configs Configs) (*ReleaseCreateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

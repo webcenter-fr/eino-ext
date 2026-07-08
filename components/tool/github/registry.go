@@ -40,7 +40,7 @@ var writeConstructors = []toolConstructor{
 
 // buildTools creates tools from the given constructors, sharing a single baseTool.
 func buildTools(ctx context.Context, configs Configs, constructors []toolConstructor) ([]tool.InvokableTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -215,7 +215,7 @@ func fieldAsString(v interface{}) string {
 // NewOpensearchLogKubernetesTool creates a new instance of the OpensearchLogKubernetesTool.
 func NewOpensearchLogKubernetesTool(ctx context.Context, cfg *osclient.Config) (*OpensearchLogKubernetesTool, error) {
 
-	c, err := NewClient(cfg)
+	c, err := NewClient(ctx, cfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Opensearch client")
 	}

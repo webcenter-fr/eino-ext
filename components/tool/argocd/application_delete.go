@@ -81,7 +81,7 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 }
 
 func NewApplicationDeleteTool(ctx context.Context, configs Configs) (*ApplicationDeleteTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

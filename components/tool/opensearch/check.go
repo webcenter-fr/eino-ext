@@ -31,7 +31,7 @@ func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 	baseCtx, cancel := context.WithTimeout(ctx, osCheckTimeout)
 	defer cancel()
 
-	client, err := NewClient(cfg)
+	client, err := NewClient(baseCtx, cfg)
 	if err != nil {
 		errStr := err.Error()
 		return checkup.Results{

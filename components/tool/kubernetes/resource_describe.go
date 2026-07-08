@@ -102,7 +102,7 @@ func (t *ResourceDescribeTool) Invoke(ctx context.Context, params *ResourceDescr
 // NewResourceDescribeTool creates a new instance of the ResourceDescribeTool.
 func NewResourceDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(configs)
+	base, err := newBaseToolWithDynamic(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

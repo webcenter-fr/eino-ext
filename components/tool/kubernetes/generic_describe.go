@@ -179,7 +179,7 @@ func NewDescribeTool[resource client.Object](ctx context.Context, configs Config
 		r:             o,
 		knownClusters: configs.GetClusterNames(),
 	}
-	clients, err := BuildClients(configs, s)
+	clients, err := BuildClients(ctx, configs, s)
 	if err != nil {
 		return nil, err
 	}

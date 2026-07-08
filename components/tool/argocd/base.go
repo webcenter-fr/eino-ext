@@ -1,6 +1,8 @@
 package argocd
 
 import (
+	"context"
+
 	"emperror.dev/errors"
 	"github.com/disaster37/goargocdclient/api"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -24,11 +26,11 @@ func (b *baseTool) client(instance string) (api.API, error) {
 
 // newBaseTool builds ArgoCD clients for all configured instances and returns
 // a baseTool ready to be embedded by individual tools.
-func newBaseTool(configs Configs) (*baseTool, error) {
+func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 	if len(configs) == 0 {
 		return nil, errors.Errorf("at least one ArgoCD instance configuration is required")
 	}
-	clients, err := BuildClients(configs)
+	clients, err := BuildClients(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@
 package osclient
 
 import (
+	"context"
 	"time"
 
 	"emperror.dev/errors"
@@ -34,7 +35,7 @@ type Config struct {
 
 // New creates an OpenSearch v4 client from the shared configuration. A zero
 // timeout leaves the client default in place.
-func New(cfg Config, timeout time.Duration) (opensearchv4.Client, error) {
+func New(ctx context.Context, cfg Config, timeout time.Duration) (opensearchv4.Client, error) {
 	if len(cfg.URLs) == 0 {
 		return nil, errors.New("at least one OpenSearch URL is required")
 	}

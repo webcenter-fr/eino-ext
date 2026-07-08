@@ -99,7 +99,7 @@ func (t *RepoSearchTool) Invoke(ctx context.Context, params *RepoSearchParams) (
 }
 
 func NewRepoSearchTool(ctx context.Context, configs Configs) (*RepoSearchTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

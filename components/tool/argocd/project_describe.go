@@ -74,7 +74,7 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 }
 
 func NewProjectDescribeTool(ctx context.Context, configs Configs) (*ProjectDescribeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

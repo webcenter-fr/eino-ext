@@ -65,7 +65,7 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 }
 
 func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

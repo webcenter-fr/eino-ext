@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 	"time"
@@ -13,7 +14,7 @@ import (
 const defaultTimeout = 30 * time.Second
 
 // NewClient creates a new GitHub API client using the provided configuration.
-func NewClient(cfg *Config) (*github.Client, error) {
+func NewClient(ctx context.Context, cfg *Config) (*github.Client, error) {
 	if cfg == nil {
 		return nil, errors.New("config is nil")
 	}
@@ -55,12 +56,12 @@ func NewClient(cfg *Config) (*github.Client, error) {
 // BuildClients creates GitHub clients for all configurations present in the
 // Configs map. It returns a map of instance names to their corresponding
 // clients, or an error if any client creation fails.
-func BuildClients(configs Configs) (map[string]*github.Client, error) {
+func BuildClients(ctx context.Context, configs Configs) (map[string]*github.Client, error) {
 	clients := make(map[string]*github.Client)
 
 	for instanceName, cfg := range configs {
 		cfg := cfg
-		client, err := NewClient(&cfg)
+		client, err := NewClient(ctx, &cfg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for instance %s", instanceName)
 		}

@@ -158,7 +158,7 @@ func (t *PodLogTool) StreamableRun(ctx context.Context, args string, opts ...too
 
 // NewPodLogTool creates a new PodLogTool that supports both invokable and streamable modes.
 func NewPodLogTool(ctx context.Context, configs Configs) (*PodLogTool, error) {
-	clientsets, err := BuildClientSets(configs, nil)
+	clientsets, err := BuildClientSets(ctx, configs, nil)
 	if err != nil {
 		return nil, err
 	}

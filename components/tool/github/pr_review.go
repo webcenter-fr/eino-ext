@@ -69,7 +69,7 @@ func (t *PRReviewTool) Invoke(ctx context.Context, params *PRReviewParams) (resu
 }
 
 func NewPRReviewTool(ctx context.Context, configs Configs) (*PRReviewTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

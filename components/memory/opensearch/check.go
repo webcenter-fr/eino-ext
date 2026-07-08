@@ -23,7 +23,7 @@ func Check(ctx context.Context, cfg Config) checkup.Results {
 	baseCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	osClient, err := createClient(cfg)
+	osClient, err := createClient(baseCtx, cfg)
 	if err != nil {
 		results = append(results, checkup.Result{
 			Component: "connect",
@@ -157,8 +157,8 @@ func runCRUDProbes(ctx context.Context, mem memory.Memory) checkup.Results {
 	return results
 }
 
-func createClient(cfg Config) (opensearchv4.Client, error) {
-	return osclient.New(osclient.Config{
+func createClient(ctx context.Context, cfg Config) (opensearchv4.Client, error) {
+	return osclient.New(ctx, osclient.Config{
 		URLs:          cfg.URLs,
 		Username:      cfg.Username,
 		Password:      cfg.Password,

@@ -117,7 +117,7 @@ func (s *WebSearchTestSuite) TestWebSearchToolInvoke() {
 	t := s.T()
 
 	cfg := DefaultConfig()
-	tool, err := NewWebSearchTool(&cfg)
+	tool, err := NewWebSearchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	info, err := tool.Info(context.Background())
@@ -146,7 +146,7 @@ func (s *WebSearchTestSuite) TestWebSearchNumResultsClamping() {
 func (s *WebSearchTestSuite) TestNewAllTools() {
 	t := s.T()
 	cfg := DefaultConfig()
-	tools, err := NewAllTools(&cfg)
+	tools, err := NewAllTools(context.Background(), &cfg)
 	assert.NoError(t, err)
 	assert.Len(t, tools, 2)
 
@@ -192,7 +192,7 @@ func (s *WebSearchTestSuite) TestConfigMutation() {
 	}
 	orig := cfg // save copy
 
-	_, err := NewWebSearchTool(&cfg)
+	_, err := NewWebSearchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	// The caller's config should NOT be mutated.

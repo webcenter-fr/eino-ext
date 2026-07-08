@@ -131,7 +131,7 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 // NewResourceApplyTool creates a new instance of the ResourceApplyTool.
 func NewResourceApplyTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(configs)
+	base, err := newBaseToolWithDynamic(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

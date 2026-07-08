@@ -63,7 +63,7 @@ func (t *IssueCommentTool) Invoke(ctx context.Context, params *IssueCommentParam
 }
 
 func NewIssueCommentTool(ctx context.Context, configs Configs) (*IssueCommentTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -92,7 +92,7 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 }
 
 func NewRepositoryDescribeTool(ctx context.Context, configs Configs) (*RepositoryDescribeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

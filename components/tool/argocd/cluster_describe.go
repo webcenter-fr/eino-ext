@@ -73,7 +73,7 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 }
 
 func NewClusterDescribeTool(ctx context.Context, configs Configs) (*ClusterDescribeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

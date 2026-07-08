@@ -26,7 +26,7 @@ func (s *WebSearchTestSuite) TestWebFetchToolInvoke() {
 	})
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	info, err := tool.Info(context.Background())
@@ -44,7 +44,7 @@ func (s *WebSearchTestSuite) TestFetchFormatMarkdown() {
 	})
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	result, err := tool.InvokableRun(context.Background(),
@@ -62,7 +62,7 @@ func (s *WebSearchTestSuite) TestFetchFormatText() {
 	})
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	result, err := tool.InvokableRun(context.Background(),
@@ -93,7 +93,7 @@ func (s *WebSearchTestSuite) TestFetchFormatHTML() {
 	})
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	result, err := tool.InvokableRun(context.Background(),
@@ -111,7 +111,7 @@ func (s *WebSearchTestSuite) TestFetchDefaultFormat() {
 	})
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	result, err := tool.InvokableRun(context.Background(),
@@ -125,7 +125,7 @@ func (s *WebSearchTestSuite) TestFetchInvalidURL() {
 	t := s.T()
 
 	cfg := testFetchConfig()
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	// Test non-http scheme.
@@ -152,7 +152,7 @@ func (s *WebSearchTestSuite) TestFetchSSRFBlocking() {
 	// Use a config WITHOUT SkipSSRFCheck to test blocking.
 	cfg := DefaultConfig()
 	cfg.Timeout = 10 * time.Second
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	// Test localhost blocking.
@@ -195,7 +195,7 @@ func (s *WebSearchTestSuite) TestFetchSizeLimit() {
 
 	cfg := testFetchConfig()
 	cfg.MaxBodySize = 1024 // Small limit for testing.
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	_, err = tool.InvokableRun(context.Background(),
@@ -214,7 +214,7 @@ func (s *WebSearchTestSuite) TestFetchTimeout() {
 
 	cfg := testFetchConfig()
 	cfg.Timeout = 100 * time.Millisecond // Very short timeout.
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	_, err = tool.InvokableRun(context.Background(),
@@ -232,7 +232,7 @@ func (s *WebSearchTestSuite) TestFetchPerRequestTimeout() {
 
 	cfg := testFetchConfig()
 	cfg.Timeout = 30 * time.Second // Config has generous timeout.
-	tool, err := NewWebFetchTool(&cfg)
+	tool, err := NewWebFetchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
 	// Per-request timeout of 100ms should override the config's 30s.

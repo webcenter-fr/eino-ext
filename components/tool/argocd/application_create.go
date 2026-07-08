@@ -111,7 +111,7 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 }
 
 func NewApplicationCreateTool(ctx context.Context, configs Configs) (*ApplicationCreateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

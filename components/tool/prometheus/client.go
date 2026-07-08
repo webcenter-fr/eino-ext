@@ -1,6 +1,7 @@
 package prometheus
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 
@@ -33,7 +34,7 @@ func (a *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 // NewClient creates a new Prometheus API client from the given configuration.
-func NewClient(config Config) (promapi.API, error) {
+func NewClient(ctx context.Context, config Config) (promapi.API, error) {
 	if err := validate.Struct(&config); err != nil {
 		return nil, errors.Wrap(err, "invalid Prometheus config")
 	}
@@ -72,10 +73,10 @@ func NewClient(config Config) (promapi.API, error) {
 }
 
 // BuildClients creates Prometheus API clients for all configurations in the Configs map.
-func BuildClients(configs Configs) (clients map[string]promapi.API, err error) {
+func BuildClients(ctx context.Context, configs Configs) (clients map[string]promapi.API, err error) {
 	clients = make(map[string]promapi.API)
 	for instanceName, config := range configs {
-		client, err := NewClient(config)
+		client, err := NewClient(ctx, config)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for instance %s", instanceName)
 		}

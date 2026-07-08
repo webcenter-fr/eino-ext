@@ -68,7 +68,7 @@ func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams)
 }
 
 func NewClusterListTool(ctx context.Context, configs Configs) (*ClusterListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

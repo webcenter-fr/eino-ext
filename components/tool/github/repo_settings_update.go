@@ -110,7 +110,7 @@ func (t *RepoSettingsUpdateTool) Invoke(ctx context.Context, params *RepoSetting
 }
 
 func NewRepoSettingsUpdateTool(ctx context.Context, configs Configs) (*RepoSettingsUpdateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

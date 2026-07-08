@@ -68,7 +68,7 @@ func (t *CertificateListTool) Invoke(ctx context.Context, params *CertificateLis
 }
 
 func NewCertificateListTool(ctx context.Context, configs Configs) (*CertificateListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

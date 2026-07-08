@@ -57,7 +57,7 @@ func (t *WebSearchTool) Invoke(ctx context.Context, params *WebSearchParams) (st
 }
 
 // NewWebSearchTool creates a new web_search tool.
-func NewWebSearchTool(cfg *Config) (tool.InvokableTool, error) {
+func NewWebSearchTool(ctx context.Context, cfg *Config) (tool.InvokableTool, error) {
 	if cfg == nil {
 		c := DefaultConfig()
 		cfg = &c

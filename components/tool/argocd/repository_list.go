@@ -71,7 +71,7 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 }
 
 func NewRepositoryListTool(ctx context.Context, configs Configs) (*RepositoryListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

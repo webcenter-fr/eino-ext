@@ -1,6 +1,8 @@
 package kubernetes
 
 import (
+	"context"
+
 	"emperror.dev/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
@@ -12,7 +14,7 @@ import (
 )
 
 // NewClient creates a new Kubernetes client using the provided configuration. It returns the client and any error encountered during the creation process.
-func NewClient(config *rest.Config, s *runtime.Scheme) (c client.Client, err error) {
+func NewClient(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c client.Client, err error) {
 
 	if s == nil {
 		s = scheme.Scheme
@@ -32,14 +34,14 @@ func NewClient(config *rest.Config, s *runtime.Scheme) (c client.Client, err err
 }
 
 // BuildClients creates Kubernetes clients for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes clients, or an error if any client creation fails.
-func BuildClients(configs Configs, s *runtime.Scheme) (clients map[string]client.Client, err error) {
+func BuildClients(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]client.Client, err error) {
 	clients = make(map[string]client.Client)
 
 	for clusterName, config := range configs {
 		if config == nil {
 			return nil, errors.Errorf("config for cluster %q is nil", clusterName)
 		}
-		client, err := NewClient(config, s)
+		client, err := NewClient(ctx, config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for cluster %s", clusterName)
 		}
@@ -50,7 +52,7 @@ func BuildClients(configs Configs, s *runtime.Scheme) (clients map[string]client
 }
 
 // BuildClientsFromKubeconfig creates Kubernetes clients for all kubeconfig paths provided in the input map. It builds the configuration for each cluster using the kubeconfig path and then creates a client for each cluster. It returns a map of cluster names to their corresponding Kubernetes clients, or an error if any step fails.
-func BuildClientsFromKubeconfig(configsWithKubeconfigPath map[string]string, s *runtime.Scheme) (map[string]client.Client, error) {
+func BuildClientsFromKubeconfig(ctx context.Context, configsWithKubeconfigPath map[string]string, s *runtime.Scheme) (map[string]client.Client, error) {
 	configs := make(Configs)
 	for clusterName, kubeconfigPath := range configsWithKubeconfigPath {
 		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
@@ -59,11 +61,11 @@ func BuildClientsFromKubeconfig(configsWithKubeconfigPath map[string]string, s *
 		}
 		configs[clusterName] = config
 	}
-	return BuildClients(configs, s)
+	return BuildClients(ctx, configs, s)
 }
 
 // NewClientSet creates a new Kubernetes clientset using the provided configuration. It returns the clientset and any error encountered during the creation process.
-func NewClientSet(config *rest.Config, s *runtime.Scheme) (c *kubernetes.Clientset, err error) {
+func NewClientSet(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c *kubernetes.Clientset, err error) {
 
 	if s == nil {
 		s = scheme.Scheme
@@ -79,11 +81,11 @@ func NewClientSet(config *rest.Config, s *runtime.Scheme) (c *kubernetes.Clients
 }
 
 // BuildClientSets creates Kubernetes clientsets for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes clientsets, or an error if any clientset creation fails.
-func BuildClientSets(configs Configs, s *runtime.Scheme) (clients map[string]*kubernetes.Clientset, err error) {
+func BuildClientSets(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]*kubernetes.Clientset, err error) {
 	clients = make(map[string]*kubernetes.Clientset)
 
 	for clusterName, config := range configs {
-		client, err := NewClientSet(config, s)
+		client, err := NewClientSet(ctx, config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create clientset for cluster %s", clusterName)
 		}
@@ -94,7 +96,7 @@ func BuildClientSets(configs Configs, s *runtime.Scheme) (clients map[string]*ku
 }
 
 // NewClientDynamic creates a new Kubernetes dynamic client using the provided configuration. It returns the dynamic client and any error encountered during the creation process.
-func NewClientDynamic(config *rest.Config, s *runtime.Scheme) (c dynamic.Interface, err error) {
+func NewClientDynamic(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c dynamic.Interface, err error) {
 
 	if s == nil {
 		s = scheme.Scheme
@@ -110,11 +112,11 @@ func NewClientDynamic(config *rest.Config, s *runtime.Scheme) (c dynamic.Interfa
 }
 
 // BuildClientDynamic creates Kubernetes dynamic clients for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes dynamic clients, or an error if any client creation fails.
-func BuildClientDynamics(configs Configs, s *runtime.Scheme) (clients map[string]dynamic.Interface, err error) {
+func BuildClientDynamics(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]dynamic.Interface, err error) {
 	clients = make(map[string]dynamic.Interface)
 
 	for clusterName, config := range configs {
-		client, err := NewClientDynamic(config, s)
+		client, err := NewClientDynamic(ctx, config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create dynamic client for cluster %s", clusterName)
 		}

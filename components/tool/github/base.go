@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"net/url"
 
 	"emperror.dev/errors"
@@ -39,7 +40,7 @@ func (b *baseTool) token(instance string) (string, error) {
 
 // newBaseTool builds GitHub clients for all configured instances and returns a
 // baseTool ready to be embedded by individual tools.
-func newBaseTool(configs Configs) (*baseTool, error) {
+func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 	if len(configs) == 0 {
 		return nil, errors.Errorf("at least one GitHub instance configuration is required")
 	}
@@ -58,7 +59,7 @@ func newBaseTool(configs Configs) (*baseTool, error) {
 		baseURLs[name] = cfg.BaseURL
 	}
 
-	clients, err := BuildClients(configs)
+	clients, err := BuildClients(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -71,7 +71,7 @@ func (t *PRCreateTool) Invoke(ctx context.Context, params *PRCreateParams) (resu
 }
 
 func NewPRCreateTool(ctx context.Context, configs Configs) (*PRCreateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

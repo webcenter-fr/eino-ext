@@ -102,7 +102,7 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 		tc = memory.DefaultTokenCounter
 	}
 
-	client, err := osclient.New(osclient.Config{
+	client, err := osclient.New(context.Background(), osclient.Config{
 		URLs:          cfg.URLs,
 		Username:      cfg.Username,
 		Password:      cfg.Password,

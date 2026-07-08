@@ -111,7 +111,7 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 // NewResourcePatchTool creates a new instance of the ResourcePatchTool.
 func NewResourcePatchTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(configs)
+	base, err := newBaseToolWithDynamic(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

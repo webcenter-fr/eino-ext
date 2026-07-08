@@ -106,7 +106,7 @@ func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 		return nil, err
 	}
 
-	client, err := osclient.New(osclient.Config{
+	client, err := osclient.New(ctx, osclient.Config{
 		URLs:          config.URLs,
 		Username:      config.Username,
 		Password:      config.Password,

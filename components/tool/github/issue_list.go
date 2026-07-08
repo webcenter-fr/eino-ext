@@ -116,7 +116,7 @@ func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (re
 }
 
 func NewIssueListTool(ctx context.Context, configs Configs) (*IssueListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -128,6 +128,16 @@ this project:
   the final values. Do not use `required` on a field that receives a default
   (use `omitempty,gte=1` instead).
 
+### Constructor Context
+
+- Every `New...` constructor for a component or shared helper that creates
+  remote clients (e.g. `NewClient`, `BuildClients`, `newBaseTool`,
+  `osclient.New`) MUST accept `ctx context.Context` as its **first** parameter.
+- Thread `ctx` through from the top-level constructor down to every
+  underlying client-creation call. Even when the underlying library does
+  not yet require a context, having it in the signature keeps the API
+  future-proof and consistent across the codebase.
+
 - A component is considered complete only when ALL of the following exist:
   1. `xxx.go` with `Config` (tags `validate`+`jsonschema`), `New...`, and a
      compile-time interface check `var _ <abstraction>.<Interface> = (*Xxx)(nil)`.
@@ -318,6 +328,8 @@ configs := builder.Build()
       `Check()` function returning `checkup.Results` (see `libs/toolkit/checkup/`).
       Probe each read endpoint, use list→describe chains, and handle "no
       resources" as `"limited"` not `"error"`.
+- [ ] Every `New...` constructor accepts `ctx context.Context` as its first
+      parameter and threads it through to all client creation calls.
 - [ ] Naming: acronyms and brands use official casing (`OpenSearch`, `GitHub`,
       `URL`, `ID`, `JSON`).
 - [ ] Errors are wrapped with `emperror.dev/errors` (include operation context).

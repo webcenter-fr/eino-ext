@@ -126,7 +126,7 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 }
 
 func NewPRListTool(ctx context.Context, configs Configs) (*PRListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

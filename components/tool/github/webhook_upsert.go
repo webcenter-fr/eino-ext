@@ -136,7 +136,7 @@ func validateWebhookURL(rawURL string) error {
 }
 
 func NewWebhookUpsertTool(ctx context.Context, configs Configs) (*WebhookUpsertTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

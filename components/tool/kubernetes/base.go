@@ -1,6 +1,8 @@
 package kubernetes
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -78,8 +80,8 @@ func (b *baseToolWithDynamic) dynamicClient(cluster string) (dynamic.Interface, 
 
 // newBaseTool builds the controller-runtime clients for all configured clusters.
 // Only clients are built by default; callers needing clientsets must build them separately.
-func newBaseTool(configs Configs) (*baseTool, error) {
-	clients, err := BuildClients(configs, nil)
+func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
+	clients, err := BuildClients(ctx, configs, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -92,12 +94,12 @@ func newBaseTool(configs Configs) (*baseTool, error) {
 
 // newBaseToolWithDynamic builds both the controller-runtime base tool and the
 // dynamic client bundle used by the generic resource tools.
-func newBaseToolWithDynamic(configs Configs) (*baseToolWithDynamic, error) {
-	dynamics, err := BuildClientDynamics(configs, nil)
+func newBaseToolWithDynamic(ctx context.Context, configs Configs) (*baseToolWithDynamic, error) {
+	dynamics, err := BuildClientDynamics(ctx, configs, nil)
 	if err != nil {
 		return nil, err
 	}
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

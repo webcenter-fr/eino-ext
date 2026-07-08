@@ -63,7 +63,7 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 }
 
 func NewApplicationSyncTool(ctx context.Context, configs Configs) (*ApplicationSyncTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

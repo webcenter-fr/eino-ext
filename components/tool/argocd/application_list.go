@@ -84,7 +84,7 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 }
 
 func NewApplicationListTool(ctx context.Context, configs Configs) (*ApplicationListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

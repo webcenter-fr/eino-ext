@@ -1,6 +1,10 @@
 package prometheus
 
-import promapi "github.com/prometheus/client_golang/api/prometheus/v1"
+import (
+	"context"
+
+	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
+)
 
 // baseTool holds shared client bundles for all Prometheus tools.
 type baseTool struct {
@@ -16,8 +20,8 @@ func (b *baseTool) client(instance string) (promapi.API, error) {
 	return c, nil
 }
 
-func newBaseTool(configs Configs) (*baseTool, error) {
-	clients, err := BuildClients(configs)
+func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
+	clients, err := BuildClients(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

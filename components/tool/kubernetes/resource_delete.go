@@ -133,7 +133,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 // NewResourceDeleteTool creates a new instance of the ResourceDeleteTool.
 func NewResourceDeleteTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(configs)
+	base, err := newBaseToolWithDynamic(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

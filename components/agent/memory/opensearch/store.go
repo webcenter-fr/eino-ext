@@ -74,7 +74,7 @@ func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 		return nil, err
 	}
 
-	client, err := osclient.New(osclient.Config{
+	client, err := osclient.New(ctx, osclient.Config{
 		URLs:          cfg.URLs,
 		Username:      cfg.Username,
 		Password:      cfg.Password,

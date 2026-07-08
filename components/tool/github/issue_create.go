@@ -72,7 +72,7 @@ func (t *IssueCreateTool) Invoke(ctx context.Context, params *IssueCreateParams)
 }
 
 func NewIssueCreateTool(ctx context.Context, configs Configs) (*IssueCreateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -103,7 +103,7 @@ func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (re
 }
 
 func NewRepoCloneTool(ctx context.Context, configs Configs) (*RepoCloneTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

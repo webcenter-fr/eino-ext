@@ -101,7 +101,7 @@ func (t *AlertDescribeTool) Invoke(ctx context.Context, params *AlertDescribePar
 }
 
 func NewAlertDescribeTool(ctx context.Context, configs Configs) (*AlertDescribeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -121,7 +121,7 @@ func (t *MetricRangeTool) Invoke(ctx context.Context, params *MetricRangeParams)
 }
 
 func NewMetricRangeTool(ctx context.Context, configs Configs) (*MetricRangeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

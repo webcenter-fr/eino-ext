@@ -112,7 +112,7 @@ func (t *IssueGetTool) Invoke(ctx context.Context, params *IssueGetParams) (resu
 }
 
 func NewIssueGetTool(ctx context.Context, configs Configs) (*IssueGetTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

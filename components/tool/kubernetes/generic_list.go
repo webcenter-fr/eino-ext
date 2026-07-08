@@ -139,7 +139,7 @@ func NewListTool[resourceList client.ObjectList, resource client.Object, outputO
 		output:        output,
 		knownClusters: configs.GetClusterNames(),
 	}
-	clients, err := BuildClients(configs, s)
+	clients, err := BuildClients(ctx, configs, s)
 	if err != nil {
 		return nil, err
 	}

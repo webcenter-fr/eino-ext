@@ -37,7 +37,7 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 		}
 
 		baseCtx, cancel := context.WithTimeout(ctx, kubeCheckTimeout)
-		c, err := NewClient(cfg, nil)
+		c, err := NewClient(baseCtx, cfg, nil)
 		if err != nil {
 			all = append(all, clientErrorResults(cluster, err)...)
 			cancel()

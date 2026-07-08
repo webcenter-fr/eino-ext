@@ -1,16 +1,17 @@
 package argocd
 
 import (
+	"context"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/disaster37/goargocdclient"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"github.com/disaster37/goargocdclient/api"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 // NewClient creates a new ArgoCD client using the provided configuration. It returns the client and any error encountered during the creation process.
-func NewClient(config Config) (c api.API, err error) {
+func NewClient(ctx context.Context, config Config) (c api.API, err error) {
 	if err := validate.Struct(&config); err != nil {
 		return nil, errors.Wrap(err, "invalid ArgoCD config")
 	}
@@ -33,11 +34,11 @@ func NewClient(config Config) (c api.API, err error) {
 }
 
 // BuildClients creates ArgoCD clients for all configurations present in the Configs map. It returns a map of instance names to their corresponding ArgoCD clients, or an error if any client creation fails.
-func BuildClients(configs Configs) (clients map[string]api.API, err error) {
+func BuildClients(ctx context.Context, configs Configs) (clients map[string]api.API, err error) {
 	clients = make(map[string]api.API)
 
 	for instanceName, config := range configs {
-		client, err := NewClient(config)
+		client, err := NewClient(ctx, config)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for instance %s", instanceName)
 		}

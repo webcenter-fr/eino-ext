@@ -261,7 +261,7 @@ func isPrivateIP(ip net.IP) bool {
 }
 
 // NewWebFetchTool creates a new web_fetch tool.
-func NewWebFetchTool(cfg *Config) (tool.InvokableTool, error) {
+func NewWebFetchTool(ctx context.Context, cfg *Config) (tool.InvokableTool, error) {
 	if cfg == nil {
 		c := DefaultConfig()
 		cfg = &c

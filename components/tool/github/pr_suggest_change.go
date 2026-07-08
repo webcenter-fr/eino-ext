@@ -74,7 +74,7 @@ func (t *PRSuggestChangeTool) Invoke(ctx context.Context, params *PRSuggestChang
 }
 
 func NewPRSuggestChangeTool(ctx context.Context, configs Configs) (*PRSuggestChangeTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

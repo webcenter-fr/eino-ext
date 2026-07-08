@@ -137,7 +137,7 @@ func (t *BranchCreateTool) createLocalBranch(ctx context.Context, params *Branch
 }
 
 func NewBranchCreateTool(ctx context.Context, configs Configs) (*BranchCreateTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

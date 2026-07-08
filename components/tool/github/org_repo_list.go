@@ -106,7 +106,7 @@ func (t *OrgRepoListTool) Invoke(ctx context.Context, params *OrgRepoListParams)
 }
 
 func NewOrgRepoListTool(ctx context.Context, configs Configs) (*OrgRepoListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

@@ -160,7 +160,7 @@ func (t *ResourceListTool) Invoke(ctx context.Context, params *ResourceListParam
 
 // NewResourceListTool creates a new instance of the ResourceListTool.
 func NewResourceListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
-	base, err := newBaseToolWithDynamic(configs)
+	base, err := newBaseToolWithDynamic(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

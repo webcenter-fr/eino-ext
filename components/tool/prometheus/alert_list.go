@@ -143,7 +143,7 @@ func (t *AlertListTool) Invoke(ctx context.Context, params *AlertListParams) (re
 }
 
 func NewAlertListTool(ctx context.Context, configs Configs) (*AlertListTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}

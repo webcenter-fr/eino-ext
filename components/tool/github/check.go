@@ -30,7 +30,7 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 			cfg := configs.GetConfig(instance)
 			baseCtx, cancel := context.WithTimeout(ctx, ghCheckTimeout)
 
-			client, err := NewClient(&cfg)
+			client, err := NewClient(baseCtx, &cfg)
 			if err != nil {
 				all = append(all, clientErrorResults(instance, err)...)
 				cancel()

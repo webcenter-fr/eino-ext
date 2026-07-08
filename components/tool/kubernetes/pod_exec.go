@@ -333,7 +333,7 @@ func (t *PodExecTool) StreamableRun(ctx context.Context, args string, opts ...to
 
 // NewPodExecTool creates a new PodExecTool that supports both invokable and streamable modes.
 func NewPodExecTool(ctx context.Context, configs Configs) (*PodExecTool, error) {
-	clientsets, err := BuildClientSets(configs, nil)
+	clientsets, err := BuildClientSets(ctx, configs, nil)
 	if err != nil {
 		return nil, err
 	}

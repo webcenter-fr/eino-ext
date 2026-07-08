@@ -97,7 +97,7 @@ func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams)
 }
 
 func NewMetricQueryTool(ctx context.Context, configs Configs) (*MetricQueryTool, error) {
-	base, err := newBaseTool(configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
