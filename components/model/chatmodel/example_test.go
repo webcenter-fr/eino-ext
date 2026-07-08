@@ -43,7 +43,7 @@ func ExampleNew() {
 	ctx := context.Background()
 
 	m, err := chatmodel.New(ctx, &chatmodel.Config{
-		Plan:            "openai",
+		Provider:        chatmodel.OllamaProvider,
 		BaseURL:         "http://localhost:0",
 		Model:           "gpt-x",
 		Temperature:     0.7,

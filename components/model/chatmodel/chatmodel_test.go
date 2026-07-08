@@ -103,7 +103,7 @@ func TestNewValidation(t *testing.T) {
 		t.Error("New(nil): expected error, got nil")
 	}
 
-	if _, err := New(ctx, &Config{Plan: "gemini"}); err == nil {
+	if _, err := New(ctx, &Config{Provider: "gemini"}); err == nil {
 		t.Error("New(unsupported plan): expected error, got nil")
 	}
 }
@@ -115,7 +115,7 @@ func TestNewOpenAIConfig(t *testing.T) {
 
 	// Off must not set a default timeout regression and must construct.
 	m, err := New(ctx, &Config{
-		Plan:        "openai",
+		Provider:    OpenAIProvider,
 		BaseURL:     "http://localhost:0",
 		Model:       "gpt-x",
 		Temperature: 0.5,
@@ -136,10 +136,10 @@ func TestNewCopilotConfig(t *testing.T) {
 	ctx := context.Background()
 
 	m, err := New(ctx, &Config{
-		Plan:    "github-copilot",
-		BaseURL: "http://localhost:0",
-		Model:   "gpt-x",
-		APIKey:  "test-copilot-token",
+		Provider: CopilotProvider,
+		BaseURL:  "http://localhost:0",
+		Model:    "gpt-x",
+		APIKey:   "test-copilot-token",
 	})
 	if err != nil {
 		t.Fatalf("New(github-copilot): unexpected error: %v", err)
@@ -154,9 +154,9 @@ func TestNewCopilotMissingAPIKey(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := New(ctx, &Config{
-		Plan:    "github-copilot",
-		BaseURL: "http://localhost:0",
-		Model:   "gpt-x",
+		Provider: CopilotProvider,
+		BaseURL:  "http://localhost:0",
+		Model:    "gpt-x",
 	})
 	if err == nil {
 		t.Fatal("New(github-copilot) without APIKey: expected error, got nil")
@@ -168,7 +168,7 @@ func TestNewCopilotWithThinking(t *testing.T) {
 	ctx := context.Background()
 
 	m, err := New(ctx, &Config{
-		Plan:            "github-copilot",
+		Provider:        CopilotProvider,
 		BaseURL:         "http://localhost:0",
 		Model:           "gpt-x",
 		APIKey:          "test-copilot-token",

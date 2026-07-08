@@ -27,12 +27,12 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	copilot "github.com/webcenter-fr/eino-ext/components/model/copilot"
 	ollama "github.com/cloudwego/eino-ext/components/model/ollama"
 	openai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
-	"k8s.io/utils/ptr"
+	copilot "github.com/webcenter-fr/eino-ext/components/model/copilot"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"k8s.io/utils/ptr"
 )
 
 // ThinkingLevel is a provider-generic reasoning level. Providers that lack
@@ -50,6 +50,14 @@ const (
 	Medium ThinkingLevel = "medium"
 	// High maps to the provider's highest reasoning effort.
 	High ThinkingLevel = "high"
+)
+
+type Provider string
+
+const (
+	OllamaProvider  Provider = "ollama"
+	OpenAIProvider  Provider = "openai"
+	CopilotProvider Provider = "github-copilot"
 )
 
 // OutputTokenMax is the default ceiling for generated output tokens, mirroring
@@ -87,7 +95,7 @@ func ParseThinkingLevel(s string) (ThinkingLevel, error) {
 type Config struct {
 	// Plan selects the provider: "ollama", "github-copilot", or "openai".
 	// "github-copilot" and "openai" share the OpenAI-compatible construction path.
-	Plan string `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
+	Provider Provider `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
 
 	// BaseURL is the provider endpoint URL.
 	BaseURL string `validate:"required" jsonschema:"description=Provider endpoint URL"`
@@ -130,15 +138,15 @@ func New(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
 		return nil, errors.Wrap(err, "chatmodel: invalid config")
 	}
 
-	switch strings.ToLower(strings.TrimSpace(cfg.Plan)) {
-	case "ollama":
+	switch cfg.Provider {
+	case OllamaProvider:
 		return newOllama(ctx, cfg)
-	case "github-copilot":
+	case CopilotProvider:
 		return newCopilot(ctx, cfg)
-	case "openai":
+	case OpenAIProvider:
 		return newOpenAI(ctx, cfg)
 	default:
-		return nil, errors.Errorf("chatmodel: unsupported plan: %s", cfg.Plan)
+		return nil, errors.Errorf("chatmodel: unsupported plan: %s", cfg.Provider)
 	}
 }
 
@@ -185,10 +193,10 @@ func newOpenAI(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, er
 	}
 
 	conf := &openai.ChatModelConfig{
-		APIKey:    cfg.APIKey,
-		BaseURL:   cfg.BaseURL,
-		Model:     cfg.Model,
-		Timeout:   timeout,
+		APIKey:     cfg.APIKey,
+		BaseURL:    cfg.BaseURL,
+		Model:      cfg.Model,
+		Timeout:    timeout,
 		HTTPClient: insecureHTTPClient(cfg.TLSSkipVerify, timeout),
 	}
 
