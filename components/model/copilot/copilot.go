@@ -1,15 +1,17 @@
-// Package copilot provides a GitHub Copilot chat model implementation.
+// Package copilot provides a GitHub Copilot provider implementation.
+//
+// The Copilot API is OpenAI-compatible. This package makes direct HTTP calls
+// using net/http — it does not depend on any openai SDK or ACL library.
 package copilot
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"emperror.dev/errors"
-	openai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -20,21 +22,36 @@ var _ model.ChatModel = (*CopilotModel)(nil)
 
 const copilotGetType = "GitHubCopilot"
 
+type ReasoningEffort string
+
+const (
+	ReasoningEffortLow    ReasoningEffort = "low"
+	ReasoningEffortMedium ReasoningEffort = "medium"
+	ReasoningEffortHigh   ReasoningEffort = "high"
+)
+
 type Config struct {
-	GitHubToken   string        `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
-	CopilotToken  string        `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
-	EnterpriseURL string        `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
-	BaseURL       string        `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
-	Timeout       time.Duration `validate:"omitempty,gte=1000000000" jsonschema:"description=API request timeout"`
-	TLSSkipVerify bool          `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	GitHubToken         string          `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
+	CopilotToken        string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
+	EnterpriseURL       string          `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
+	BaseURL             string          `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
+	Timeout             time.Duration   `validate:"omitempty,gte=1000000000" jsonschema:"description=API request timeout"`
+	TLSSkipVerify       bool            `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	Model               string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
+	Temperature         *float32        `validate:"omitempty" jsonschema:"description=Sampling temperature (0 to 2)"`
+	MaxCompletionTokens *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
+	ReasoningEffort     ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
 }
 
 type CopilotModel struct {
-	inner        model.ToolCallingChatModel
-	lockedToken  *copilotLockedToken
-	baseURL      string
-	cfg          *Config
+	lockedToken   *copilotLockedToken
+	baseURL       string
+	cfg           *Config
 	cancelRefresh context.CancelFunc
+	httpClient    *http.Client
+
+	tools      []*schema.ToolInfo
+	toolChoice *schema.ToolChoice
 }
 
 func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error) {
@@ -85,83 +102,46 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 		})
 	}
 
-	inner, err := newInnerModel(baseURL, cfg)
-	if err != nil {
-		if cancelRefresh != nil {
-			cancelRefresh()
-		}
-		return nil, errors.Wrap(err, "copilot: failed to create inner model")
-	}
+	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)
 
 	return &CopilotModel{
-		inner:        inner,
-		lockedToken:  lockedToken,
-		baseURL:      baseURL,
-		cfg:          cfg,
+		lockedToken:   lockedToken,
+		baseURL:       baseURL,
+		cfg:           cfg,
 		cancelRefresh: cancelRefresh,
+		httpClient:    httpClient,
 	}, nil
 }
 
-func newInnerModel(baseURL string, cfg *Config) (model.ToolCallingChatModel, error) {
-	var httpClient *http.Client
-	if cfg.TLSSkipVerify {
-		httpClient = insecureHTTPClient(cfg.Timeout)
+func newHTTPClient(timeout time.Duration, skipVerify bool) *http.Client {
+	c := &http.Client{Timeout: timeout}
+	if skipVerify {
+		c.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
 	}
-
-	openaiCfg := &openai.ChatModelConfig{
-		APIKey:    "",
-		BaseURL:   strings.TrimRight(baseURL, "/"),
-		Timeout:   cfg.Timeout,
-		HTTPClient: httpClient,
-	}
-
-	return openai.NewChatModel(context.Background(), openaiCfg)
+	return c
 }
 
-func (m *CopilotModel) authHeaders() model.Option {
-	return openai.WithExtraHeader(map[string]string{
-		"Authorization":           "Bearer " + m.lockedToken.get(),
-		"Copilot-Integration-ID":  "vscode-chat",
-		"Editor-Version":          "vscode/1.100.0",
-		"Editor-Plugin-Version":   "copilot-chat/0.52.0",
-		"User-Agent":              userAgentHeader,
-		"Openai-Intent":           "conversation-agent",
-	})
-}
+func (m *CopilotModel) GetType() string { return copilotGetType }
 
-func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	return m.inner.Generate(ctx, in, append([]model.Option{m.authHeaders()}, opts...)...)
-}
-
-func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	return m.inner.Stream(ctx, in, append([]model.Option{m.authHeaders()}, opts...)...)
-}
+func (m *CopilotModel) IsCallbacksEnabled() bool { return true }
 
 func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	innerWithTools, err := m.inner.WithTools(tools)
-	if err != nil {
-		return nil, err
+	n := *m
+	n.tools = tools
+	if len(tools) > 0 && n.toolChoice == nil {
+		tc := schema.ToolChoiceAllowed
+		n.toolChoice = &tc
 	}
-	return &CopilotModel{
-		inner:        innerWithTools,
-		lockedToken:  m.lockedToken,
-		baseURL:      m.baseURL,
-		cfg:          m.cfg,
-		cancelRefresh: m.cancelRefresh,
-	}, nil
+	return &n, nil
 }
 
 func (m *CopilotModel) BindTools(tools []*schema.ToolInfo) error {
-	if ch, ok := m.inner.(model.ChatModel); ok {
-		return ch.BindTools(tools)
+	m.tools = tools
+	if len(tools) > 0 {
+		tc := schema.ToolChoiceAllowed
+		m.toolChoice = &tc
 	}
-	return errors.New("copilot: inner model does not implement BindTools")
-}
-
-func (m *CopilotModel) GetType() string {
-	return copilotGetType
-}
-
-func (m *CopilotModel) IsCallbacksEnabled() bool {
-	return true
+	return nil
 }

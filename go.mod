@@ -10,6 +10,7 @@ require (
 	github.com/cloudwego/eino-ext/components/document/loader/url v0.0.0-20260702024331-c05d17c7dace
 	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17
 	github.com/cloudwego/hertz v0.10.5
 	github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313
 	github.com/disaster37/opensearch/v4 v4.0.0-7
@@ -67,7 +68,6 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/eino-ext/components/document/parser/html v0.0.0-20241224063832-9fbcc0e56c28 // indirect
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17 // indirect
 	github.com/cloudwego/gopkg v0.2.0 // indirect
 	github.com/cloudwego/netpoll v0.7.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect

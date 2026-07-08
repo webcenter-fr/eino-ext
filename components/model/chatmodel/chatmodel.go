@@ -172,11 +172,29 @@ func newOllama(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, er
 }
 
 func newCopilot(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, error) {
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
+
 	copilotCfg := &copilot.Config{
 		CopilotToken:  cfg.APIKey,
 		BaseURL:       cfg.BaseURL,
-		Timeout:       cfg.Timeout,
+		Timeout:       timeout,
 		TLSSkipVerify: cfg.TLSSkipVerify,
+		Model:         cfg.Model,
+	}
+
+	if cfg.Temperature > 0 {
+		copilotCfg.Temperature = ptr.To(cfg.Temperature)
+	}
+
+	if effort, ok := reasoningEffort(cfg.Thinking); ok {
+		copilotCfg.ReasoningEffort = copilot.ReasoningEffort(effort)
+	}
+
+	if cfg.MaxOutputTokens > 0 {
+		copilotCfg.MaxCompletionTokens = ptr.To(cfg.MaxOutputTokens)
 	}
 
 	m, err := copilot.NewCopilotChatModel(ctx, copilotCfg)

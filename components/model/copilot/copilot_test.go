@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestNewCopilotChatModelDirectToken(t *testing.T) {
@@ -107,10 +109,12 @@ func TestCopilotModelWithTools(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// WithTools with empty tools should fail (inner model validates)
-	_, err = m.WithTools(nil)
-	if err == nil {
-		t.Fatal("expected error for nil tools")
+	m2, err := m.WithTools(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for nil tools: %v", err)
+	}
+	if m2 == nil {
+		t.Fatal("expected non-nil model")
 	}
 }
 
@@ -126,9 +130,80 @@ func TestCopilotModelBindTools(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	err = m.BindTools(nil)
-	if err == nil {
-		t.Fatal("expected error for nil tools")
+	if err := m.BindTools(nil); err != nil {
+		t.Fatalf("unexpected error for nil tools: %v", err)
+	}
+}
+
+func TestCopilotModelWithToolsStoresTools(t *testing.T) {
+	ctx := context.Background()
+	cfg := &Config{
+		CopilotToken: "token",
+		BaseURL:      "http://localhost:0",
+		Timeout:      10 * time.Second,
+	}
+	m, err := NewCopilotChatModel(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	toolInfo := &schema.ToolInfo{
+		Name: "test-tool",
+		Desc: "a test tool",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"arg1": {Type: schema.String, Required: true},
+		}),
+	}
+
+	m2, err := m.WithTools([]*schema.ToolInfo{toolInfo})
+	if err != nil {
+		t.Fatalf("WithTools: unexpected error: %v", err)
+	}
+
+	cm := m2.(*CopilotModel)
+	if len(cm.tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(cm.tools))
+	}
+	if cm.tools[0].Name != "test-tool" {
+		t.Errorf("expected tool name 'test-tool', got %q", cm.tools[0].Name)
+	}
+	if cm.toolChoice == nil {
+		t.Fatal("expected toolChoice to be set")
+	}
+}
+
+func TestCopilotModelBindToolsStoresTools(t *testing.T) {
+	ctx := context.Background()
+	cfg := &Config{
+		CopilotToken: "token",
+		BaseURL:      "http://localhost:0",
+		Timeout:      10 * time.Second,
+	}
+	m, err := NewCopilotChatModel(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	toolInfo := &schema.ToolInfo{
+		Name: "test-tool",
+		Desc: "a test tool",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"arg1": {Type: schema.String, Required: true},
+		}),
+	}
+
+	if err := m.BindTools([]*schema.ToolInfo{toolInfo}); err != nil {
+		t.Fatalf("BindTools: unexpected error: %v", err)
+	}
+
+	if len(m.tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(m.tools))
+	}
+	if m.tools[0].Name != "test-tool" {
+		t.Errorf("expected tool name 'test-tool', got %q", m.tools[0].Name)
+	}
+	if m.toolChoice == nil {
+		t.Fatal("expected toolChoice to be set")
 	}
 }
 
@@ -177,5 +252,23 @@ func TestCopilotModelBaseURLOverride(t *testing.T) {
 	}
 	if m.baseURL != "https://custom.example.com" {
 		t.Errorf("expected BaseURL override, got %q", m.baseURL)
+	}
+}
+
+func TestNewCopilotChatModelWithReasoning(t *testing.T) {
+	ctx := context.Background()
+	cfg := &Config{
+		CopilotToken:  "token",
+		BaseURL:       "http://localhost:0",
+		Timeout:       10 * time.Second,
+		Model:         "gpt-4o",
+		ReasoningEffort: ReasoningEffortHigh,
+	}
+	m, err := NewCopilotChatModel(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected non-nil model")
 	}
 }
