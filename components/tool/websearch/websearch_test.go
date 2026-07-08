@@ -168,6 +168,7 @@ func (s *WebSearchTestSuite) TestConfigDefaults() {
 	assert.Equal(t, DefaultMaxRetry, cfg.MaxRetry)
 	assert.Equal(t, DefaultUserAgent, cfg.UserAgent)
 	assert.Equal(t, int64(DefaultMaxBodySize), cfg.MaxBodySize)
+	assert.Equal(t, "markdown", cfg.DefaultFormat)
 }
 
 func (s *WebSearchTestSuite) TestConfigPartialDefaults() {
@@ -181,6 +182,7 @@ func (s *WebSearchTestSuite) TestConfigPartialDefaults() {
 	assert.Equal(t, DefaultMaxRetry, cfg.MaxRetry)
 	assert.Equal(t, DefaultUserAgent, cfg.UserAgent)
 	assert.Equal(t, int64(DefaultMaxBodySize), cfg.MaxBodySize)
+	assert.Equal(t, "markdown", cfg.DefaultFormat)
 }
 
 func (s *WebSearchTestSuite) TestConfigMutation() {
@@ -199,4 +201,5 @@ func (s *WebSearchTestSuite) TestConfigMutation() {
 	assert.Equal(t, orig.Timeout, cfg.Timeout)
 	assert.Equal(t, orig.MaxRetry, cfg.MaxRetry)
 	assert.Equal(t, orig.UserAgent, cfg.UserAgent)
+	assert.Equal(t, orig.DefaultFormat, cfg.DefaultFormat)
 }

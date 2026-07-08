@@ -30,6 +30,9 @@ type Config struct {
 	// MaxBodySize is the maximum response body size in bytes.
 	// Defaults to 5MB if zero.
 	MaxBodySize int64 `validate:"gte=0" jsonschema:"description=Maximum response body size in bytes, defaults to 5MB if zero"`
+	// DefaultFormat is the output format used when not specified in the request.
+	// Must be one of: markdown, text, html. Defaults to markdown.
+	DefaultFormat string `validate:"omitempty,oneof=markdown text html" jsonschema:"(optional, default markdown) Output format used when not specified in the request: markdown, text, or html."`
 	// HTTPClient is an optional custom HTTP client. If nil, a default client
 	// with the configured Timeout and SSRF-safe transport is used.
 	// Useful for testing with custom transports (e.g. httptest.Server).
@@ -42,10 +45,11 @@ type Config struct {
 // DefaultConfig returns a Config with safe default values.
 func DefaultConfig() Config {
 	return Config{
-		Timeout:     DefaultTimeout,
-		MaxRetry:    DefaultMaxRetry,
-		UserAgent:   DefaultUserAgent,
-		MaxBodySize: DefaultMaxBodySize,
+		Timeout:       DefaultTimeout,
+		MaxRetry:      DefaultMaxRetry,
+		UserAgent:     DefaultUserAgent,
+		MaxBodySize:   DefaultMaxBodySize,
+		DefaultFormat: "markdown",
 	}
 }
 
@@ -62,6 +66,9 @@ func (c Config) applyDefaults(defaults Config) Config {
 	}
 	if c.MaxBodySize <= 0 {
 		c.MaxBodySize = defaults.MaxBodySize
+	}
+	if c.DefaultFormat == "" {
+		c.DefaultFormat = defaults.DefaultFormat
 	}
 	return c
 }

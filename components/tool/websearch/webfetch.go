@@ -54,7 +54,7 @@ func (t *WebFetchTool) Invoke(ctx context.Context, params *WebFetchParams) (stri
 	// Set format default.
 	format := params.Format
 	if format == "" {
-		format = "markdown"
+		format = t.cfg.DefaultFormat
 	}
 
 	// Apply per-request timeout if specified.
