@@ -437,3 +437,220 @@ func TestStore_EmptyDocsNoRequest(t *testing.T) {
 	assert.Empty(t, ids)
 	assert.Empty(t, captured)
 }
+
+// indexMgmtRecorder records every index-management call the test server
+// receives: HEAD (exists check), PUT (create), and PUT _mapping (retrofit).
+type indexMgmtRecorder struct {
+	existsChecks    int
+	createCalls     int
+	createBody      map[string]any
+	mappingCalls    int
+	mappingBody     map[string]any
+	apiErr          error
+	existsErr       error
+	indexExists     bool
+	t               *testing.T
+}
+
+// indexMgmtServer returns a test server that records index-management calls
+// and handles _bulk normally.
+func newIndexMgmtServer(rec *indexMgmtRecorder) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "_bulk"):
+			buf := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(buf)
+			lines := parseBulkBody(rec.t, string(buf))
+			items := make([]map[string]*bulkRespItemJSON, 0, len(lines))
+			for i, l := range lines {
+				id, _ := l.action["index"]["_id"].(string)
+				if id == "" {
+					id = "generated-" + string(rune('a'+i))
+				}
+				items = append(items, map[string]*bulkRespItemJSON{
+					"index": {ID: id, Result: "created", Status: 201},
+				})
+			}
+			resp := map[string]any{"took": 1, "errors": false, "items": items}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		case r.Method == http.MethodHead:
+			rec.existsChecks++
+			if rec.existsErr != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if rec.indexExists {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+			}
+			return
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "_mapping"):
+			rec.mappingCalls++
+			if rec.apiErr != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"create error"}`))
+				return
+			}
+			buf := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(buf)
+			_ = json.Unmarshal(buf, &rec.mappingBody)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		case r.Method == http.MethodPut:
+			rec.createCalls++
+			if rec.apiErr != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"create error"}`))
+				return
+			}
+			buf := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(buf)
+			_ = json.Unmarshal(buf, &rec.createBody)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"acknowledged":true,"index":"test-index"}`))
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func TestNewIndexer_IndexCreate_CreatesIndexWhenMissing(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: false, t: t}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Properties: map[string]any{
+				"content": map[string]any{"type": "text"},
+			},
+			Settings: map[string]any{
+				"number_of_shards": 3,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, rec.existsChecks)
+	assert.Equal(t, 1, rec.createCalls)
+	assert.Equal(t, 0, rec.mappingCalls, "properties are applied at index creation, no retrofit needed")
+}
+
+func TestNewIndexer_IndexCreate_RetrofitsExistingIndex(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: true, t: t}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Properties: map[string]any{
+				"source_id": map[string]any{"type": "keyword"},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, rec.existsChecks, "only ensureIndex checks existence; PutMapping is called directly")
+	assert.Equal(t, 0, rec.createCalls, "should not create when index exists")
+	assert.Equal(t, 1, rec.mappingCalls)
+	assert.NotNil(t, rec.mappingBody)
+	props, ok := rec.mappingBody["properties"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, props, "source_id")
+}
+
+func TestNewIndexer_IndexCreate_EmptyPropertiesOnlyChecksExists(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: false, t: t}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Settings: map[string]any{"number_of_shards": 1},
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, rec.existsChecks)
+	assert.Equal(t, 1, rec.createCalls)
+	assert.Equal(t, 0, rec.mappingCalls)
+}
+
+func TestNewIndexer_IndexCreate_ErrorPropagates(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: false, t: t, apiErr: errors.New("simulated api failure")}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Properties: map[string]any{
+				"content": map[string]any{"type": "text"},
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "create OpenSearch index")
+}
+
+func TestNewIndexer_IndexCreate_MappingRetrofitError(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: true, t: t, apiErr: errors.New("simulated mapping failure")}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Properties: map[string]any{
+				"content": map[string]any{"type": "text"},
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update index mapping")
+}
+
+func TestNewIndexer_IndexCreate_ExistsCheckError(t *testing.T) {
+	rec := &indexMgmtRecorder{existsErr: errors.New("simulated exists failure"), t: t}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+		IndexCreate: &IndexCreateConfig{
+			Properties: map[string]any{"content": map[string]any{"type": "text"}},
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "check OpenSearch index existence")
+}
+
+func TestNewIndexer_IndexCreate_Nil_DoesNotManageIndex(t *testing.T) {
+	rec := &indexMgmtRecorder{indexExists: false, t: t}
+	server := newIndexMgmtServer(rec)
+	defer server.Close()
+
+	_, err := NewIndexer(context.Background(), &Config{
+		URLs:  []string{server.URL},
+		Index: "test-index",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, rec.existsChecks)
+	assert.Equal(t, 0, rec.createCalls)
+	assert.Equal(t, 0, rec.mappingCalls)
+}

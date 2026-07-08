@@ -29,6 +29,12 @@ type Config struct {
     Embedding        embedding.Embedder // optional, enables vectorization
     VectorField      string             // knn_vector field, default "vector"
     ContentField     string             // text field for content, default "content"
+    IndexCreate      *IndexCreateConfig // optional index creation and mapping management
+}
+
+type IndexCreateConfig struct {
+    Properties map[string]any // field mapping properties for index creation and mapping retrofits
+    Settings   map[string]any // index-level settings (shards, knn, etc.)
 }
 ```
 
@@ -38,6 +44,48 @@ such as `_sub_indexes` are skipped). When `Embedding` is set, content is
 embedded and the vector stored under `VectorField` — unless the document
 already carries a vector via `schema.Document.WithDenseVector`, in which case
 that vector is reused and no embedding call is made for it.
+
+#### Automatic index creation
+
+When `IndexCreate` is set, `NewIndexer` automatically creates the index if it
+does not exist and retrofits field mappings onto an already-existing index
+(via `PUT _mapping`). This eliminates the need for external index lifecycle
+management in client applications.
+
+```go
+idx, err := osindexer.NewIndexer(ctx, &osindexer.Config{
+    URLs:      []string{"https://localhost:9200"},
+    Index:     "my-knn-index",
+    Embedding: myEmbedder,
+    VectorField: "embedding",
+    IndexCreate: &osindexer.IndexCreateConfig{
+        Properties: map[string]any{
+            "embedding": map[string]any{
+                "type":      "knn_vector",
+                "dimension": 1536,
+                "method": map[string]any{
+                    "name":       "hnsw",
+                    "engine":     "faiss",
+                    "space_type": "innerproduct",
+                },
+            },
+            "content":    map[string]any{"type": "text"},
+            "@timestamp": map[string]any{"type": "date"},
+            "source_id":  map[string]any{"type": "keyword"},
+            "git_repo":   map[string]any{"type": "keyword"},
+        },
+        Settings: map[string]any{
+            "number_of_shards": 3,
+            "index":            map[string]any{"knn": true},
+        },
+    },
+})
+```
+
+`Properties` is the complete field mapping (same structure as OpenSearch's
+`mappings.properties`). On a fresh cluster, the index is created with these
+properties and settings. On subsequent runs, only new fields are added via
+`EnsureMappings` — existing field types are never overwritten.
 
 ### Usage
 

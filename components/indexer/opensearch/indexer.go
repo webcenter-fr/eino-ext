@@ -35,6 +35,40 @@ const (
 // mapper is supplied.
 type DocumentToFields func(ctx context.Context, doc *schema.Document) (map[string]any, error)
 
+// IndexCreateConfig controls automatic index creation and mapping
+// management. When non-nil, NewIndexer creates the index if it does not
+// exist and applies any missing field properties via put-mapping on an
+// already-existing index, so callers no longer need to manage index
+// lifecycle externally.
+//
+// Properties and Settings are passed directly to the OpenSearch create-index
+// and put-mapping APIs; callers have full control over field types, vector
+// dimensions, kNN engine selection, and index-level settings per project.
+type IndexCreateConfig struct {
+	// Properties are the field mapping properties for index creation and
+	// mapping retrofits. Pass the complete "properties" object as it should
+	// appear in the OpenSearch mapping, e.g.:
+	//
+	//   map[string]any{
+	//       "content": map[string]any{"type": "text"},
+	//       "source_id": map[string]any{"type": "keyword"},
+	//   }
+	//
+	// When an index already exists, only new fields are added (OpenSearch
+	// put-mapping semantics); existing field types are never changed.
+	Properties map[string]any `validate:"omitempty" jsonschema:"description=Field mapping properties for index creation and mapping retrofits"`
+
+	// Settings are additional index-level settings applied during index
+	// creation (e.g. number_of_shards, index.knn). Pass the complete
+	// "settings" object, e.g.:
+	//
+	//   map[string]any{
+	//       "number_of_shards": 3,
+	//       "index": map[string]any{"knn": true},
+	//   }
+	Settings map[string]any `validate:"omitempty" jsonschema:"description=Index-level settings for index creation"`
+}
+
 // Config configures the OpenSearch indexer.
 type Config struct {
 	// URLs is the list of OpenSearch cluster URLs.
@@ -77,6 +111,13 @@ type Config struct {
 	// ContentField is the field that stores doc.Content when using the
 	// default field mapper. Defaults to "content".
 	ContentField string `validate:"omitempty" jsonschema:"description=Text field for document content,default=content"`
+
+	// IndexCreate controls automatic index creation and mapping retrofits.
+	// When nil (the default), no index management is performed; callers are
+	// responsible for creating the index externally. Set this to have
+	// NewIndexer create the index on first run and keep its mappings
+	// up-to-date on subsequent runs.
+	IndexCreate *IndexCreateConfig `validate:"omitempty" jsonschema:"description=Optional index creation and mapping management"`
 }
 
 // Indexer implements indexer.Indexer backed by OpenSearch.
@@ -114,6 +155,12 @@ func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 	}, 30*time.Second)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.IndexCreate != nil {
+		if err = ensureIndex(ctx, client, config.Index, config.IndexCreate); err != nil {
+			return nil, err
+		}
 	}
 
 	mapper := config.DocumentToFields
@@ -392,6 +439,39 @@ func defaultDocumentToFields(contentField string) DocumentToFields {
 		}
 		return fields, nil
 	}
+}
+
+// ensureIndex creates the index when it does not exist yet and retrofits
+// field mappings onto an already-existing index.
+func ensureIndex(ctx context.Context, client opensearchv4.Client, index string, ic *IndexCreateConfig) error {
+	exists, err := client.Indices().Exists(ctx, []string{index})
+	if err != nil {
+		return errors.Wrap(err, "failed to check OpenSearch index existence")
+	}
+
+	if !exists {
+		body := map[string]any{
+			"mappings": map[string]any{"properties": ic.Properties},
+		}
+		if len(ic.Settings) > 0 {
+			body["settings"] = ic.Settings
+		}
+		if _, err := client.Indices().Create(ctx, index, body); err != nil {
+			return errors.Wrap(err, "failed to create OpenSearch index")
+		}
+		return nil
+	}
+
+	if len(ic.Properties) > 0 {
+		if _, err := client.Indices().PutMapping(ctx, &api.PutMappingRequest{
+			Indices: []string{index},
+			Body:    map[string]any{"properties": ic.Properties},
+		}); err != nil {
+			return errors.Wrap(err, "failed to update index mapping")
+		}
+	}
+
+	return nil
 }
 
 // ensureContextTimeout returns ctx unchanged if it already carries a
