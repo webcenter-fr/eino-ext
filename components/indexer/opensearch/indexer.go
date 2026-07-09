@@ -215,9 +215,6 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		targetIndex = *options.Index
 	}
 
-	ctx, cancel := ensureContextTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	ids, err = i.bulkStore(ctx, targetIndex, docs, options)
 	if err != nil {
 		return nil, err
@@ -253,6 +250,9 @@ func (i *Indexer) bulkStore(ctx context.Context, targetIndex string, docs []*sch
 // storeBatch embeds a single batch (when Embedding is configured) and sends
 // it to OpenSearch via one bulk request.
 func (i *Indexer) storeBatch(ctx context.Context, targetIndex string, batch []*schema.Document, options *indexer.Options) ([]string, error) {
+	ctx, cancel := ensureContextTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	for _, doc := range batch {
 		if doc == nil {
 			return nil, errors.New("cannot index a nil document")
