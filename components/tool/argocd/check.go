@@ -96,7 +96,8 @@ type appList struct {
 
 type clusterListItem struct {
 	Metadata metadataName `json:"metadata"`
-	Name     string       `json:"name"` // some ArgoCD versions include a top‑level name
+	Name     string       `json:"name"`   // display name; some ArgoCD versions include it at top‑level
+	Server   string       `json:"server"` // required for Get endpoint
 }
 
 type clusterList struct {
@@ -168,28 +169,29 @@ func fetchFirstApp(ctx context.Context, httpClient *http.Client, cfg Config) (na
 	return list.Items[0].Metadata.Name, list.Items[0].Metadata.Namespace, nil
 }
 
-// fetchFirstCluster returns the name of the first cluster. It tries the
-// CLI‑style top‑level "name" field first (present in some ArgoCD versions),
-// then falls back to metadata.name.
-func fetchFirstCluster(ctx context.Context, httpClient *http.Client, cfg Config) (string, error) {
+// fetchFirstCluster returns the display name and server URL of the first
+// cluster. The server URL is required by the ArgoCD Get endpoint.
+func fetchFirstCluster(ctx context.Context, httpClient *http.Client, cfg Config) (name, server string, _ error) {
 	body, err := doArgoCDListGET(ctx, httpClient, cfg, "/api/v1/clusters")
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var list clusterList
 	if err := json.Unmarshal(body, &list); err != nil {
-		return "", errors.Wrap(err, "failed to unmarshal cluster list")
+		return "", "", errors.Wrap(err, "failed to unmarshal cluster list")
 	}
 	if len(list.Items) == 0 {
-		return "", errors.New("no clusters found")
+		return "", "", errors.New("no clusters found")
 	}
-	if list.Items[0].Name != "" {
-		return list.Items[0].Name, nil
+	item := list.Items[0]
+	name = item.Name
+	if name == "" {
+		name = item.Metadata.Name
 	}
-	if list.Items[0].Metadata.Name != "" {
-		return list.Items[0].Metadata.Name, nil
+	if item.Server == "" {
+		return "", "", errors.New("cluster server URL not found in response")
 	}
-	return "", errors.New("cluster name not found in response")
+	return name, item.Server, nil
 }
 
 // fetchFirstProject returns the name of the first project.
@@ -248,7 +250,7 @@ func probeInstance(ctx context.Context, client api.API, httpClient *http.Client,
 	cr, clusters, err := probeClusterList(ctx, client, instance)
 	results = append(results, cr)
 	if err == nil && len(clusters) > 0 {
-		name, ferr := fetchFirstCluster(ctx, httpClient, cfg)
+		name, server, ferr := fetchFirstCluster(ctx, httpClient, cfg)
 		if ferr != nil {
 			results = append(results, checkup.Result{
 				Component: "argocd_cluster_describe",
@@ -257,7 +259,7 @@ func probeInstance(ctx context.Context, client api.API, httpClient *http.Client,
 				Error:     errors.Wrap(ferr, "failed to extract cluster name").Error(),
 			})
 		} else {
-			results = append(results, probeClusterDescribe(ctx, client, instance, name))
+			results = append(results, probeClusterDescribe(ctx, client, instance, name, server))
 		}
 	} else if err == nil {
 		results = append(results, checkup.Result{
@@ -399,8 +401,8 @@ func probeClusterList(ctx context.Context, client api.API, instance string) (che
 	}, resp.Items, nil
 }
 
-func probeClusterDescribe(ctx context.Context, client api.API, instance, name string) checkup.Result {
-	_, err := client.Cluster().Get("", &api.ClusterQueryOptions{Name: name})
+func probeClusterDescribe(ctx context.Context, client api.API, instance, name, server string) checkup.Result {
+	_, err := client.Cluster().Get(server, nil)
 	if err != nil {
 		return checkup.Result{
 			Component: "argocd_cluster_describe",
