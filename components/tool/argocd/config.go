@@ -9,12 +9,19 @@ import (
 type Configs map[string]Config
 
 // Config represents the configuration for an ArgoCD instance.
+//
+// Token and TLSSkipVerify are convenience fields that are automatically
+// converted to goargocdclient.Option values by NewClient and prepended to
+// Options. If both are set, explicit Options take precedence.
 type Config struct {
-	URL     string `validate:"required" jsonschema:"description=ArgoCD server URL with scheme (https:// or http://)"`
-	Options []goargocdclient.Option
+	URL           string `validate:"required" jsonschema:"description=ArgoCD server URL with scheme (https:// or http://)"`
+	Options       []goargocdclient.Option
+	Token         string `jsonschema:"-"`
+	TLSSkipVerify bool   `jsonschema:"-"`
 }
 
-// GetConfig retrieves the configuration for a given instance name. It returns a api.API if found, or nil if the instance name does not exist in the Configs map.
+// GetConfig returns the configuration for the given instance name, or the zero
+// value if the instance is not present in the Configs map.
 func (c Configs) GetConfig(instanceName string) Config {
 	return c[instanceName]
 }

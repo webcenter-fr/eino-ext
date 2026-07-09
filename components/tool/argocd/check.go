@@ -2,7 +2,12 @@ package argocd
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"emperror.dev/errors"
@@ -13,8 +18,8 @@ import (
 const argocdCheckTimeout = 10 * time.Second
 
 // Check probes connectivity and RBAC permissions for all configured ArgoCD
-// instances. For each instance it tests every read-only tool: list endpoints are
-// called directly; describe endpoints are tested by listing first, then
+// instances. For each instance it tests every read‑only tool: list endpoints
+// are called directly; describe endpoints are tested by listing first, then
 // describing the first item. Write tools (create/delete/sync) are not probed.
 func Check(ctx context.Context, configs Configs) checkup.Results {
 	if len(configs) == 0 {
@@ -38,9 +43,14 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 			baseCancel()
 			continue
 		}
+
+		// Build a single raw HTTP client for name extraction, reusing the
+		// same TLS settings derived from the Config convenience fields.
+		rawHTTP := newArgoCDHTTPClient(cfg)
+
 		func() {
 			defer baseCancel()
-			all = append(all, probeInstance(baseCtx, client, instance)...)
+			all = append(all, probeInstance(baseCtx, client, rawHTTP, instance, cfg)...)
 		}()
 	}
 
@@ -63,7 +73,144 @@ func clientErrorResults(instance string, err error) checkup.Results {
 	}
 }
 
-func probeInstance(ctx context.Context, client api.API, instance string) checkup.Results {
+// ─── Local types mirroring true ArgoCD REST JSON shape ──────────────────
+//
+// goargocdclient's ObjectMeta tags Name as json:"name,omitempty" (flat),
+// but the ArgoCD REST API nests resource names under "metadata". These local
+// types unmarshal the actual wire format so names can be extracted reliably.
+// They exist in check.go because they are only needed for health probes;
+// normal tool operations use the goargocdclient types directly.
+
+type metadataName struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type appListItem struct {
+	Metadata metadataName `json:"metadata"`
+}
+
+type appList struct {
+	Items []appListItem `json:"items"`
+}
+
+type clusterListItem struct {
+	Metadata metadataName `json:"metadata"`
+	Name     string       `json:"name"` // some ArgoCD versions include a top‑level name
+}
+
+type clusterList struct {
+	Items []clusterListItem `json:"items"`
+}
+
+type projectListItem struct {
+	Metadata metadataName `json:"metadata"`
+}
+
+type projectList struct {
+	Items []projectListItem `json:"items"`
+}
+
+// ─── Raw‑HTTP helpers for name extraction ───────────────────────────────
+
+// newArgoCDHTTPClient creates an http.Client from Config convenience fields.
+func newArgoCDHTTPClient(cfg Config) *http.Client {
+	transport := &http.Transport{}
+	if cfg.TLSSkipVerify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	}
+	return &http.Client{Transport: transport, Timeout: argocdCheckTimeout}
+}
+
+// doArgoCDListGET makes a GET request to the ArgoCD list endpoint using the
+// provided http.Client and returns the raw response body. The path must be
+// absolute (e.g. "/api/v1/applications").
+func doArgoCDListGET(ctx context.Context, httpClient *http.Client, cfg Config, path string) ([]byte, error) {
+	baseURL := strings.TrimRight(cfg.URL, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create request")
+	}
+	if cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "request failed")
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read response body")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, errors.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
+// fetchFirstApp returns the name and namespace of the first application.
+func fetchFirstApp(ctx context.Context, httpClient *http.Client, cfg Config) (name, namespace string, _ error) {
+	body, err := doArgoCDListGET(ctx, httpClient, cfg, "/api/v1/applications")
+	if err != nil {
+		return "", "", err
+	}
+	var list appList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return "", "", errors.Wrap(err, "failed to unmarshal application list")
+	}
+	if len(list.Items) == 0 {
+		return "", "", errors.New("no applications found")
+	}
+	return list.Items[0].Metadata.Name, list.Items[0].Metadata.Namespace, nil
+}
+
+// fetchFirstCluster returns the name of the first cluster. It tries the
+// CLI‑style top‑level "name" field first (present in some ArgoCD versions),
+// then falls back to metadata.name.
+func fetchFirstCluster(ctx context.Context, httpClient *http.Client, cfg Config) (string, error) {
+	body, err := doArgoCDListGET(ctx, httpClient, cfg, "/api/v1/clusters")
+	if err != nil {
+		return "", err
+	}
+	var list clusterList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return "", errors.Wrap(err, "failed to unmarshal cluster list")
+	}
+	if len(list.Items) == 0 {
+		return "", errors.New("no clusters found")
+	}
+	if list.Items[0].Name != "" {
+		return list.Items[0].Name, nil
+	}
+	if list.Items[0].Metadata.Name != "" {
+		return list.Items[0].Metadata.Name, nil
+	}
+	return "", errors.New("cluster name not found in response")
+}
+
+// fetchFirstProject returns the name of the first project.
+func fetchFirstProject(ctx context.Context, httpClient *http.Client, cfg Config) (string, error) {
+	body, err := doArgoCDListGET(ctx, httpClient, cfg, "/api/v1/projects")
+	if err != nil {
+		return "", err
+	}
+	var list projectList
+	if err := json.Unmarshal(body, &list); err != nil {
+		return "", errors.Wrap(err, "failed to unmarshal project list")
+	}
+	if len(list.Items) == 0 {
+		return "", errors.New("no projects found")
+	}
+	return list.Items[0].Metadata.Name, nil
+}
+
+// ─── Probe helpers ──────────────────────────────────────────────────────
+
+func probeInstance(ctx context.Context, client api.API, httpClient *http.Client, instance string, cfg Config) checkup.Results {
 	var results checkup.Results
 
 	results = append(results, probeInstanceList(ctx, instance))
@@ -71,7 +218,17 @@ func probeInstance(ctx context.Context, client api.API, instance string) checkup
 	listResult, apps, err := probeApplicationList(ctx, client, instance)
 	results = append(results, listResult)
 	if err == nil && len(apps) > 0 {
-		results = append(results, probeApplicationDescribe(ctx, client, instance, apps[0].Name, apps[0].Namespace))
+		name, namespace, ferr := fetchFirstApp(ctx, httpClient, cfg)
+		if ferr != nil {
+			results = append(results, checkup.Result{
+				Component: "argocd_application_describe",
+				Instance:  instance,
+				Status:    checkup.StatusError,
+				Error:     errors.Wrap(ferr, "failed to extract application name").Error(),
+			})
+		} else {
+			results = append(results, probeApplicationDescribe(ctx, client, instance, name, namespace))
+		}
 	} else if err == nil {
 		results = append(results, checkup.Result{
 			Component: "argocd_application_describe",
@@ -91,7 +248,17 @@ func probeInstance(ctx context.Context, client api.API, instance string) checkup
 	cr, clusters, err := probeClusterList(ctx, client, instance)
 	results = append(results, cr)
 	if err == nil && len(clusters) > 0 {
-		results = append(results, probeClusterDescribe(ctx, client, instance, clusters[0].Name))
+		name, ferr := fetchFirstCluster(ctx, httpClient, cfg)
+		if ferr != nil {
+			results = append(results, checkup.Result{
+				Component: "argocd_cluster_describe",
+				Instance:  instance,
+				Status:    checkup.StatusError,
+				Error:     errors.Wrap(ferr, "failed to extract cluster name").Error(),
+			})
+		} else {
+			results = append(results, probeClusterDescribe(ctx, client, instance, name))
+		}
 	} else if err == nil {
 		results = append(results, checkup.Result{
 			Component: "argocd_cluster_describe",
@@ -111,7 +278,17 @@ func probeInstance(ctx context.Context, client api.API, instance string) checkup
 	pr, projects, err := probeProjectList(ctx, client, instance)
 	results = append(results, pr)
 	if err == nil && len(projects) > 0 {
-		results = append(results, probeProjectDescribe(ctx, client, instance, projects[0].Name))
+		name, ferr := fetchFirstProject(ctx, httpClient, cfg)
+		if ferr != nil {
+			results = append(results, checkup.Result{
+				Component: "argocd_project_describe",
+				Instance:  instance,
+				Status:    checkup.StatusError,
+				Error:     errors.Wrap(ferr, "failed to extract project name").Error(),
+			})
+		} else {
+			results = append(results, probeProjectDescribe(ctx, client, instance, name))
+		}
 	} else if err == nil {
 		results = append(results, checkup.Result{
 			Component: "argocd_project_describe",
@@ -131,6 +308,8 @@ func probeInstance(ctx context.Context, client api.API, instance string) checkup
 	rr, repos, err := probeRepositoryList(ctx, client, instance)
 	results = append(results, rr)
 	if err == nil && len(repos) > 0 {
+		// RepositoryModel.Repo maps directly to the JSON "repo" field;
+		// no name‑extraction workaround is needed for repositories.
 		results = append(results, probeRepositoryDescribe(ctx, client, instance, repos[0].Repo))
 	} else if err == nil {
 		results = append(results, checkup.Result{
