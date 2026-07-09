@@ -169,29 +169,30 @@ func fetchFirstApp(ctx context.Context, httpClient *http.Client, cfg Config) (na
 	return list.Items[0].Metadata.Name, list.Items[0].Metadata.Namespace, nil
 }
 
-// fetchFirstCluster returns the display name and server URL of the first
-// cluster. The server URL is required by the ArgoCD Get endpoint.
-func fetchFirstCluster(ctx context.Context, httpClient *http.Client, cfg Config) (name, server string, _ error) {
+// fetchClusterServers returns all cluster server URLs and display names
+// from the list endpoint. ArgoCD RBAC may grant get on some clusters but
+// not others (e.g. in‑cluster vs external), so the checker tries each one.
+func fetchClusterServers(ctx context.Context, httpClient *http.Client, cfg Config) (servers, names []string, _ error) {
 	body, err := doArgoCDListGET(ctx, httpClient, cfg, "/api/v1/clusters")
 	if err != nil {
-		return "", "", err
+		return nil, nil, err
 	}
 	var list clusterList
 	if err := json.Unmarshal(body, &list); err != nil {
-		return "", "", errors.Wrap(err, "failed to unmarshal cluster list")
+		return nil, nil, errors.Wrap(err, "failed to unmarshal cluster list")
 	}
-	if len(list.Items) == 0 {
-		return "", "", errors.New("no clusters found")
+	for _, item := range list.Items {
+		name := item.Name
+		if name == "" {
+			name = item.Metadata.Name
+		}
+		servers = append(servers, item.Server)
+		names = append(names, name)
 	}
-	item := list.Items[0]
-	name = item.Name
-	if name == "" {
-		name = item.Metadata.Name
+	if len(servers) == 0 {
+		return nil, nil, errors.New("no clusters found")
 	}
-	if item.Server == "" {
-		return "", "", errors.New("cluster server URL not found in response")
-	}
-	return name, item.Server, nil
+	return servers, names, nil
 }
 
 // fetchFirstProject returns the name of the first project.
@@ -250,16 +251,39 @@ func probeInstance(ctx context.Context, client api.API, httpClient *http.Client,
 	cr, clusters, err := probeClusterList(ctx, client, instance)
 	results = append(results, cr)
 	if err == nil && len(clusters) > 0 {
-		name, server, ferr := fetchFirstCluster(ctx, httpClient, cfg)
+		servers, names, ferr := fetchClusterServers(ctx, httpClient, cfg)
 		if ferr != nil {
 			results = append(results, checkup.Result{
 				Component: "argocd_cluster_describe",
 				Instance:  instance,
 				Status:    checkup.StatusError,
-				Error:     errors.Wrap(ferr, "failed to extract cluster name").Error(),
+				Error:     errors.Wrap(ferr, "failed to extract cluster servers").Error(),
 			})
 		} else {
-			results = append(results, probeClusterDescribe(ctx, client, instance, name, server))
+			var ok bool
+			var lastErr error
+			for i, server := range servers {
+				_, cerr := client.Cluster().Get(server, nil)
+				if cerr == nil {
+					ok = true
+					results = append(results, checkup.Result{
+						Component: "argocd_cluster_describe",
+						Instance:  instance,
+						Status:    checkup.StatusOK,
+						Message:   fmt.Sprintf("described cluster %q, RBAC ok", names[i]),
+					})
+					break
+				}
+				lastErr = cerr
+			}
+			if !ok {
+				results = append(results, checkup.Result{
+					Component: "argocd_cluster_describe",
+					Instance:  instance,
+					Status:    checkup.StatusError,
+					Error:     errors.Wrap(lastErr, "failed to describe any cluster").Error(),
+				})
+			}
 		}
 	} else if err == nil {
 		results = append(results, checkup.Result{
@@ -399,24 +423,6 @@ func probeClusterList(ctx context.Context, client api.API, instance string) (che
 		Status:    checkup.StatusOK,
 		Message:   msg,
 	}, resp.Items, nil
-}
-
-func probeClusterDescribe(ctx context.Context, client api.API, instance, name, server string) checkup.Result {
-	_, err := client.Cluster().Get(server, nil)
-	if err != nil {
-		return checkup.Result{
-			Component: "argocd_cluster_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to describe cluster").Error(),
-		}
-	}
-	return checkup.Result{
-		Component: "argocd_cluster_describe",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("described cluster %q, RBAC ok", name),
-	}
 }
 
 func probeProjectList(ctx context.Context, client api.API, instance string) (checkup.Result, []*api.ProjectModel, error) {
