@@ -12,6 +12,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -25,6 +27,11 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 			Error:     "no Kubernetes clusters configured",
 		}}
 	}
+
+	// Register apiextensions types on the global scheme so that CRD
+	// probes (kubernetes_list_custom_resource_definitions etc.) resolve
+	// their GVK when the controller-runtime client calls ObjectKinds.
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme.Scheme))
 
 	clusters := configs.GetClusterNames()
 	var all checkup.Results
