@@ -262,8 +262,8 @@ func probeInstance(ctx context.Context, client api.API, httpClient *http.Client,
 		} else {
 			var ok bool
 			var lastErr error
-			for i, server := range servers {
-				_, cerr := client.Cluster().Get(server, nil)
+			for i := range servers {
+				_, cerr := client.Cluster().Get(names[i], &api.ClusterQueryOptions{IdType: "name"})
 				if cerr == nil {
 					ok = true
 					results = append(results, checkup.Result{
