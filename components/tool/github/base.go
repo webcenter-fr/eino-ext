@@ -32,6 +32,9 @@ func validateCloneDir(cloneDir string) error {
 	if !filepath.IsAbs(cloneDir) {
 		return errors.Errorf("CloneDir must be an absolute path, got %q", cloneDir)
 	}
+	if strings.Contains(cloneDir, "..") {
+		return errors.Errorf("CloneDir must not contain directory traversal, got %q", cloneDir)
+	}
 	cleaned := filepath.Clean(cloneDir)
 	if systemDirs[cleaned] {
 		return errors.Errorf("CloneDir must not be a system directory, got %q", cleaned)

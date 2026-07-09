@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"emperror.dev/errors"
@@ -39,9 +40,13 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		bodyPreview := ""
+		if readErr == nil {
+			bodyPreview = redactErrorBody(bodyBytes)
+		}
+		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, bodyPreview)
 	}
 
 	sr, sw := schema.Pipe[*schema.Message](1)
@@ -138,11 +143,19 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 				st.args += tc.Function.Arguments
 			}
 
-			// Emit accumulated tool calls on finish.
+			// Emit accumulated tool calls on finish, sorted by index.
 			if choice.FinishReason != nil && len(toolAccum) > 0 {
-				for _, st := range toolAccum {
+				indices := make([]int, 0, len(toolAccum))
+				for i := range toolAccum {
+					indices = append(indices, i)
+				}
+				sort.Ints(indices)
+				for _, i := range indices {
+					st := toolAccum[i]
+					idx := i
 					msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
-						ID: st.id,
+						Index: &idx,
+						ID:    st.id,
 						Function: schema.FunctionCall{
 							Name:      st.name,
 							Arguments: st.args,

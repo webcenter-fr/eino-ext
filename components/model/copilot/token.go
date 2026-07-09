@@ -129,7 +129,7 @@ func startTokenRefresh(
 				case <-time.After(time.Duration(backoffSecs)*time.Second + jitter):
 				}
 
-				newResp, err = exchangeGitHubToken(context.Background(), cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
+				newResp, err = exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
 				if err == nil {
 					currentToken = newResp.Token
 					currentExpiresAt = newResp.ExpiresAt

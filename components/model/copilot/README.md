@@ -4,8 +4,8 @@
 API (`https://api.githubcopilot.com`). It implements `model.ToolCallingChatModel`
 and `model.ChatModel`.
 
-The Copilot API is OpenAI-compatible, so the implementation wraps the existing
-`openai.ChatModel` and injects Copilot-specific auth and headers on every request.
+This package makes direct HTTP calls using `net/http` — it does not depend on
+any OpenAI SDK or ACL library.
 
 ## Auth modes
 

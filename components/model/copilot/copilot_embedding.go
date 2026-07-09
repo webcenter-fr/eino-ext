@@ -107,7 +107,7 @@ func (e *CopilotEmbedder) EmbedStrings(ctx context.Context, texts []string, opts
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: embedding API returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, errors.Errorf("copilot: embedding API returned status %d: %s", resp.StatusCode, redactErrorBody(respBody))
 	}
 
 	var embedResp copilotEmbedResponse

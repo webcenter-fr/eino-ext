@@ -38,7 +38,7 @@ type Config struct {
 	Timeout             time.Duration   `validate:"omitempty,gte=1000000000" jsonschema:"description=API request timeout"`
 	TLSSkipVerify       bool            `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
 	Model               string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
-	Temperature         *float32        `validate:"omitempty" jsonschema:"description=Sampling temperature (0 to 2)"`
+	Temperature         *float32        `validate:"omitempty,gte=0,lte=2" jsonschema:"description=Sampling temperature (0 to 2)"`
 	MaxCompletionTokens *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
 	ReasoningEffort     ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
 }
@@ -61,15 +61,9 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 
 	if cfg.GitHubToken == "" {
 		cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
-		if cfg.GitHubToken != "" {
-			return nil, errors.New("copilot: GitHubToken is empty but GITHUB_TOKEN env var is set — pass GitHubToken explicitly to confirm intent")
-		}
 	}
 	if cfg.CopilotToken == "" {
 		cfg.CopilotToken = os.Getenv("GITHUB_COPILOT_TOKEN")
-		if cfg.CopilotToken != "" {
-			return nil, errors.New("copilot: CopilotToken is empty but GITHUB_COPILOT_TOKEN env var is set — pass CopilotToken explicitly to confirm intent")
-		}
 	}
 	if cfg.EnterpriseURL == "" {
 		cfg.EnterpriseURL = os.Getenv("GITHUB_COPILOT_ENTERPRISE_URL")

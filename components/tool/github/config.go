@@ -22,7 +22,7 @@ type Config struct {
 
 	// CloneDir is the temp folder root where repos are cloned. Set at tool creation
 	// time, NOT chosen by the LLM. Required for clone/branch tools.
-	CloneDir string `validate:"required" jsonschema:"description=Base directory for local clones"`
+	CloneDir string `validate:"required" jsonschema:"description=Base directory for local clones (must be an absolute path, not / or a system directory)"`
 
 	// Timeout for API calls. Defaulted; validated as gte=1s.
 	Timeout time.Duration `validate:"omitempty,gte=1000000000" jsonschema:"description=Per-request timeout"`

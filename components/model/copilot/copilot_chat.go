@@ -49,9 +49,10 @@ type copilotToolDefFunc struct {
 }
 
 type copilotToolParams struct {
-	Type       string                 `json:"type"`
-	Properties map[string]interface{} `json:"properties"`
-	Required   []string               `json:"required,omitempty"`
+	Type        string                 `json:"type"`
+	Properties  map[string]interface{} `json:"properties,omitempty"`
+	Required    []string               `json:"required,omitempty"`
+	Definitions map[string]interface{} `json:"$defs,omitempty"`
 }
 
 type copilotChatRequest struct {
@@ -215,16 +216,17 @@ func convertTools(tools []*schema.ToolInfo) []copilotToolDef {
 	}
 	out := make([]copilotToolDef, 0, len(tools))
 	for _, t := range tools {
-		props, required := extractToolParams(t)
+		props, required, defs := extractToolParams(t)
 		out = append(out, copilotToolDef{
 			Type: "function",
 			Function: copilotToolDefFunc{
 				Name:        t.Name,
 				Description: t.Desc,
 				Parameters: copilotToolParams{
-					Type:       "object",
-					Properties: props,
-					Required:   required,
+					Type:        "object",
+					Properties:  props,
+					Required:    required,
+					Definitions: defs,
 				},
 			},
 		})
@@ -232,38 +234,34 @@ func convertTools(tools []*schema.ToolInfo) []copilotToolDef {
 	return out
 }
 
-// extractToolParams returns properties and required fields from a ToolInfo's
-// ParamsOneOf via a single json marshal/unmarshal round-trip.
-func extractToolParams(t *schema.ToolInfo) (map[string]interface{}, []string) {
+// extractToolParams returns properties, required, and $defs from a ToolInfo's
+// ParamsOneOf by converting it to a JSON Schema first.
+func extractToolParams(t *schema.ToolInfo) (map[string]interface{}, []string, map[string]interface{}) {
 	if t.ParamsOneOf == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	raw, err := json.Marshal(t.ParamsOneOf)
-	if err != nil {
-		return nil, nil
-	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, nil
+	s, err := t.ParamsOneOf.ToJSONSchema()
+	if err != nil || s == nil {
+		return nil, nil, nil
 	}
 
 	var props map[string]interface{}
-	if p, ok := m["properties"]; ok {
-		props, _ = p.(map[string]interface{})
-	}
-
-	var required []string
-	if r, ok := m["required"]; ok {
-		if reqList, ok := r.([]interface{}); ok {
-			required = make([]string, 0, len(reqList))
-			for _, ri := range reqList {
-				if s, ok := ri.(string); ok {
-					required = append(required, s)
-				}
-			}
+	if s.Properties != nil && s.Properties.Len() > 0 {
+		props = make(map[string]interface{}, s.Properties.Len())
+		for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			props[pair.Key] = pair.Value
 		}
 	}
-	return props, required
+
+	var defs map[string]interface{}
+	if len(s.Definitions) > 0 {
+		defs = make(map[string]interface{}, len(s.Definitions))
+		for k, v := range s.Definitions {
+			defs[k] = v
+		}
+	}
+
+	return props, s.Required, defs
 }
 
 // --- Chat request building ---
@@ -315,7 +313,7 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, redactErrorBody(respBody))
 	}
 	return respBody, nil
 }
@@ -367,6 +365,17 @@ func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts 
 }
 
 // --- Auth headers ---
+
+// redactErrorBody truncates the response body to at most 500 characters to
+// avoid leaking sensitive data in error messages while retaining enough
+// context for debugging.
+func redactErrorBody(body []byte) string {
+	const maxLen = 500
+	if len(body) > maxLen {
+		return string(body[:maxLen]) + "..."
+	}
+	return string(body)
+}
 
 func setAuthHeaders(req *http.Request, token string) {
 	req.Header.Set("Authorization", "Bearer "+token)

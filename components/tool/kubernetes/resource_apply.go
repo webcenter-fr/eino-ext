@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,6 +118,41 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 	}
 	if params.DryRun {
 		opts.DryRun = []string{metav1.DryRunAll}
+	}
+
+	// Dry-run: fetch the existing resource for ownership check.
+	if params.DryRun {
+		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, obj.GetName(), metav1.GetOptions{})
+		if getErr == nil {
+			ownership := safety.CheckOwnership(existing)
+			manifestData, marshalErr := json.Marshal(obj.Object)
+			if marshalErr != nil {
+				return "", errors.Wrap(marshalErr, "failed to marshal manifest")
+			}
+			applied, applyErr := c.Resource(gvr).Namespace(params.Namespace).Patch(
+				ctx,
+				obj.GetName(),
+				types.ApplyPatchType,
+				manifestData,
+				opts,
+			)
+			if applyErr != nil {
+				return "", errors.Wrapf(applyErr, "failed to apply resource %s/%s of type %s.%s/%s (dry-run)", params.Namespace, obj.GetName(), params.Resource, params.ApiGroup, params.ApiVersion)
+			}
+			unstructured.RemoveNestedField(applied.Object, "metadata", "managedFields")
+			dryRunResult := map[string]any{
+				"dryRun":        true,
+				"wouldApplyTo": applied.Object,
+			}
+			if ownership.IsManaged {
+				dryRunResult["ownership"] = ownership
+			}
+			data, err := json.Marshal(dryRunResult)
+			if err != nil {
+				return "", errors.Wrap(err, "failed to marshal dry-run result")
+			}
+			return string(data), nil
+		}
 	}
 
 	manifestData, err := json.Marshal(obj.Object)

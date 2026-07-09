@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"fmt"
+	"strings"
 
 	"emperror.dev/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -61,22 +62,81 @@ func typedSlice(m map[string]any, key string) []any {
 }
 
 var (
-	errHostNetwork    = errors.New("hostNetwork is not allowed")
-	errHostPID        = errors.New("hostPID is not allowed")
-	errHostIPC        = errors.New("hostIPC is not allowed")
-	errPrivileged     = errors.New("privileged containers are not allowed")
-	errSYSADMIN       = errors.New("SYS_ADMIN capability is not allowed")
-	errHostPathVolume = errors.New("hostPath volumes are not allowed")
-	errDangerousMount = errors.New("mounting sensitive host path is not allowed")
+	errHostNetwork             = errors.New("hostNetwork is not allowed")
+	errHostPID                 = errors.New("hostPID is not allowed")
+	errHostIPC                 = errors.New("hostIPC is not allowed")
+	errPrivileged              = errors.New("privileged containers are not allowed")
+	errSYSADMIN                = errors.New("SYS_ADMIN capability is not allowed")
+	errPrivilegeEscalation     = errors.New("allowPrivilegeEscalation must be false; use true only when explicitly approved")
+	errHostPathVolume          = errors.New("hostPath volumes are not allowed")
+	errDangerousMount          = errors.New("mounting sensitive host path is not allowed")
+	errDangerousSubPath        = errors.New("volume mount subPath traversal is not allowed")
+	errDangerousCapabilityFmt  = "capability %q is not allowed"
 )
 
+// dangerousCapabilities lists Linux capabilities that grant a container
+// privileged access to the host or bypass namespace isolation.
+var dangerousCapabilities = map[string]bool{
+	"SYS_ADMIN":    true,
+	"SYS_PTRACE":   true,
+	"SYS_MODULE":   true,
+	"SYS_RAWIO":    true,
+	"SYS_BOOT":     true,
+	"NET_ADMIN":    true,
+	"NET_RAW":      true,
+	"MAC_ADMIN":    true,
+	"MAC_OVERRIDE": true,
+	"DAC_OVERRIDE": true,
+	"BPF":          true,
+	"PERFMON":      true,
+}
+
 var sensitiveHostPaths = map[string]bool{
-	"/proc":               true,
-	"/sys":                true,
-	"/etc/kubernetes":     true,
-	"/var/run/docker.sock": true,
-	"/var/run/crio":       true,
-	"/var/run/containerd": true,
+	"/proc":                 true,
+	"/sys":                  true,
+	"/etc/kubernetes":       true,
+	"/var/run/docker.sock":  true,
+	"/var/run/crio":         true,
+	"/var/run/containerd":   true,
+}
+
+// validateContainerPaths checks all container lists (containers, initContainers,
+// ephemeralContainers) in a pod spec for security violations.
+func validateContainerPaths(spec map[string]any) error {
+	containerLists := []string{"containers", "initContainers", "ephemeralContainers"}
+	for _, listKey := range containerLists {
+		for _, cRaw := range typedSlice(spec, listKey) {
+			c, ok := cRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if err := validateContainerSecurity(c); err != nil {
+				return err
+			}
+			for _, vmRaw := range typedSlice(c, "volumeMounts") {
+				vm, ok := vmRaw.(map[string]any)
+				if !ok {
+					continue
+				}
+				// Check mountPath for sensitive directories.
+				mountPath, _ := vm["mountPath"].(string)
+				if sensitiveHostPaths[mountPath] {
+					return errDangerousMount
+				}
+				// Check subPath for directory traversal.
+				subPath, _ := vm["subPath"].(string)
+				if subPath != "" && (strings.Contains(subPath, "..") || strings.HasPrefix(subPath, "/")) {
+					return errDangerousSubPath
+				}
+				// Check subPathExpr similarly.
+				subPathExpr, _ := vm["subPathExpr"].(string)
+				if subPathExpr != "" && strings.Contains(subPathExpr, "..") {
+					return errDangerousSubPath
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validatePodSpec(spec map[string]any) error {
@@ -90,26 +150,9 @@ func validatePodSpec(spec map[string]any) error {
 		return errHostIPC
 	}
 
-	// Check containers for security and mount violations in one pass.
-	containers, _ := spec["containers"].([]any)
-	for _, cRaw := range containers {
-		c, ok := cRaw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if err := validateContainerSecurity(c); err != nil {
-			return err
-		}
-		for _, vmRaw := range typedSlice(c, "volumeMounts") {
-			vm, ok := vmRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			mountPath, _ := vm["mountPath"].(string)
-			if sensitiveHostPaths[mountPath] {
-				return errDangerousMount
-			}
-		}
+	// Check all container types (containers, initContainers, ephemeralContainers).
+	if err := validateContainerPaths(spec); err != nil {
+		return err
 	}
 
 	// Check hostPath volumes.
@@ -136,6 +179,14 @@ func validateContainerSecurity(container map[string]any) error {
 		return errPrivileged
 	}
 
+	// Check allowPrivilegeEscalation: must be explicitly false when set.
+	if v, ok := sc["allowPrivilegeEscalation"]; ok {
+		if b, ok := v.(bool); !ok || b {
+			return errPrivilegeEscalation
+		}
+	}
+
+	// Check dangerous capabilities.
 	caps, ok := sc["capabilities"].(map[string]any)
 	if !ok {
 		return nil
@@ -146,8 +197,14 @@ func validateContainerSecurity(container map[string]any) error {
 	}
 	for _, capRaw := range add {
 		capStr, ok := capRaw.(string)
-		if ok && capStr == "SYS_ADMIN" {
+		if !ok {
+			continue
+		}
+		if capStr == "SYS_ADMIN" {
 			return errSYSADMIN
+		}
+		if dangerousCapabilities[capStr] {
+			return errors.Errorf(errDangerousCapabilityFmt, capStr)
 		}
 	}
 

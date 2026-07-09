@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,6 +84,11 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 		return "", err
 	}
 
+	// Block patching of security-sensitive resources.
+	if res, ok := blocklistedResources[params.ApiGroup]; ok && res[params.Resource] {
+		return "", errors.Errorf("patching resources of type %q in API group %q is blocked for security reasons", params.Resource, params.ApiGroup)
+	}
+
 	c, err := t.dynamicClient(params.Cluster)
 	if err != nil {
 		return "", err
@@ -98,6 +104,32 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 	opts := metav1.PatchOptions{}
 	if params.DryRun {
 		opts.DryRun = []string{metav1.DryRunAll}
+	}
+
+	// Dry-run: fetch the existing resource for ownership check.
+	if params.DryRun {
+		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			ownership := safety.CheckOwnership(existing)
+			// Pre-fetch and attach ownership to the dry-run result below.
+			patched, patchErr := c.Resource(gvr).Namespace(params.Namespace).Patch(ctx, params.Name, patchType, []byte(params.Patch), opts)
+			if patchErr != nil {
+				return "", errors.Wrapf(patchErr, "failed to patch resource %s/%s of type %s.%s/%s (dry-run)", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+			}
+			unstructured.RemoveNestedField(patched.Object, "metadata", "managedFields")
+			dryRunResult := map[string]any{
+				"dryRun":       true,
+				"wouldPatchTo": patched.Object,
+			}
+			if ownership.IsManaged {
+				dryRunResult["ownership"] = ownership
+			}
+			data, err := json.Marshal(dryRunResult)
+			if err != nil {
+				return "", errors.Wrap(err, "failed to marshal dry-run result")
+			}
+			return string(data), nil
+		}
 	}
 
 	patched, err := c.Resource(gvr).Namespace(params.Namespace).Patch(ctx, params.Name, patchType, []byte(params.Patch), opts)
