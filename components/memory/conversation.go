@@ -1,6 +1,10 @@
 package memory
 
-import "github.com/cloudwego/eino/schema"
+import (
+	"github.com/goccy/go-json"
+
+	"github.com/cloudwego/eino/schema"
+)
 
 // SummaryMarkerKey is the key used in schema.Message.Extra to mark a message as a summary.
 const SummaryMarkerKey = "__eino_ext_memory_summary"
@@ -49,6 +53,12 @@ type Conversation interface {
 
 	// LastSummaryIndex returns the index of the last summary message, or -1 if none.
 	LastSummaryIndex() int
+
+	// GetActivities returns all stored activity events.
+	GetActivities() []json.RawMessage
+
+	// SetActivities replaces all stored activity events (batch write after run).
+	SetActivities(raw []json.RawMessage)
 }
 
 // LastSummaryIndex returns the index of the last summary message in msgs, or -1

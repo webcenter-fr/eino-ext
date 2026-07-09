@@ -45,6 +45,7 @@ type OpenSearchConversation struct {
 	UserID         string
 	ConversationID string
 	Messages       []*schema.Message
+	Activities     []json.RawMessage
 
 	client          opensearchv4.Client
 	indexName       string
@@ -57,6 +58,7 @@ type conversationDoc struct {
 	UserID         string            `json:"userId"`
 	ConversationID string            `json:"conversationId"`
 	Messages       []*schema.Message `json:"messages"`
+	Activities     []json.RawMessage `json:"activities"`
 	UpdatedAt      string            `json:"updatedAt"`
 }
 
@@ -69,6 +71,7 @@ func (c *OpenSearchConversation) toDoc() conversationDoc {
 		UserID:         c.UserID,
 		ConversationID: c.ConversationID,
 		Messages:       c.Messages,
+		Activities:     c.Activities,
 		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -155,6 +158,10 @@ func createIndex(ctx context.Context, client opensearchv4.Client, indexName stri
 					"type":    "object",
 					"dynamic": false,
 				},
+				"activities": map[string]any{
+					"type":    "object",
+					"dynamic": false,
+				},
 				"updatedAt": map[string]any{
 					"type": "date",
 				},
@@ -206,6 +213,9 @@ func (m *OpenSearchMemory) GetConversation(userID string, conversationID string,
 		}
 
 		conv := m.newConversation(userID, conversationID, doc.Messages)
+		if doc.Activities != nil {
+			conv.Activities = doc.Activities
+		}
 		m.conversations[userID][conversationID] = conv
 		return conv, nil
 	}
@@ -375,6 +385,19 @@ func (c *OpenSearchConversation) CountTokens() int {
 	return c.tokenCounter(window)
 }
 
+func (c *OpenSearchConversation) GetActivities() []json.RawMessage {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Activities
+}
+
+func (c *OpenSearchConversation) SetActivities(raw []json.RawMessage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Activities = raw
+	c.Save(nil)
+}
+
 // Load loads the conversation from OpenSearch, replacing the in-memory Messages slice.
 func (c *OpenSearchConversation) Load() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -404,6 +427,9 @@ func (c *OpenSearchConversation) Load() error {
 	}
 
 	c.Messages = doc.Messages
+	if doc.Activities != nil {
+		c.Activities = doc.Activities
+	}
 
 	return nil
 }

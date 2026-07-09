@@ -40,9 +40,10 @@ type FileMemory struct {
 type FileConversation struct {
 	mu sync.Mutex
 
-	UserId   string            `json:"userId"`
-	ID       string            `json:"id"`
-	Messages []*schema.Message `json:"messages"`
+	UserId     string            `json:"userId"`
+	ID         string            `json:"id"`
+	Messages   []*schema.Message `json:"messages"`
+	Activities []json.RawMessage `json:"-"`
 
 	filePath string
 
@@ -164,6 +165,7 @@ func (m *FileMemory) DeleteConversation(userId string, id string) error {
 	if err := os.Remove(filePath); err != nil {
 		return errors.Wrap(err, "failed to delete file")
 	}
+	os.Remove(filePath + ".activities")
 
 	delete(m.conversations[userId], id)
 	return nil
@@ -241,6 +243,31 @@ func (c *FileConversation) CountTokens() int {
 	return c.tokenCounter(window)
 }
 
+func (c *FileConversation) GetActivities() []json.RawMessage {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Activities
+}
+
+func (c *FileConversation) SetActivities(raw []json.RawMessage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Activities = raw
+	c.saveActivities()
+}
+
+func (c *FileConversation) activitiesPath() string {
+	return filepath.Dir(c.filePath) + "/" + filepath.Base(c.filePath) + ".activities"
+}
+
+func (c *FileConversation) saveActivities() {
+	data, err := json.Marshal(c.Activities)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(c.activitiesPath(), data, 0o644)
+}
+
 func (c *FileConversation) Load() error {
 	reader, err := os.Open(c.filePath)
 	if err != nil {
@@ -260,6 +287,16 @@ func (c *FileConversation) Load() error {
 
 	if err := scanner.Err(); err != nil {
 		return errors.Wrap(err, "scanner error")
+	}
+
+	data, err := os.ReadFile(c.activitiesPath())
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrap(err, "failed to read activities file")
+	}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &c.Activities); err != nil {
+			return errors.Wrap(err, "failed to unmarshal activities")
+		}
 	}
 
 	return nil
