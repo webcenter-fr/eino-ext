@@ -36,9 +36,18 @@ type Config struct {
 	// HTTPClient is an optional custom HTTP client. If nil, a default client
 	// with the configured Timeout and SSRF-safe transport is used.
 	// Useful for testing with custom transports (e.g. httptest.Server).
+	//
+	// CAVEAT: Setting a custom HTTPClient bypasses the built-in transport-level
+	// SSRF checks (DNS rebinding defense at dial time). When using a custom
+	// HTTPClient, ensure you implement equivalent SSRF protection in your own
+	// transport, or rely solely on the pre-flight checkSSRF hostname resolution.
 	HTTPClient *http.Client `json:"-" jsonschema:"-"`
 	// SkipSSRFCheck disables SSRF protection. Only set this for testing
 	// against local servers.
+	//
+	// CAVEAT: When SkipSSRFCheck is true, both the pre-flight hostname
+	// resolution check AND the dial-time transport check are disabled.
+	// Never enable this in production.
 	SkipSSRFCheck bool `jsonschema:"description=Disable SSRF protection, only for testing"`
 }
 

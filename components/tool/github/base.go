@@ -3,12 +3,44 @@ package github
 import (
 	"context"
 	"net/url"
+	"path/filepath"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/google/go-github/v71/github"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
+
+// systemDirs contains paths that must not be used as clone directories.
+var systemDirs = map[string]bool{
+	"/":     true,
+	"/etc":  true,
+	"/bin":  true,
+	"/usr":  true,
+	"/var":  true,
+	"/proc": true,
+	"/sys":  true,
+	"/dev":  true,
+	"/tmp":  true,
+}
+
+func validateCloneDir(cloneDir string) error {
+	if cloneDir == "" {
+		return errors.New("CloneDir is required")
+	}
+	if !filepath.IsAbs(cloneDir) {
+		return errors.Errorf("CloneDir must be an absolute path, got %q", cloneDir)
+	}
+	cleaned := filepath.Clean(cloneDir)
+	if systemDirs[cleaned] {
+		return errors.Errorf("CloneDir must not be a system directory, got %q", cleaned)
+	}
+	if strings.HasPrefix(cleaned, "/proc/") || strings.HasPrefix(cleaned, "/sys/") || strings.HasPrefix(cleaned, "/dev/") {
+		return errors.Errorf("CloneDir must not be under a system mount, got %q", cleaned)
+	}
+	return nil
+}
 
 // baseTool holds shared state for all GitHub tools.
 type baseTool struct {
@@ -57,6 +89,10 @@ func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 		}
 		tokens[name] = cfg.Token
 		baseURLs[name] = cfg.BaseURL
+	}
+
+	if err := validateCloneDir(cloneDir); err != nil {
+		return nil, err
 	}
 
 	clients, err := BuildClients(ctx, configs)

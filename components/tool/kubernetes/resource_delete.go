@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,6 +108,11 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 		return "", err
 	}
 
+	// Check namespace is allowed.
+	if err := t.checkNamespace(params.Cluster, params.Namespace); err != nil {
+		return "", err
+	}
+
 	// Block deletion of security-sensitive resources.
 	if res, ok := blocklistedResources[params.ApiGroup]; ok && res[params.Resource] {
 		return "", errors.Errorf("deleting resources of type %q in API group %q is blocked for security reasons", params.Resource, params.ApiGroup)
@@ -121,15 +127,22 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 
 	// Dry-run: fetch the resource and return what would be deleted.
 	if params.DryRun {
+		ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
+		defer cancel()
+
 		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr != nil {
 			return "", errors.Wrapf(getErr, "failed to fetch resource for dry-run %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
 		}
 		unstructured.RemoveNestedField(existing.Object, "metadata", "managedFields")
 
+		ownership := safety.CheckOwnership(existing)
 		dryRunResult := map[string]any{
 			"dryRun":      true,
 			"wouldDelete": existing.Object,
+		}
+		if ownership.IsManaged {
+			dryRunResult["ownership"] = ownership
 		}
 		data, err := json.Marshal(dryRunResult)
 		if err != nil {
@@ -145,6 +158,9 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 	if params.GracePeriodSeconds != nil {
 		opts.GracePeriodSeconds = params.GracePeriodSeconds
 	}
+
+	ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
+	defer cancel()
 
 	if err := c.Resource(gvr).Namespace(params.Namespace).Delete(ctx, params.Name, opts); err != nil {
 		return "", errors.Wrapf(err, "failed to delete resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)

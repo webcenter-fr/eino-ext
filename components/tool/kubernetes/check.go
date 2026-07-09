@@ -30,14 +30,14 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 	var all checkup.Results
 
 	for _, cluster := range clusters {
-		cfg := configs.GetConfig(cluster)
-		if cfg == nil {
+		cc := configs.GetConfig(cluster)
+		if cc == nil {
 			all = append(all, clientErrorResults(cluster, fmt.Errorf("nil config"))...)
 			continue
 		}
 
 		baseCtx, cancel := context.WithTimeout(ctx, kubeCheckTimeout)
-		c, err := NewClient(baseCtx, cfg, nil)
+		c, err := NewClient(baseCtx, cc.Config, nil)
 		if err != nil {
 			all = append(all, clientErrorResults(cluster, err)...)
 			cancel()

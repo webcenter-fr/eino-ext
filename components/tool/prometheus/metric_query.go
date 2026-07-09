@@ -3,6 +3,8 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"regexp"
 	"time"
 
 	"emperror.dev/errors"
@@ -45,6 +47,19 @@ type MetricQueryTool struct {
 func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
+	}
+
+	// Reject subqueries with ranges greater than 7 days to prevent
+	// excessive resource consumption on the Prometheus server.
+	subqueryLongRange := regexp.MustCompile(`\[(\d+[smhwdy])\s*\]`)
+	match := subqueryLongRange.FindAllStringSubmatch(params.Query, -1)
+	for _, m := range match {
+		if len(m) >= 2 {
+			d, parseErr := parsePromQLDuration(m[1])
+			if parseErr == nil && d > 7*24*time.Hour {
+				return "", errors.Errorf("subquery range %q exceeds 7 day limit", m[1])
+			}
+		}
 	}
 
 	re, err := filter.Compile(params.Filter)
@@ -110,4 +125,32 @@ func NewMetricQueryTool(ctx context.Context, configs Configs) (*MetricQueryTool,
 	queryTool.InvokableTool = t
 
 	return queryTool, nil
+}
+// parsePromQLDuration parses a single PromQL duration value (e.g. "1d", "2w",
+// "24h") and returns a Go time.Duration. Supports standard Go suffixes plus
+// PromQL-specific d (day) and w (week).
+func parsePromQLDuration(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, errors.New("empty duration")
+	}
+	// Standard Go duration suffixes: ns, us, ms, s, m, h.
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	// PromQL-specific: <number><unit> with no chaining.
+	unit := s[len(s)-1]
+	num, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid PromQL duration: %q", s)
+	}
+	switch unit {
+	case 'd':
+		return time.Duration(num) * 24 * time.Hour, nil
+	case 'w':
+		return time.Duration(num) * 7 * 24 * time.Hour, nil
+	case 'y':
+		return time.Duration(num) * 365 * 24 * time.Hour, nil
+	default:
+		return 0, errors.Errorf("unrecognized unit %q in PromQL duration: %q", string(unit), s)
+	}
 }

@@ -111,7 +111,7 @@ func doListConfigMap() test.TestStep[*corev1.ConfigMap] {
 			ctx := context.Background()
 
 			cmToolList, err := NewConfigMapListTool(ctx, Configs{
-				"test": cfg,
+				"test": &ClusterConfig{Config: cfg},
 			})
 			if err != nil {
 				return err
@@ -199,7 +199,7 @@ func doDescribeConfigMap() test.TestStep[*corev1.ConfigMap] {
 			}
 
 			cmToolDescribe, err := NewConfigMapDescribeTool(ctx, Configs{
-				"test": cfg,
+				"test": &ClusterConfig{Config: cfg},
 			})
 			if err != nil {
 				return err

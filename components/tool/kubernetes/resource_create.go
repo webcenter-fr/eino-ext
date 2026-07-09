@@ -70,6 +70,11 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		return "", err
 	}
 
+	// Check namespace is allowed.
+	if err := t.checkNamespace(params.Cluster, params.Namespace); err != nil {
+		return "", err
+	}
+
 	c, err := t.dynamicClient(params.Cluster)
 	if err != nil {
 		return "", err
@@ -92,12 +97,20 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		return "", errors.Errorf("creating resources of kind %q is blocked for security reasons", kind)
 	}
 
+	// Validate pod spec security for Pod/Job/CronJob kinds.
+	if err := validateManifestSecurity(obj); err != nil {
+		return "", errors.Wrap(err, "manifest security validation failed")
+	}
+
 	// Override namespace if provided (allows the LLM to specify it separately).
 	if params.Namespace != "" {
 		obj.SetNamespace(params.Namespace)
 	}
 
 	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
+
+	ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
+	defer cancel()
 
 	opts := metav1.CreateOptions{}
 	if params.DryRun {

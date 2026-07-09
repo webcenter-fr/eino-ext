@@ -78,6 +78,11 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 		return "", err
 	}
 
+	// Check namespace is allowed.
+	if err := t.checkNamespace(params.Cluster, params.Namespace); err != nil {
+		return "", err
+	}
+
 	c, err := t.dynamicClient(params.Cluster)
 	if err != nil {
 		return "", err
@@ -86,6 +91,9 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
 
 	patchType := mapPatchType(params.PatchType)
+
+	ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
+	defer cancel()
 
 	opts := metav1.PatchOptions{}
 	if params.DryRun {

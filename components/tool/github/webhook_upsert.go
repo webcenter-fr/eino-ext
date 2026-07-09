@@ -93,6 +93,7 @@ func (t *WebhookUpsertTool) Invoke(ctx context.Context, params *WebhookUpsertPar
 		if err != nil {
 			return "", errors.Wrap(err, "failed to update webhook")
 		}
+		params.Secret = ""
 		return fmt.Sprintf(`{"updated": true, "hook": {"id": %d, "url": %q, "events": %v, "active": %v}}`,
 			updated.GetID(), params.HookURL, updated.Events, updated.GetActive()), nil
 	}
@@ -101,7 +102,7 @@ func (t *WebhookUpsertTool) Invoke(ctx context.Context, params *WebhookUpsertPar
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create webhook")
 	}
-
+	params.Secret = ""
 	return fmt.Sprintf(`{"created": true, "hook": {"id": %d, "url": %q, "events": %v, "active": %v}}`,
 		created.GetID(), params.HookURL, created.Events, created.GetActive()), nil
 }
@@ -127,8 +128,25 @@ func validateWebhookURL(rawURL string) error {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 			return errors.Errorf("webhook URL must not point to private/loopback address: %s", host)
 		}
-		if ip.Equal(net.ParseIP("169.254.169.254")) {
-			return errors.Errorf("webhook URL must not point to metadata endpoint: %s", host)
+		ip4 := ip.To4()
+		if ip4 != nil && ip4[0] == 169 && ip4[1] == 254 {
+			return errors.Errorf("webhook URL must not point to link-local/metadata address: %s", host)
+		}
+	}
+
+	ips, lookupErr := net.LookupIP(host)
+	if lookupErr != nil {
+		// DNS resolution failed: the hostname is unresolvable and
+		// therefore harmless (no one can deliver webhooks to it).
+		return nil
+	}
+	for _, resolvedIP := range ips {
+		if resolvedIP.IsLoopback() || resolvedIP.IsPrivate() || resolvedIP.IsLinkLocalUnicast() || resolvedIP.IsLinkLocalMulticast() || resolvedIP.IsUnspecified() {
+			return errors.Errorf("webhook URL must not point to private/loopback address: %s (resolved from %s)", resolvedIP.String(), host)
+		}
+		ip4 := resolvedIP.To4()
+		if ip4 != nil && ip4[0] == 169 && ip4[1] == 254 {
+			return errors.Errorf("webhook URL must not point to link-local/metadata address: %s (resolved from %s)", resolvedIP.String(), host)
 		}
 	}
 

@@ -37,11 +37,11 @@ func NewClient(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c c
 func BuildClients(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]client.Client, err error) {
 	clients = make(map[string]client.Client)
 
-	for clusterName, config := range configs {
-		if config == nil {
+	for clusterName, cc := range configs {
+		if cc == nil {
 			return nil, errors.Errorf("config for cluster %q is nil", clusterName)
 		}
-		client, err := NewClient(ctx, config, s)
+		client, err := NewClient(ctx, cc.Config, s)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create client for cluster %s", clusterName)
 		}
@@ -59,9 +59,39 @@ func BuildClientsFromKubeconfig(ctx context.Context, configsWithKubeconfigPath m
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to build config for cluster %s", clusterName)
 		}
-		configs[clusterName] = config
+		configs[clusterName] = &ClusterConfig{Config: config}
 	}
 	return BuildClients(ctx, configs, s)
+}
+
+// BuildClientSets creates Kubernetes clientsets for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes clientsets, or an error if any clientset creation fails.
+func BuildClientSets(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]*kubernetes.Clientset, err error) {
+	clients = make(map[string]*kubernetes.Clientset)
+
+	for clusterName, cc := range configs {
+		client, err := NewClientSet(ctx, cc.Config, s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create clientset for cluster %s", clusterName)
+		}
+		clients[clusterName] = client
+	}
+
+	return clients, nil
+}
+
+// BuildClientDynamics creates Kubernetes dynamic clients for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes dynamic clients, or an error if any client creation fails.
+func BuildClientDynamics(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]dynamic.Interface, err error) {
+	clients = make(map[string]dynamic.Interface)
+
+	for clusterName, cc := range configs {
+		client, err := NewClientDynamic(ctx, cc.Config, s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create dynamic client for cluster %s", clusterName)
+		}
+		clients[clusterName] = client
+	}
+
+	return clients, nil
 }
 
 // NewClientSet creates a new Kubernetes clientset using the provided configuration. It returns the clientset and any error encountered during the creation process.
@@ -80,21 +110,6 @@ func NewClientSet(ctx context.Context, config *rest.Config, s *runtime.Scheme) (
 	return c, nil
 }
 
-// BuildClientSets creates Kubernetes clientsets for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes clientsets, or an error if any clientset creation fails.
-func BuildClientSets(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]*kubernetes.Clientset, err error) {
-	clients = make(map[string]*kubernetes.Clientset)
-
-	for clusterName, config := range configs {
-		client, err := NewClientSet(ctx, config, s)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create clientset for cluster %s", clusterName)
-		}
-		clients[clusterName] = client
-	}
-
-	return clients, nil
-}
-
 // NewClientDynamic creates a new Kubernetes dynamic client using the provided configuration. It returns the dynamic client and any error encountered during the creation process.
 func NewClientDynamic(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c dynamic.Interface, err error) {
 
@@ -109,19 +124,4 @@ func NewClientDynamic(ctx context.Context, config *rest.Config, s *runtime.Schem
 	}
 
 	return c, nil
-}
-
-// BuildClientDynamic creates Kubernetes dynamic clients for all configurations present in the Configs map. It returns a map of cluster names to their corresponding Kubernetes dynamic clients, or an error if any client creation fails.
-func BuildClientDynamics(ctx context.Context, configs Configs, s *runtime.Scheme) (clients map[string]dynamic.Interface, err error) {
-	clients = make(map[string]dynamic.Interface)
-
-	for clusterName, config := range configs {
-		client, err := NewClientDynamic(ctx, config, s)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create dynamic client for cluster %s", clusterName)
-		}
-		clients[clusterName] = client
-	}
-
-	return clients, nil
 }

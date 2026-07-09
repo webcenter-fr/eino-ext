@@ -59,9 +59,10 @@ type PodExecTool struct {
 	blocklist  []*regexp.Regexp
 }
 
-// defaultBlocklist contains regex patterns for destructive commands that are always blocked.
-// Uses word boundaries to catch variations like /bin/rm, ./rm, etc.
-var defaultBlocklist = []string{
+// DefaultBlocklist contains regex patterns for destructive commands that are
+// blocked by default. Users may copy and extend this list when building custom
+// blocklists.
+var DefaultBlocklist = []string{
 	`\brm\b`,
 	`\brmdir\b`,
 	`\bkill\b`,
@@ -88,8 +89,7 @@ var defaultBlocklist = []string{
 	`\bsystemctl\s+disable\b`,
 	`\bsystemctl\s+mask\b`,
 	`>.*/dev/`,
-	// Shell interpreters that can be used to bypass the blocklist by
-	// passing destructive commands as arguments (e.g. sh -c "rm -rf /").
+	// Shell/script bypass vectors
 	`\b(?:/usr/bin/|/bin/)?(?:ba|da|z)?sh\b`,
 	`\b(?:/usr/bin/|/bin/)?(?:ba|da|z)?sh\s+-c\b`,
 	`\b(?:/usr/bin/|/bin/)?python(?:3)?\s+-c\b`,
@@ -101,6 +101,23 @@ var defaultBlocklist = []string{
 	`\b(?:/usr/bin/|/bin/)?env\s+`,
 	`\b(?:/usr/bin/|/bin/)?busybox\b`,
 	`\b(?:/usr/bin/|/bin/)?toybox\b`,
+	// Extended blocklist: additional escape vectors
+	`\beval\b`,
+	`\bsource\b`,
+	`^\s*\.\s+`,
+	`\bg?awk\b`,
+	`\bnawk\b`,
+	`\btar\s+.*--to-command`,
+	`\bxargs\b`,
+	`\binstall\b`,
+	`\bcpio\b`,
+	`\bscreen\b`,
+	`\btmux\b`,
+	`\bscript\b`,
+	`\bexpect\b`,
+	`\btee\b`,
+	`\b(?:/usr/bin/|/bin/)?execlineb\b`,
+	`\bopenssl\s+enc\b`,
 }
 
 func compileBlocklist(patterns []string) ([]*regexp.Regexp, error) {
@@ -149,6 +166,11 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 		return "", err
 	}
 
+	// Check namespace is allowed.
+	if err := t.base.checkNamespace(params.Cluster, params.Namespace); err != nil {
+		return "", err
+	}
+
 	// Dry-run: return a preview without executing.
 	if params.DryRun {
 		return t.dryRunPreview(params), nil
@@ -194,6 +216,9 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 		return "", errors.Wrap(err, "failed to create SPDY executor")
 	}
 
+	ctx, cancel := withTimeout(ctx, defaultExecTimeout)
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
 	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  nil,
@@ -230,6 +255,11 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		return nil, err
 	}
 	if err := t.checkBlocklist(params.Command); err != nil {
+		return nil, err
+	}
+
+	// Check namespace is allowed.
+	if err := t.base.checkNamespace(params.Cluster, params.Namespace); err != nil {
 		return nil, err
 	}
 
@@ -281,11 +311,14 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		return nil, errors.Wrap(err, "failed to create SPDY executor")
 	}
 
+	execCtx, cancel := withTimeout(ctx, defaultExecTimeout)
+	defer cancel()
+
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 
 	go func() {
-		execErr := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		execErr := exec.StreamWithContext(execCtx, remotecommand.StreamOptions{
 			Stdin:  nil,
 			Stdout: stdoutW,
 			Stderr: stderrW,
@@ -351,17 +384,18 @@ func NewPodExecTool(ctx context.Context, configs Configs) (*PodExecTool, error) 
 		return nil, err
 	}
 
-	bl, err := compileBlocklist(defaultBlocklist)
+	bl, err := compileBlocklist(DefaultBlocklist)
 	if err != nil {
 		return nil, err
 	}
 
 	podExecTool := &PodExecTool{
 		base: &baseTool{
-			configs:       configs,
-			clientsets:    clientsets,
-			clients:       make(map[string]client.Client),
-			knownClusters: configs.GetClusterNames(),
+			configs:              configs,
+			clientsets:           clientsets,
+			clients:              make(map[string]client.Client),
+			knownClusters:        configs.GetClusterNames(),
+			disallowedNamespaces: buildDisallowedNamespaces(configs),
 		},
 		blocklist: bl,
 	}
