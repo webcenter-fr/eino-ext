@@ -12,7 +12,7 @@ require (
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17
 	github.com/cloudwego/hertz v0.10.5
-	github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313
+	github.com/disaster37/goargocdclient v0.0.0-20260709160934-4ff5a1a76b16
 	github.com/disaster37/opensearch/v4 v4.0.0-7
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
 	github.com/eino-contrib/jsonschema v1.0.3

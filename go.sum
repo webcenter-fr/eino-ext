@@ -89,6 +89,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313 h1:mahRYkkpIKjMvceNgJZviJUqB9kiGEnW2VoJJKKn8nk=
 github.com/disaster37/goargocdclient v0.0.0-20260701133839-5920a4276313/go.mod h1:LpDhXR4manwbarSAaIP0zxdkjIlYcc4BM6j1Wa0bxwE=
+github.com/disaster37/goargocdclient v0.0.0-20260709160934-4ff5a1a76b16 h1:h/Ao2a4gRHdDWgkp7U5yZiVRFzl27eK5Jrff8tiYxzg=
+github.com/disaster37/goargocdclient v0.0.0-20260709160934-4ff5a1a76b16/go.mod h1:LpDhXR4manwbarSAaIP0zxdkjIlYcc4BM6j1Wa0bxwE=
 github.com/disaster37/k8s-objectmatcher v1.8.8 h1:W6BN4Rkx2NCWOZaWGGEHjE3xaN6ur6mwL/V7wK9jf5Y=
 github.com/disaster37/k8s-objectmatcher v1.8.8/go.mod h1:2nRtPBxwgkwCBjerqlRF4oV9pqAVC1bxtl6Y4/iAt3U=
 github.com/disaster37/opensearch/v4 v4.0.0-7 h1:OzefzQkY166+E6RQA0+qwVG++LK+Q6/FvL/TQ6hN1vY=
