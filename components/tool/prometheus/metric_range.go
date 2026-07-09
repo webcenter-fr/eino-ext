@@ -32,7 +32,7 @@ data points are returned per series.
 
 type MetricRangeParams struct {
 	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
-	Query      string `json:"query" validate:"required" jsonschema:"(required) The PromQL query to execute."`
+	Query      string `json:"query" validate:"required,max=4096" jsonschema:"(required) The PromQL query to execute."`
 	Start      string `json:"start" validate:"required" jsonschema:"(required) The start time in RFC3339 format (e.g. 2024-01-01T00:00:00Z)."`
 	End        string `json:"end" validate:"required" jsonschema:"(required) The end time in RFC3339 format (e.g. 2024-01-01T01:00:00Z)."`
 	Step       string `json:"step" validate:"required" jsonschema:"(required) The query resolution step width as a duration string (e.g. '15s', '1m', '1h')."`
@@ -81,6 +81,12 @@ func (t *MetricRangeTool) Invoke(ctx context.Context, params *MetricRangeParams)
 	step, err := time.ParseDuration(params.Step)
 	if err != nil {
 		return "", errors.Wrap(err, "invalid step format, must be a Go duration string (e.g. '15s', '1m', '1h')")
+	}
+	if step < 15*time.Second {
+		return "", errors.New("step must be at least 15 seconds to avoid excessive load")
+	}
+	if end.Sub(start) > 7*24*time.Hour {
+		return "", errors.New("time window must not exceed 7 days to avoid excessive load")
 	}
 
 	value, _, err := c.QueryRange(ctx, params.Query, promapi.Range{

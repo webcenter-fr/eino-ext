@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -70,6 +71,9 @@ func (cfg *SearchConfig) applySearchDefaults() {
 		cfg.MaxResults = defaultSearchMaxResults
 	}
 }
+
+// indexNamePattern matches valid OpenSearch index names (alphanumeric, dash, underscore, dot).
+var indexNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // SearchParams defines the parameters for a single search invocation.
 type SearchParams struct {
@@ -457,6 +461,11 @@ func (t *SearchTool) Invoke(ctx context.Context, params *SearchParams) (result s
 	if err := validate.Struct(params); err != nil {
 		return "", err
 	}
+	for _, idx := range params.Indices {
+		if !indexNamePattern.MatchString(idx) {
+			return "", errors.Errorf("invalid index name %q: must match pattern %s", idx, indexNamePattern.String())
+		}
+	}
 
 	var allLines []string
 	total, err := t.pitScroll(ctx, params, params.MaxResults, func(batchHits []*querydsl.SearchHit) error {
@@ -486,6 +495,11 @@ func (t *SearchTool) InvokeAsStream(ctx context.Context, params *SearchParams) (
 	params.applyDefaults(&t.config)
 	if err := validate.Struct(params); err != nil {
 		return nil, err
+	}
+	for _, idx := range params.Indices {
+		if !indexNamePattern.MatchString(idx) {
+			return nil, errors.Errorf("invalid index name %q: must match pattern %s", idx, indexNamePattern.String())
+		}
 	}
 
 	sr, sw := schema.Pipe[string](100)

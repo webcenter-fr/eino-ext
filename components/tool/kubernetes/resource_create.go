@@ -13,6 +13,20 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+// blocklistedKinds contains Kubernetes resource kinds that must not be created
+// via the dynamic resource tools due to their security impact.
+var blocklistedKinds = map[string]bool{
+	"ClusterRole":        true,
+	"ClusterRoleBinding": true,
+	"Namespace":          true,
+	"NetworkPolicy":      true,
+	"PodSecurityPolicy":  true,
+	"PriorityClass":      true,
+	"ValidatingWebhookConfiguration": true,
+	"MutatingWebhookConfiguration":   true,
+	"RuntimeClass":                   true,
+}
+
 const resourceCreateDescription = `
 ** General Purpose **
 It creates any Kubernetes resource from a JSON manifest using the dynamic client.
@@ -70,6 +84,12 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 	// Validate required manifest fields.
 	if obj.GetAPIVersion() == "" || obj.GetKind() == "" || obj.GetName() == "" {
 		return "", errors.New("manifest must include apiVersion, kind, and metadata.name")
+	}
+
+	// Block creation of security-sensitive resource kinds.
+	kind := obj.GetKind()
+	if blocklistedKinds[kind] {
+		return "", errors.Errorf("creating resources of kind %q is blocked for security reasons", kind)
 	}
 
 	// Override namespace if provided (allows the LLM to specify it separately).

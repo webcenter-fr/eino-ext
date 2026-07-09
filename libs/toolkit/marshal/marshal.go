@@ -1,8 +1,6 @@
 package marshal
 
 import (
-	"fmt"
-
 	"emperror.dev/errors"
 	"github.com/goccy/go-json"
 )
@@ -10,7 +8,7 @@ import (
 func MustMarshal(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("marshal.MustMarshal(%T): %v", v, err))
+		return []byte(errors.Wrapf(err, "marshal.MustMarshal(%T)", v).Error())
 	}
 	return b
 }

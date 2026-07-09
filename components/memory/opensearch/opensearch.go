@@ -320,7 +320,7 @@ func (c *OpenSearchConversation) Append(msg *schema.Message) {
 
 	c.Messages = append(c.Messages, msg)
 
-	c.Save(msg)
+	_ = c.Save(msg)
 }
 
 // GetFullMessages returns all messages in the conversation.
@@ -395,7 +395,7 @@ func (c *OpenSearchConversation) SetActivities(raw []json.RawMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Activities = raw
-	c.Save(nil)
+	_ = c.Save(nil)
 }
 
 // Load loads the conversation from OpenSearch, replacing the in-memory Messages slice.

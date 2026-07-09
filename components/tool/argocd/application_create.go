@@ -90,7 +90,7 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": %s}`, string(data)), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

@@ -26,7 +26,7 @@ It returns a JSON array of objects, where each object represents a single time s
 
 type MetricQueryParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
-	Query    string `json:"query" validate:"required" jsonschema:"(required) The PromQL query to execute."`
+	Query    string `json:"query" validate:"required,max=4096" jsonschema:"(required) The PromQL query to execute."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each result JSON. Keep only results that match. Example: 'node_cpu.*|node_memory.*'. Invalid regex returns an error."`
 	Time     string `json:"time,omitempty" jsonschema:"(optional) The evaluation time in RFC3339 format. Defaults to now."`
 	Limit    int    `json:"limit,omitempty" validate:"omitempty,min=1,max=50000" jsonschema:"(optional) Maximum number of result series to return. Default is no limit."`

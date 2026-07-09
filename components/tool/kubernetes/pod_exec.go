@@ -88,6 +88,19 @@ var defaultBlocklist = []string{
 	`\bsystemctl\s+disable\b`,
 	`\bsystemctl\s+mask\b`,
 	`>.*/dev/`,
+	// Shell interpreters that can be used to bypass the blocklist by
+	// passing destructive commands as arguments (e.g. sh -c "rm -rf /").
+	`\b(?:/usr/bin/|/bin/)?(?:ba|da|z)?sh\b`,
+	`\b(?:/usr/bin/|/bin/)?(?:ba|da|z)?sh\s+-c\b`,
+	`\b(?:/usr/bin/|/bin/)?python(?:3)?\s+-c\b`,
+	`\b(?:/usr/bin/|/bin/)?python(?:3)?\s+-m\b`,
+	`\b(?:/usr/bin/|/bin/)?perl\s+-e\b`,
+	`\b(?:/usr/bin/|/bin/)?ruby\s+-e\b`,
+	`\b(?:/usr/bin/|/bin/)?node\s+-e\b`,
+	`\b(?:/usr/bin/|/bin/)?php\s+-r\b`,
+	`\b(?:/usr/bin/|/bin/)?env\s+`,
+	`\b(?:/usr/bin/|/bin/)?busybox\b`,
+	`\b(?:/usr/bin/|/bin/)?toybox\b`,
 }
 
 func compileBlocklist(patterns []string) ([]*regexp.Regexp, error) {

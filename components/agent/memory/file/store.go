@@ -41,7 +41,7 @@ func NewStore(cfg Config) (*Store, error) {
 	if cfg.Dir == "" {
 		cfg.Dir = "/tmp/eino/memory-agent"
 	}
-	if err := os.MkdirAll(cfg.Dir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create memory dir")
 	}
 	s := &Store{
@@ -60,7 +60,7 @@ func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	f, err := os.OpenFile(s.filePath(), os.O_RDONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile(s.filePath(), os.O_RDONLY|os.O_CREATE, 0640)
 	if err != nil {
 		return errors.Wrap(err, "open memories file")
 	}
@@ -86,7 +86,7 @@ func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.O
 	defer s.mu.Unlock()
 
 	ids := make([]string, 0, len(docs))
-	f, err := os.OpenFile(s.filePath(), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile(s.filePath(), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0640)
 	if err != nil {
 		return nil, errors.Wrap(err, "open memories file for append")
 	}
@@ -231,7 +231,7 @@ func (s *Store) rewriteLocked() error {
 			continue
 		}
 		if err := enc.Encode(entry); err != nil {
-			f.Close()
+			_ = f.Close()
 			return errors.Wrap(err, "encode entry on rewrite")
 		}
 		newOrder = append(newOrder, id)

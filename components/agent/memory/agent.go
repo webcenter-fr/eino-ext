@@ -383,9 +383,9 @@ func (a *MemoryAgent) compactSessionMemories(ctx context.Context, docs []*schema
 			}
 		} else {
 			// Simple fallback: store first doc as merged, delete rest.
-			a.store.Store(ctx, group[:1])
+			_, _ = a.store.Store(ctx, group[:1])
 			for _, d := range group[1:] {
-				a.store.Delete(ctx, d.ID)
+				_ = a.store.Delete(ctx, d.ID)
 			}
 		}
 	}

@@ -80,6 +80,11 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		return "", errors.New("manifest must include apiVersion, kind, and metadata.name")
 	}
 
+	// Block apply of security-sensitive resource kinds.
+	if blocklistedKinds[obj.GetKind()] {
+		return "", errors.Errorf("applying resources of kind %q is blocked for security reasons", obj.GetKind())
+	}
+
 	// Override namespace if provided.
 	if params.Namespace != "" {
 		obj.SetNamespace(params.Namespace)

@@ -61,9 +61,15 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 
 	if cfg.GitHubToken == "" {
 		cfg.GitHubToken = os.Getenv("GITHUB_TOKEN")
+		if cfg.GitHubToken != "" {
+			return nil, errors.New("copilot: GitHubToken is empty but GITHUB_TOKEN env var is set — pass GitHubToken explicitly to confirm intent")
+		}
 	}
 	if cfg.CopilotToken == "" {
 		cfg.CopilotToken = os.Getenv("GITHUB_COPILOT_TOKEN")
+		if cfg.CopilotToken != "" {
+			return nil, errors.New("copilot: CopilotToken is empty but GITHUB_COPILOT_TOKEN env var is set — pass CopilotToken explicitly to confirm intent")
+		}
 	}
 	if cfg.EnterpriseURL == "" {
 		cfg.EnterpriseURL = os.Getenv("GITHUB_COPILOT_ENTERPRISE_URL")

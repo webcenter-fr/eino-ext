@@ -40,7 +40,7 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 

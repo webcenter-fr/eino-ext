@@ -17,6 +17,7 @@ import (
 const (
 	ddgHTMLURL = "https://html.duckduckgo.com/html/"
 	ddgLiteURL = "https://lite.duckduckgo.com/lite/"
+	maxQueryLen = 500
 )
 
 // SearchResult represents a single web search result.
@@ -58,6 +59,9 @@ func warmUpDDG(ctx context.Context, client *http.Client, ua string) {
 
 // search performs a DuckDuckGo HTML search with retry and fallback.
 func search(ctx context.Context, query string, cfg Config) ([]SearchResult, error) {
+	if len(query) > maxQueryLen {
+		return nil, fmt.Errorf("search query exceeds maximum length of %d characters", maxQueryLen)
+	}
 	client := getHTTPClient(&cfg)
 
 	// Best-effort warm-up to obtain session cookies before searching.
@@ -166,7 +170,7 @@ func doSearchRequest(ctx context.Context, urlStr string, client *http.Client, ua
 	if resp.StatusCode == http.StatusAccepted ||
 		resp.StatusCode == http.StatusForbidden ||
 		resp.StatusCode == http.StatusTooManyRequests {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("search request received status %d (retryable)", resp.StatusCode)
 	}
 

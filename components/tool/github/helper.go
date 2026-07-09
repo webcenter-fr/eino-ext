@@ -46,10 +46,19 @@ func clonePath(cloneDir, owner, repo string) string {
 
 // sanitizeSegment ensures a path segment does not contain path traversal characters.
 func sanitizeSegment(s string) string {
-	s = strings.ReplaceAll(s, "..", "")
+	s = strings.ReplaceAll(s, "\x00", "")
 	s = strings.ReplaceAll(s, "/", "_")
 	s = strings.ReplaceAll(s, "\\", "_")
-	if s == "" {
+	for strings.Contains(s, "..") {
+		s = strings.ReplaceAll(s, "..", "")
+	}
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	if s == "" || s == "." {
 		s = "repo"
 	}
 	return s

@@ -2,11 +2,11 @@ package copilot
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -110,7 +110,7 @@ func startTokenRefresh(
 			case <-time.After(sleepDuration):
 			}
 
-			newResp, err := exchangeGitHubToken(context.Background(), cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
+			newResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
 			if err == nil {
 				currentToken = newResp.Token
 				currentExpiresAt = newResp.ExpiresAt
@@ -122,7 +122,7 @@ func startTokenRefresh(
 
 			backoffSecs := backoffInitialSecs
 			for {
-				jitter := time.Duration(rand.Intn(backoffJitterSecs*2)-backoffJitterSecs) * time.Second
+				jitter := time.Duration(cryptoRandIntn(backoffJitterSecs*2)-backoffJitterSecs) * time.Second
 				select {
 				case <-ctx.Done():
 					return
@@ -163,13 +163,15 @@ func ResolveBaseURL(enterpriseURL string) string {
 	return defaultCopilotBase
 }
 
-func insecureHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+func cryptoRandIntn(n int) int {
+	if n <= 0 {
+		return 0
 	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return n / 2
+	}
+	return int(binary.LittleEndian.Uint64(b[:]) % uint64(n))
 }
 
 type copilotLockedToken struct {

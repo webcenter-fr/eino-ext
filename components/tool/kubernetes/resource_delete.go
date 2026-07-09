@@ -13,6 +13,34 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// blocklistedResources maps (apiGroup, resourcePlural) combinations that must not be
+// deleted due to their security impact.
+var blocklistedResources = map[string]map[string]bool{
+	"rbac.authorization.k8s.io": {
+		"clusterroles":        true,
+		"clusterrolebindings": true,
+	},
+	"": {
+		"namespaces": true,
+	},
+	"networking.k8s.io": {
+		"networkpolicies": true,
+	},
+	"policy": {
+		"podsecuritypolicies": true,
+	},
+	"scheduling.k8s.io": {
+		"priorityclasses": true,
+	},
+	"admissionregistration.k8s.io": {
+		"validatingwebhookconfigurations": true,
+		"mutatingwebhookconfigurations": true,
+	},
+	"node.k8s.io": {
+		"runtimeclasses": true,
+	},
+}
+
 const resourceDeleteDescription = `
 ** General Purpose **
 It deletes any Kubernetes resource by GVR and name.
@@ -77,6 +105,11 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 	// Enforce safety gate: require confirmation for non-dry-run operations.
 	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
 		return "", err
+	}
+
+	// Block deletion of security-sensitive resources.
+	if res, ok := blocklistedResources[params.ApiGroup]; ok && res[params.Resource] {
+		return "", errors.Errorf("deleting resources of type %q in API group %q is blocked for security reasons", params.Resource, params.ApiGroup)
 	}
 
 	c, err := t.dynamicClient(params.Cluster)

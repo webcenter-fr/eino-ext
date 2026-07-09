@@ -65,7 +65,7 @@ func NewFileMemory(cfg FileMemoryConfig) (memory.Memory, error) {
 	if err := validate.Struct(&cfg); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.Dir, 0o750); err != nil {
 		return nil, errors.Wrap(err, "failed to create memory directory")
 	}
 
@@ -92,7 +92,7 @@ func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist 
 	_, ok := m.conversations[userId]
 	if !ok {
 		if _, err := os.Stat(filepath.Dir(filePath)); os.IsNotExist(err) {
-			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(filePath), 0o750); err != nil {
 				return nil, errors.Wrap(err, "failed to create directory for conversation")
 			}
 		}
@@ -103,7 +103,7 @@ func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist 
 	if !ok {
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			if createIfNotExist {
-				if err := os.WriteFile(filePath, []byte(""), 0o644); err != nil {
+				if err := os.WriteFile(filePath, []byte(""), 0o600); err != nil {
 					return nil, errors.Wrap(err, "failed to create file for conversation")
 				}
 				if _, ok := m.conversations[userId]; !ok {
@@ -130,7 +130,7 @@ func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist 
 			tokenCounter:    m.tokenCounter,
 			maxWindowTokens: m.maxWindowTokens,
 		}
-		con.Load()
+		_ = con.Load()
 		m.conversations[userId][id] = con
 	}
 
@@ -165,7 +165,7 @@ func (m *FileMemory) DeleteConversation(userId string, id string) error {
 	if err := os.Remove(filePath); err != nil {
 		return errors.Wrap(err, "failed to delete file")
 	}
-	os.Remove(filePath + ".activities")
+	_ = os.Remove(filePath + ".activities")
 
 	delete(m.conversations[userId], id)
 	return nil
@@ -177,7 +177,7 @@ func (c *FileConversation) Append(msg *schema.Message) {
 
 	c.Messages = append(c.Messages, msg)
 
-	c.Save(msg)
+	_ = c.Save(msg)
 }
 
 func (c *FileConversation) GetFullMessages() []*schema.Message {
@@ -265,7 +265,7 @@ func (c *FileConversation) saveActivities() {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(c.activitiesPath(), data, 0o644)
+	_ = os.WriteFile(c.activitiesPath(), data, 0o600)
 }
 
 func (c *FileConversation) Load() error {
@@ -306,7 +306,7 @@ func (c *FileConversation) Save(msg *schema.Message) error {
 	str, _ := json.Marshal(msg)
 
 	// Append to file
-	f, err := os.OpenFile(c.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(c.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return errors.Wrap(err, "failed to open message file")
 	}

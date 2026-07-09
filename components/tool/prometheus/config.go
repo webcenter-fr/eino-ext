@@ -10,11 +10,11 @@ type Config struct {
 	// Address is the Prometheus server URL (e.g. "http://localhost:9090").
 	Address string `validate:"required" jsonschema:"description=Prometheus server URL, e.g. http://localhost:9090"`
 	// Username is the optional username for basic auth.
-	Username string
+	Username string `json:"-"`
 	// Password is the optional password for basic auth.
-	Password string
+	Password string `json:"-"`
 	// BearerToken is the optional bearer token for authentication.
-	BearerToken string
+	BearerToken string `json:"-"`
 	// TLSSkipVerify disables TLS certificate verification.
 	TLSSkipVerify bool
 }

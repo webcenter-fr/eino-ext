@@ -20,22 +20,33 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRGetTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newOrgRepoListTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoSearchTool(ctx, b) },
+	// Clone repo is the read action. It clone repo on local temporary storage
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoCloneTool(ctx, b) },
 }
 
 // writeConstructors lists all write/destructive GitHub tools.
 var writeConstructors = []toolConstructor{
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoCloneTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newBranchCreateTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newReleaseCreateTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newReleaseCreateTool(ctx, b)
+	},
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newIssueCreateTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newIssueCommentTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRCreateTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRCommentTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRReviewTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRSuggestChangeTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRRequestReviewersTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoSettingsUpdateTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newWebhookUpsertTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newPRSuggestChangeTool(ctx, b)
+	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newPRRequestReviewersTool(ctx, b)
+	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newRepoSettingsUpdateTool(ctx, b)
+	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newWebhookUpsertTool(ctx, b)
+	},
 }
 
 // buildTools creates tools from the given constructors, sharing a single baseTool.

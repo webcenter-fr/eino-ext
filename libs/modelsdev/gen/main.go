@@ -32,7 +32,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("gen: reading response body: %v", err)
 	}
-	if err := os.WriteFile(*out, body, 0o644); err != nil {
+	if err := os.WriteFile(*out, body, 0o600); err != nil {
 		log.Fatalf("gen: writing %s: %v", *out, err)
 	}
 	log.Printf("gen: wrote %d bytes to %s", len(body), *out)
