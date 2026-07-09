@@ -104,6 +104,7 @@ func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 	}
 
 	ret, err := retrieveropensearch.NewRetriever(ctx, &retrieveropensearch.Config{
+		Index:          cfg.IndexName,
 		URLs:           cfg.URLs,
 		Username:       cfg.Username,
 		Password:       cfg.Password,
