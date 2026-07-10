@@ -582,6 +582,8 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 		return nil, errors.Wrap(err, "copilot: failed to marshal request")
 	}
 
+	m.logger.Debugf("copilot: sending %d-byte chat request (model=%s, msgs=%d, tools=%d)", len(payload), body.Model, len(body.Messages), len(body.Tools))
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to create request")
@@ -602,7 +604,9 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, redactErrorBody(respBody))
+		bodyPreview := redactErrorBody(respBody)
+		m.logger.Errorf("copilot: %d-byte chat request failed with %d: %s (model=%s, msgs=%d, tools=%d)", len(payload), resp.StatusCode, bodyPreview, body.Model, len(body.Messages), len(body.Tools))
+		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, bodyPreview)
 	}
 	return respBody, nil
 }
