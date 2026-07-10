@@ -30,6 +30,7 @@ import (
 	ollama "github.com/cloudwego/eino-ext/components/model/ollama"
 	openai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/sirupsen/logrus"
 	copilot "github.com/webcenter-fr/eino-ext/components/model/copilot"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"k8s.io/utils/ptr"
@@ -131,6 +132,12 @@ type Config struct {
 	// When set, the copilot package logs a warning at construction time and on
 	// every call for any model that would have used /responses.
 	ForceChatCompletions bool `validate:"omitempty" jsonschema:"description=Force /chat/completions endpoint for github-copilot even for models that would use /responses"`
+
+	// Logger is an optional *logrus.Entry passed through to the underlying
+	// provider. When nil, providers use their own default (which may be a
+	// discard logger). Inject a logger to receive structured diagnostics
+	// (e.g. copilot ForceChatCompletions routing decisions).
+	Logger *logrus.Entry `validate:"omitempty" jsonschema:"-"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
@@ -196,6 +203,7 @@ func newCopilot(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, e
 		TLSSkipVerify:         cfg.TLSSkipVerify,
 		Model:                 cfg.Model,
 		ForceChatCompletions:  cfg.ForceChatCompletions,
+		Logger:                cfg.Logger,
 	}
 
 	if cfg.Temperature > 0 {
