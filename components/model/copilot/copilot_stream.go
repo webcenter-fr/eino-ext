@@ -13,6 +13,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/sirupsen/logrus"
 )
 
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
@@ -62,7 +63,7 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 		defer resp.Body.Close()
 		defer sw.Close()
 
-		if err := streamEvents(ctx, resp.Body, sw); err != nil {
+		if err := streamEvents(ctx, resp.Body, sw, m.logger); err != nil {
 			sw.Send(nil, err)
 		}
 	}()
@@ -70,11 +71,12 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 	return sr, nil
 }
 
-func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*schema.Message]) error {
+func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*schema.Message], logger *logrus.Entry) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
 	var toolAccum map[int]*toolCallAccumState
+	sawUsage := false
 
 	for scanner.Scan() {
 		select {
@@ -103,6 +105,9 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 				}
 				sw.Send(msg, nil)
 			}
+			if !sawUsage && logger != nil {
+				logger.Debug("copilot: stream completed without a usage chunk — the gateway may not honor stream_options.include_usage; token/cost tracking will show 0 for this call")
+			}
 			return nil
 		}
 
@@ -114,6 +119,10 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 		// Emit usage when the chunk carries it (stream_options.include_usage
 		// usage-only final chunk typically has empty Choices).
 		if chunk.Usage != nil {
+			sawUsage = true
+			if logger != nil {
+				logger.Debugf("copilot: stream usage chunk received (prompt=%d completion=%d total=%d)", chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens, chunk.Usage.TotalTokens)
+			}
 			sw.Send(&schema.Message{
 				Role: schema.Assistant,
 				ResponseMeta: &schema.ResponseMeta{

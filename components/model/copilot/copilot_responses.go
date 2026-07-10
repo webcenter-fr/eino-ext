@@ -479,6 +479,8 @@ func (m *CopilotModel) sendResponsesRequest(ctx context.Context, body responsesR
 			return nil, err
 		}
 		m.logger.Warnf("copilot: model %q not available on responses attempt %d: %v", body.Model, attempt, err)
+		// Force a fresh TCP connection on retry (see sendChatRequest for rationale).
+		m.httpClient.CloseIdleConnections()
 	}
 
 	return nil, errors.Errorf("copilot: model %q not available via responses after %d attempts", body.Model, maxRetries+1)

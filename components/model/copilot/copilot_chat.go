@@ -609,6 +609,12 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 			return nil, err
 		}
 		m.logger.Warnf("copilot: model %q not available on attempt %d: %v", body.Model, attempt, err)
+		// Force a fresh TCP connection on retry: the shared http.Client keeps
+		// persistent connections alive, so without this, a retry can be routed
+		// to the exact same misbehaving Copilot backend over the same
+		// connection, making the retry pointless. Closing idle connections
+		// forces the next dial to potentially land on a different backend.
+		m.httpClient.CloseIdleConnections()
 	}
 
 	return nil, errors.Errorf("copilot: model %q not available after %d attempts", body.Model, maxRetries+1)

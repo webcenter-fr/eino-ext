@@ -283,7 +283,7 @@ func TestStreamEvents(t *testing.T) {
 			// Run streamEvents concurrently.
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- streamEvents(ctx, pr, sw)
+				errCh <- streamEvents(ctx, pr, sw, nil)
 				sw.Close()
 			}()
 
