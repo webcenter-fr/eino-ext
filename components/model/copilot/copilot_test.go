@@ -588,24 +588,35 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 }
 
 func TestUseResponsesAPI(t *testing.T) {
+	// Test cases backported from kilocode:
+	//   packages/core/test/plugin/provider-github-copilot.test.ts
+	//   "uses responses for gpt-5 models except gpt-5-mini"
 	tests := []struct {
 		model               string
 		forceChatCompletions bool
 		want                bool
 	}{
+		// GPT-5+ models → /responses
 		{model: "gpt-5", forceChatCompletions: false, want: true},
 		{model: "gpt-5-chat-latest", forceChatCompletions: false, want: true},
-		{model: "gpt-5-mini", forceChatCompletions: false, want: false},
-		{model: "gpt-5.4-nano", forceChatCompletions: false, want: false},
-		{model: "gpt-6.1", forceChatCompletions: false, want: false},
+		{model: "gpt-5.1-codex", forceChatCompletions: false, want: true},
+		{model: "gpt-5.4-mini", forceChatCompletions: false, want: true},
+		{model: "gpt-5.4-nano", forceChatCompletions: false, want: true},
 		{model: "gpt-6", forceChatCompletions: false, want: true},
+		{model: "gpt-6.1", forceChatCompletions: false, want: true},
+		{model: "gpt-55", forceChatCompletions: false, want: true},
+		// gpt-5-mini and variants → /chat/completions (kilocode exclusion)
+		{model: "gpt-5-mini", forceChatCompletions: false, want: false},
+		{model: "gpt-5-mini-2025-08-07", forceChatCompletions: false, want: false},
+		// GPT-4 and below, non-GPT models → /chat/completions
 		{model: "gpt-4o", forceChatCompletions: false, want: false},
 		{model: "gpt-4", forceChatCompletions: false, want: false},
 		{model: "claude-3.5-sonnet", forceChatCompletions: false, want: false},
 		{model: "", forceChatCompletions: false, want: false},
-		{model: "gpt-55", forceChatCompletions: false, want: true},
+		// ForceChatCompletions overrides all → /chat/completions
 		{model: "gpt-5", forceChatCompletions: true, want: false},
 		{model: "gpt-5-chat-latest", forceChatCompletions: true, want: false},
+		{model: "gpt-5.4-mini", forceChatCompletions: true, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
@@ -622,22 +633,33 @@ func TestUseResponsesAPI(t *testing.T) {
 }
 
 func TestWouldUseResponses(t *testing.T) {
+	// Test cases backported from kilocode:
+	//   "gpt-5 → responses, gpt-5.1-codex → responses, gpt-4o → chat,
+	//    gpt-5-mini → chat, gpt-5-mini-2025-08-07 → chat"
 	tests := []struct {
 		model string
 		want  bool
 	}{
+		// GPT-5+ → true
 		{model: "gpt-5", want: true},
 		{model: "gpt-5-chat-latest", want: true},
-		{model: "gpt-5-mini", want: false},
-		{model: "gpt-5.4-nano", want: false},
-		{model: "gpt-6.1", want: false},
+		{model: "gpt-5.1-codex", want: true},
+		{model: "gpt-5.4-mini", want: true},
+		{model: "gpt-5.4-nano", want: true},
 		{model: "gpt-6", want: true},
+		{model: "gpt-6.1", want: true},
+		{model: "gpt-55", want: true},
+		{model: "gpt-5-dashed", want: true},
+		// gpt-5-mini variants → false (kilocode exclusion)
+		{model: "gpt-5-mini", want: false},
+		{model: "gpt-5-mini-2025-08-07", want: false},
+		// gpt-5-minimal (not gpt-5-mini) still routes to Responses
+		{model: "gpt-5-minimal", want: true},
+		// GPT-4 and below, non-GPT → false
 		{model: "gpt-4o", want: false},
 		{model: "gpt-4", want: false},
 		{model: "claude-3.5-sonnet", want: false},
 		{model: "", want: false},
-		{model: "gpt-55", want: true},
-		{model: "gpt-5-dashed", want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
