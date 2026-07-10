@@ -738,7 +738,8 @@ func xInitiator(in []*schema.Message) string {
 // Ported verbatim from kilocode packages/llm/src/providers/github-copilot.ts:
 //
 //	Copilot supports Responses for GPT-5 class models, except gpt-5-mini
-//	variants which still need the chat-completions endpoint.
+//	and gpt-5.4-nano variants which still need the chat-completions endpoint
+//	(the /responses endpoint rejects them with "model not available").
 
 // gpt5ModelPattern matches GPT-N model IDs where N >= 5.
 var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
@@ -757,6 +758,11 @@ func wouldUseResponses(modelID string) bool {
 	if modelID == "gpt-5-mini" || strings.HasPrefix(modelID, "gpt-5-mini-") {
 		return false
 	}
+	// gpt-5.4-nano — the /responses endpoint rejects this model
+	// ("model not available for integrator").
+	if modelID == "gpt-5.4-nano" || strings.HasPrefix(modelID, "gpt-5.4-nano-") {
+		return false
+	}
 	// gpt-N with N >= 5 uses Responses.
 	var n int
 	if _, err := fmt.Sscanf(match[1], "%d", &n); err == nil && n >= 5 {
@@ -770,7 +776,7 @@ func wouldUseResponses(modelID string) bool {
 //
 // Rules (backported from kilocode shouldUseResponsesApi):
 //   - GPT-5+ models (gpt-5, gpt-5.1-codex, gpt-6, etc.) → /responses
-//   - gpt-5-mini and variants → /chat/completions
+//   - gpt-5-mini, gpt-5.4-nano and variants → /chat/completions
 //   - Non-GPT models and GPT-4 and below → /chat/completions
 //
 // When m.cfg.ForceChatCompletions is true, returns false unconditionally and

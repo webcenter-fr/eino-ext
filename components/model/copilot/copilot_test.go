@@ -601,11 +601,11 @@ func TestUseResponsesAPI(t *testing.T) {
 		{model: "gpt-5-chat-latest", forceChatCompletions: false, want: true},
 		{model: "gpt-5.1-codex", forceChatCompletions: false, want: true},
 		{model: "gpt-5.4-mini", forceChatCompletions: false, want: true},
-		{model: "gpt-5.4-nano", forceChatCompletions: false, want: true},
+		{model: "gpt-5.4-nano", forceChatCompletions: false, want: false},
 		{model: "gpt-6", forceChatCompletions: false, want: true},
 		{model: "gpt-6.1", forceChatCompletions: false, want: true},
 		{model: "gpt-55", forceChatCompletions: false, want: true},
-		// gpt-5-mini and variants → /chat/completions (kilocode exclusion)
+		// gpt-5-mini and gpt-5.4-nano variants → /chat/completions (API rejects on /responses)
 		{model: "gpt-5-mini", forceChatCompletions: false, want: false},
 		{model: "gpt-5-mini-2025-08-07", forceChatCompletions: false, want: false},
 		// GPT-4 and below, non-GPT models → /chat/completions
@@ -645,14 +645,14 @@ func TestWouldUseResponses(t *testing.T) {
 		{model: "gpt-5-chat-latest", want: true},
 		{model: "gpt-5.1-codex", want: true},
 		{model: "gpt-5.4-mini", want: true},
-		{model: "gpt-5.4-nano", want: true},
 		{model: "gpt-6", want: true},
 		{model: "gpt-6.1", want: true},
 		{model: "gpt-55", want: true},
 		{model: "gpt-5-dashed", want: true},
-		// gpt-5-mini variants → false (kilocode exclusion)
+		// gpt-5-mini variants and gpt-5.4-nano → false (API rejects on /responses)
 		{model: "gpt-5-mini", want: false},
 		{model: "gpt-5-mini-2025-08-07", want: false},
+		{model: "gpt-5.4-nano", want: false},
 		// gpt-5-minimal (not gpt-5-mini) still routes to Responses
 		{model: "gpt-5-minimal", want: true},
 		// GPT-4 and below, non-GPT → false

@@ -423,7 +423,13 @@ func convertResponsesTools(tools []*schema.ToolInfo) []responsesTool {
 }
 
 func toolParamsToMap(t *schema.ToolInfo) map[string]interface{} {
-	result := map[string]interface{}{"type": "object"}
+	// The Responses API requires additionalProperties:false when strict:true is
+	// set on a tool definition. Always include it since convertResponsesTools is
+	// the only caller and always sets strict.
+	result := map[string]interface{}{
+		"type":                 "object",
+		"additionalProperties": false,
+	}
 	if t.ParamsOneOf != nil {
 		s, err := t.ParamsOneOf.ToJSONSchema()
 		if err == nil && s != nil {
