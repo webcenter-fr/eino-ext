@@ -33,18 +33,24 @@ const (
 )
 
 type Config struct {
-	GitHubToken         string          `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
-	CopilotToken        string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
-	EnterpriseURL       string          `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
-	BaseURL             string          `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
-	Timeout             time.Duration   `validate:"omitempty,gte=1000000000" jsonschema:"description=API request timeout"`
-	TLSSkipVerify       bool            `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
-	Model               string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
-	Temperature         *float32        `validate:"omitempty,gte=0,lte=2" jsonschema:"description=Sampling temperature (0 to 2)"`
-	MaxCompletionTokens *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
-	ReasoningEffort       ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
-	ForceChatCompletions  bool            `validate:"omitempty" jsonschema:"description=Force chat/completions endpoint even for models that would use /responses"`
-	Logger               *logrus.Entry    `validate:"omitempty" jsonschema:"-"`
+	GitHubToken          string          `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
+	CopilotToken         string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
+	EnterpriseURL        string          `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
+	BaseURL              string          `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
+	Timeout              time.Duration   `validate:"omitempty,gte=1000000000" jsonschema:"description=API request timeout"`
+	TLSSkipVerify        bool            `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	Model                string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
+	Temperature          *float32        `validate:"omitempty,gte=0,lte=2" jsonschema:"description=Sampling temperature (0 to 2)"`
+	MaxCompletionTokens  *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
+	ReasoningEffort      ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
+	ForceChatCompletions bool            `validate:"omitempty" jsonschema:"description=Force chat/completions endpoint even for models that would use /responses"`
+	Logger               *logrus.Entry   `validate:"omitempty" jsonschema:"-"`
+
+	// Chat completion fields backported from kilocode bodyFields.
+	FrequencyPenalty *float32 `validate:"omitempty,gte=-2,lte=2" jsonschema:"description=Frequency penalty (-2 to 2)"`
+	PresencePenalty  *float32 `validate:"omitempty,gte=-2,lte=2" jsonschema:"description=Presence penalty (-2 to 2)"`
+	Seed             *int     `validate:"omitempty" jsonschema:"description=Deterministic sampling seed"`
+	Store            *bool    `validate:"omitempty" jsonschema:"description=Store the conversation for later use"`
 }
 
 type CopilotModel struct {

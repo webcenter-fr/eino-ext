@@ -28,6 +28,12 @@ type CopilotOptions struct {
 	// ReasoningEffort overrides Config.ReasoningEffort for this call.
 	// When empty, the Config default is used.
 	ReasoningEffort ReasoningEffort
+
+	// Chat completion fields that override Config defaults.
+	FrequencyPenalty *float32
+	PresencePenalty  *float32
+	Seed             *int
+	Store            *bool
 }
 
 // --- Chat completion types ---
@@ -103,6 +109,12 @@ type copilotChatRequest struct {
 	StreamOptions   *copilotStreamOptions `json:"stream_options,omitempty"`
 	Tools           []copilotToolDef      `json:"tools,omitempty"`
 	ToolChoice      any                   `json:"tool_choice,omitempty"`
+
+	// Fields backported from kilocode openai-transformer bodyFields.
+	Store            *bool    `json:"store,omitempty"`
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float32 `json:"presence_penalty,omitempty"`
+	Seed             *int     `json:"seed,omitempty"`
 }
 
 type copilotChatResponse struct {
@@ -506,8 +518,26 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 
 	// Per-call reasoning effort override via CopilotOptions.
 	effort := m.cfg.ReasoningEffort
-	if copilotOpts := model.GetImplSpecificOptions[CopilotOptions](nil, opts...); copilotOpts != nil && copilotOpts.ReasoningEffort != "" {
-		effort = copilotOpts.ReasoningEffort
+	store := m.cfg.Store
+	freqPen := m.cfg.FrequencyPenalty
+	presPen := m.cfg.PresencePenalty
+	seed := m.cfg.Seed
+	if copilotOpts := model.GetImplSpecificOptions[CopilotOptions](nil, opts...); copilotOpts != nil {
+		if copilotOpts.ReasoningEffort != "" {
+			effort = copilotOpts.ReasoningEffort
+		}
+		if copilotOpts.Store != nil {
+			store = copilotOpts.Store
+		}
+		if copilotOpts.FrequencyPenalty != nil {
+			freqPen = copilotOpts.FrequencyPenalty
+		}
+		if copilotOpts.PresencePenalty != nil {
+			presPen = copilotOpts.PresencePenalty
+		}
+		if copilotOpts.Seed != nil {
+			seed = copilotOpts.Seed
+		}
 	}
 
 	// Validate model: if the resolved model is empty, fail before calling the API.
@@ -520,15 +550,19 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 	}
 
 	req := copilotChatRequest{
-		Model:           resolvedModel,
-		Messages:        msgs,
-		Temperature:     options.Temperature,
-		MaxTokens:       options.MaxTokens,
-		TopP:            options.TopP,
-		Stop:            options.Stop,
-		ReasoningEffort: effort,
-		Stream:          stream,
-		Tools:           convertTools(options.Tools),
+		Model:            resolvedModel,
+		Messages:         msgs,
+		Temperature:      options.Temperature,
+		MaxTokens:        options.MaxTokens,
+		TopP:             options.TopP,
+		Stop:             options.Stop,
+		ReasoningEffort:  effort,
+		Stream:           stream,
+		Tools:            convertTools(options.Tools),
+		Store:            store,
+		FrequencyPenalty: freqPen,
+		PresencePenalty:  presPen,
+		Seed:             seed,
 	}
 	if stream {
 		req.StreamOptions = &copilotStreamOptions{IncludeUsage: true}
@@ -699,12 +733,12 @@ func xInitiator(in []*schema.Message) string {
 	return "agent"
 }
 
-// --- GPT-5 Responses API routing ---
+// GPT-5 Responses API routing
 //
 // Ported verbatim from kilocode packages/llm/src/providers/github-copilot.ts:
 //
-//	Copilot supports Responses for GPT-5 class models, except mini variants
-//	which still need the chat-completions endpoint.
+//	Copilot supports Responses for GPT-5 class models, except gpt-5-mini
+//	variants which still need the chat-completions endpoint.
 
 // gpt5ModelPattern matches GPT-N model IDs where N >= 5.
 var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
@@ -712,7 +746,7 @@ var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
 // wouldUseResponses reports whether a model ID would be routed to /responses
 // based purely on the name heuristic (ignoring the ForceChatCompletions
 // override). Matches the kilocode reference exactly: regex ^gpt-(\d+) with N>=5
-// and exact/dash-prefix exclusion for gpt-5-mini and gpt-5.4-mini variants.
+// and exact/dash-prefix exclusion for gpt-5-mini variants.
 func wouldUseResponses(modelID string) bool {
 	match := gpt5ModelPattern.FindStringSubmatch(modelID)
 	if match == nil {
@@ -721,15 +755,6 @@ func wouldUseResponses(modelID string) bool {
 	// gpt-5-mini exactly or date-suffixed (e.g. gpt-5-mini-2025-08-07)
 	// stay on chat completions — the Copilot API rejects them on /responses.
 	if modelID == "gpt-5-mini" || strings.HasPrefix(modelID, "gpt-5-mini-") {
-		return false
-	}
-	// gpt-5.4-mini and gpt-5.4-nano — mini/nano variants of GPT-5.4 exhibit
-	// degraded tool-calling behavior on the /responses endpoint (hallucination
-	// about available tools). Force them to /chat/completions like gpt-5-mini.
-	if modelID == "gpt-5.4-mini" || strings.HasPrefix(modelID, "gpt-5.4-mini-") {
-		return false
-	}
-	if modelID == "gpt-5.4-nano" || strings.HasPrefix(modelID, "gpt-5.4-nano-") {
 		return false
 	}
 	// gpt-N with N >= 5 uses Responses.
@@ -745,7 +770,7 @@ func wouldUseResponses(modelID string) bool {
 //
 // Rules (backported from kilocode shouldUseResponsesApi):
 //   - GPT-5+ models (gpt-5, gpt-5.1-codex, gpt-6, etc.) → /responses
-//   - gpt-5-mini, gpt-5.4-mini, gpt-5.4-nano and variants → /chat/completions
+//   - gpt-5-mini and variants → /chat/completions
 //   - Non-GPT models and GPT-4 and below → /chat/completions
 //
 // When m.cfg.ForceChatCompletions is true, returns false unconditionally and

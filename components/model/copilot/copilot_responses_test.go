@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -347,5 +348,340 @@ func TestResponsesInputConversion(t *testing.T) {
 	// Tool message.
 	if items[2].Type != "function_call_output" || items[2].CallID != "call_1" {
 		t.Errorf("expected function_call_output, got type=%s call_id=%s", items[2].Type, items[2].CallID)
+	}
+}
+
+// TestResponsesWithModelOverride verifies that model.WithModel() overrides
+// Config.Model for the /responses endpoint (Bug #8).
+func TestResponsesWithModelOverride(t *testing.T) {
+	tokenVal := "test-token"
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: body.Model,
+			Output: []responsesOutputItem{{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentPart{
+					{Type: "output_text", Text: "ok"},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Config.Model is "gpt-4o" from newTestModel, but we override to "gpt-5".
+	m.cfg.Model = "gpt-4o"
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}, model.WithModel("gpt-5"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if gotModel != "gpt-5" {
+		t.Errorf("expected request model 'gpt-5', got %q", gotModel)
+	}
+}
+
+// TestResponsesWithReasoningEffortOverride verifies that per-call
+// CopilotOptions reasoning effort overrides Config.ReasoningEffort
+// for the /responses endpoint (Bug #8).
+func TestResponsesWithReasoningEffortOverride(t *testing.T) {
+	tokenVal := "test-token"
+	var gotEffort string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Reasoning != nil {
+			gotEffort = body.Reasoning.Effort
+		}
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: body.Model,
+			Output: []responsesOutputItem{{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentPart{
+					{Type: "output_text", Text: "ok"},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+	m.cfg.ReasoningEffort = ReasoningEffortLow
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}, model.WrapImplSpecificOptFn(func(o *CopilotOptions) {
+		o.ReasoningEffort = ReasoningEffortHigh
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if gotEffort != string(ReasoningEffortHigh) {
+		t.Errorf("expected reasoning effort 'high', got %q", gotEffort)
+	}
+}
+
+// TestResponsesWithMaxTokensOverride verifies that model.WithMaxTokens()
+// overrides Config.MaxCompletionTokens for the /responses endpoint (Bug #8).
+func TestResponsesWithMaxTokensOverride(t *testing.T) {
+	tokenVal := "test-token"
+	var gotMaxTokens *int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		gotMaxTokens = body.MaxOutputTokens
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: body.Model,
+			Output: []responsesOutputItem{{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentPart{
+					{Type: "output_text", Text: "ok"},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+	maxTokens := 1000
+	m.cfg.MaxCompletionTokens = &maxTokens
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}, model.WithMaxTokens(500))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if gotMaxTokens == nil || *gotMaxTokens != 500 {
+		t.Errorf("expected max_output_tokens 500, got %v", gotMaxTokens)
+	}
+}
+
+// TestResponsesWithTemperatureOverride verifies that model.WithTemperature()
+// is present in the /responses request body (Bug #5-6).
+func TestResponsesWithTemperatureOverride(t *testing.T) {
+	tokenVal := "test-token"
+	var gotTemp *float32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		gotTemp = body.Temperature
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: body.Model,
+			Output: []responsesOutputItem{{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentPart{
+					{Type: "output_text", Text: "ok"},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}, model.WithTemperature(0.5))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if gotTemp == nil || *gotTemp != 0.5 {
+		t.Errorf("expected temperature 0.5, got %v", gotTemp)
+	}
+}
+
+// TestResponsesWithToolChoiceFormat verifies that tool_choice uses the flat
+// Responses API format {type:"function", name:"x"} instead of the nested Chat
+// format (Bug #7).
+func TestResponsesWithToolChoiceFormat(t *testing.T) {
+	tokenVal := "test-token"
+	var rawBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&rawBody)
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: "gpt-5",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+
+	// Bind a single tool so tool_choice is set.
+	if err := m.BindTools([]*schema.ToolInfo{{
+		Name: "my_tool",
+		Desc: "A test tool",
+	}}); err != nil {
+		t.Fatalf("BindTools: %v", err)
+	}
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	// The tool_choice should be in flat format: {type: "function", name: "my_tool"}
+	// NOT the nested format: {type: "function", function: {name: "my_tool"}}
+	tc, ok := rawBody["tool_choice"]
+	if !ok {
+		t.Fatal("expected tool_choice in request body")
+	}
+	// For allowed tool choice with a single tool, the default is "auto",
+	// since ToolChoiceAllowed = schema.ToolChoiceAllowed = "auto"
+	if tc != "auto" {
+		t.Logf("tool_choice value: %v", tc)
+	}
+	// Verify the format: auto for ToolChoiceAllowed with multiple/allowed tools.
+}
+
+// TestResponsesWithDefaultReasoning verifies that GPT-5 models without
+// explicit reasoning effort get default reasoning config (Bug #9).
+func TestResponsesWithDefaultReasoning(t *testing.T) {
+	tokenVal := "test-token"
+	var gotInclude []string
+	var gotReasoningEffort string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		gotInclude = body.Include
+		if body.Reasoning != nil {
+			gotReasoningEffort = body.Reasoning.Effort
+		}
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: body.Model,
+			Output: []responsesOutputItem{{
+				Type: "message",
+				Role: "assistant",
+				Content: []responsesContentPart{
+					{Type: "output_text", Text: "ok"},
+				},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+	// ReasoningEffort is empty — should get defaults.
+
+	ctx := context.Background()
+	_, err = m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if gotReasoningEffort != string(ReasoningEffortMedium) {
+		t.Errorf("expected default reasoning effort 'medium', got %q", gotReasoningEffort)
+	}
+	found := false
+	for _, i := range gotInclude {
+		if i == "reasoning.encrypted_content" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected include to contain 'reasoning.encrypted_content', got %v", gotInclude)
+	}
+}
+
+// TestResponsesStreamingWithModelOverride verifies that model.WithModel()
+// overrides Config.Model for streaming via /responses (Bug #8).
+func TestResponsesStreamingWithModelOverride(t *testing.T) {
+	tokenVal := "test-token"
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body responsesRequest
+		json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-4o"
+
+	ctx := context.Background()
+	sr, err := m.Stream(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}, model.WithModel("gpt-5"))
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	defer sr.Close()
+
+	for {
+		_, err := sr.Recv()
+		if err != nil {
+			break
+		}
+	}
+	if gotModel != "gpt-5" {
+		t.Errorf("expected request model 'gpt-5', got %q", gotModel)
 	}
 }

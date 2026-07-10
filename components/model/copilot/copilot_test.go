@@ -600,8 +600,8 @@ func TestUseResponsesAPI(t *testing.T) {
 		{model: "gpt-5", forceChatCompletions: false, want: true},
 		{model: "gpt-5-chat-latest", forceChatCompletions: false, want: true},
 		{model: "gpt-5.1-codex", forceChatCompletions: false, want: true},
-		{model: "gpt-5.4-mini", forceChatCompletions: false, want: false},
-		{model: "gpt-5.4-nano", forceChatCompletions: false, want: false},
+		{model: "gpt-5.4-mini", forceChatCompletions: false, want: true},
+		{model: "gpt-5.4-nano", forceChatCompletions: false, want: true},
 		{model: "gpt-6", forceChatCompletions: false, want: true},
 		{model: "gpt-6.1", forceChatCompletions: false, want: true},
 		{model: "gpt-55", forceChatCompletions: false, want: true},
@@ -644,8 +644,8 @@ func TestWouldUseResponses(t *testing.T) {
 		{model: "gpt-5", want: true},
 		{model: "gpt-5-chat-latest", want: true},
 		{model: "gpt-5.1-codex", want: true},
-		{model: "gpt-5.4-mini", want: false},
-		{model: "gpt-5.4-nano", want: false},
+		{model: "gpt-5.4-mini", want: true},
+		{model: "gpt-5.4-nano", want: true},
 		{model: "gpt-6", want: true},
 		{model: "gpt-6.1", want: true},
 		{model: "gpt-55", want: true},
@@ -775,4 +775,85 @@ func newTestModel(baseURL, token string) (*CopilotModel, error) {
 		Timeout:      10 * time.Second,
 	}
 	return NewCopilotChatModel(ctx, cfg)
+}
+
+// TestBuildChatRequestHasMissingFields verifies that store, seed, frequency_penalty,
+// and presence_penalty from Config are populated in the /chat/completions request
+// body (Bug #1-4).
+func TestBuildChatRequestHasMissingFields(t *testing.T) {
+	tokenVal := "test-token"
+	var rawBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&rawBody)
+		resp := copilotChatResponse{
+			ID:    "chat-1",
+			Model: "gpt-4o",
+			Choices: []copilotChatChoice{{
+				Index:   0,
+				Message: copilotMessage{Role: "assistant", Content: "ok"},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	seed := 42
+	store := true
+	freqPen := float32(0.5)
+	presPen := float32(0.3)
+
+	cfg := &Config{
+		CopilotToken:     tokenVal,
+		BaseURL:          srv.URL,
+		Model:            "gpt-4o",
+		Timeout:          10 * time.Second,
+		Seed:             &seed,
+		Store:            &store,
+		FrequencyPenalty: &freqPen,
+		PresencePenalty:  &presPen,
+	}
+	m, err := NewCopilotChatModel(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewCopilotChatModel: %v", err)
+	}
+
+	_, err = m.Generate(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if s, ok := rawBody["seed"]; !ok {
+		t.Error("expected 'seed' field in request body")
+	} else {
+		// JSON numbers decode as float64.
+		if v, ok := s.(float64); !ok || int(v) != 42 {
+			t.Errorf("expected seed=42, got %v", s)
+		}
+	}
+
+	if s, ok := rawBody["store"]; !ok {
+		t.Error("expected 'store' field in request body")
+	} else {
+		if v, ok := s.(bool); !ok || !v {
+			t.Errorf("expected store=true, got %v", s)
+		}
+	}
+
+	if fp, ok := rawBody["frequency_penalty"]; !ok {
+		t.Error("expected 'frequency_penalty' field in request body")
+	} else {
+		if v, ok := fp.(float64); !ok || float32(v) != 0.5 {
+			t.Errorf("expected frequency_penalty=0.5, got %v", fp)
+		}
+	}
+
+	if pp, ok := rawBody["presence_penalty"]; !ok {
+		t.Error("expected 'presence_penalty' field in request body")
+	} else {
+		if v, ok := pp.(float64); !ok || float32(v) != 0.3 {
+			t.Errorf("expected presence_penalty=0.3, got %v", pp)
+		}
+	}
 }

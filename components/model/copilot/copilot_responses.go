@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
@@ -313,38 +314,97 @@ func convertAssistantToResponses(msg *schema.Message) []responsesInputItem {
 // --- Responses non-streaming request/response ---
 
 func (m *CopilotModel) buildResponsesRequest(in []*schema.Message, opts ...model.Option) (responsesRequest, error) {
-	_ = opts // per-call options deferred to future iteration
-	resolvedModel := m.resolveModel()
+	// Resolve per-call options against config defaults, mirroring buildChatRequest.
+	options := model.GetCommonOptions(&model.Options{
+		MaxTokens:   m.cfg.MaxCompletionTokens,
+		Model:       &m.cfg.Model,
+		Tools:       m.tools,
+		ToolChoice:  m.toolChoice,
+		Temperature: m.cfg.Temperature,
+	}, opts...)
+
+	// Per-call reasoning effort override via CopilotOptions.
+	effort := m.cfg.ReasoningEffort
+	if copilotOpts := model.GetImplSpecificOptions[CopilotOptions](nil, opts...); copilotOpts != nil && copilotOpts.ReasoningEffort != "" {
+		effort = copilotOpts.ReasoningEffort
+	}
+
+	// Validate model: if the resolved model is empty, fail before calling the API.
+	resolvedModel := ""
+	if options.Model != nil {
+		resolvedModel = *options.Model
+	}
 	if resolvedModel == "" {
-		return responsesRequest{}, errors.New("copilot: model must not be empty")
+		return responsesRequest{}, errors.New("copilot: model must not be empty; set Config.Model or pass model.WithModel()")
 	}
 
 	req := responsesRequest{
 		Model:           resolvedModel,
 		Input:           convertToResponsesInput(in),
-		MaxOutputTokens: m.cfg.MaxCompletionTokens,
-		// Note: temperature/top_p are intentionally omitted. The /responses
-		// endpoint is used only for GPT-5+ reasoning models, which reject these
-		// parameters (400 "temperature is not supported with this model").
-		// This mirrors kilocode's openai-responses reasoning-model handling.
+		MaxOutputTokens: options.MaxTokens,
+		Temperature:     options.Temperature,
+		TopP:            options.TopP,
 	}
 
-	// Tools.
-	if len(m.tools) > 0 {
-		req.Tools = convertResponsesTools(m.tools)
-		req.ToolChoice = convertToolChoice(m.toolChoice, nil)
-	}
-
-	// Reasoning: include encrypted_content when reasoning effort is set.
-	if m.cfg.ReasoningEffort != "" {
+	// Reasoning: apply GPT-5 defaults when no explicit effort is configured.
+	// Kilocode defaults to effort "medium", summary "auto", and include
+	// ["reasoning.encrypted_content"] for all non-chat/non-pro GPT-5 models.
+	if shouldSetReasoningDefaults(resolvedModel, effort) {
 		req.Include = []string{"reasoning.encrypted_content"}
-		req.Reasoning = &responsesReasoning{
-			Effort:  string(m.cfg.ReasoningEffort),
-			Summary: "auto",
-		}
+		req.Reasoning = &responsesReasoning{Effort: string(ReasoningEffortMedium), Summary: "auto"}
+	} else if effort != "" {
+		req.Include = []string{"reasoning.encrypted_content"}
+		req.Reasoning = &responsesReasoning{Effort: string(effort), Summary: "auto"}
+	}
+
+	// Tools: use per-call tools and tool_choice, wire the flat Responses format.
+	if len(options.Tools) > 0 {
+		req.Tools = convertResponsesTools(options.Tools)
+		req.ToolChoice = convertResponsesToolChoice(options.ToolChoice, options.AllowedToolNames)
 	}
 
 	return req, nil
+}
+
+// convertResponsesToolChoice maps eino schema.ToolChoice to the Copilot
+// Responses API flat format. Unlike the Chat Completions nested format
+// ({type:"function", function:{name:"x"}}), the Responses API expects a
+// flat shape: {type:"function", name:"x"}.
+func convertResponsesToolChoice(tc *schema.ToolChoice, allowedToolNames []string) any {
+	if tc == nil {
+		return nil
+	}
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		return "none"
+	case schema.ToolChoiceAllowed:
+		return "auto"
+	case schema.ToolChoiceForced:
+		if len(allowedToolNames) == 1 {
+			return map[string]string{
+				"type": "function",
+				"name": allowedToolNames[0],
+			}
+		}
+		return "required"
+	default:
+		return "auto"
+	}
+}
+
+// shouldSetReasoningDefaults reports whether the model ID qualifies for
+// GPT-5 default reasoning configuration (effort "medium", summary "auto",
+// include ["reasoning.encrypted_content"]) when no explicit reasoning
+// effort is configured. Backported from kilocode gpt5DefaultOptions.
+//
+// GPT-5 models receive defaults; gpt-5-chat and gpt-5-pro variants
+// do not (they handle reasoning differently).
+func shouldSetReasoningDefaults(modelID string, configuredEffort ReasoningEffort) bool {
+	id := strings.ToLower(modelID)
+	return strings.Contains(id, "gpt-5") &&
+		!strings.Contains(id, "gpt-5-chat") &&
+		!strings.Contains(id, "gpt-5-pro") &&
+		configuredEffort == ""
 }
 
 func convertResponsesTools(tools []*schema.ToolInfo) []responsesTool {
