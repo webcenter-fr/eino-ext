@@ -3,11 +3,13 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/sirupsen/logrus"
 )
 
 type ModelInfo struct {
@@ -86,6 +88,13 @@ func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to create models request")
 	}
+	// Do NOT force a Copilot-Integration-ID here: the /models endpoint honors
+	// that header and would report the full catalog for e.g. "vscode-chat",
+	// whereas the chat/completions endpoint enforces the integrator bound to
+	// the token itself. Sending a different integration id here makes /models
+	// over-report models the token cannot actually use (chat returns 400
+	// "model not available for integrator ..."). Send only the token so the
+	// list reflects the token's real entitlement.
 	req.Header.Set("Authorization", "Bearer "+copilotToken)
 	req.Header.Set("User-Agent", userAgentHeader)
 	req.Header.Set("Accept", "application/json")
@@ -97,21 +106,31 @@ func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: models request returned status %d", resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "copilot: failed to read models response body")
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("copilot: models request returned status %d: %s", resp.StatusCode, redactErrorBody(body))
+	}
+
+	// A proxy/gateway error page (HTML, plain text, auth challenge) served with
+	// a 200 will not parse into our schema; surface the content-type and body
+	// instead of silently decoding into an empty model list.
 	var modelsResp copilotModelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
-		return nil, errors.Wrap(err, "copilot: failed to decode models response")
+	if err := json.Unmarshal(body, &modelsResp); err != nil {
+		return nil, errors.Wrapf(err, "copilot: failed to decode models response (content-type %q, body: %s)", resp.Header.Get("Content-Type"), redactErrorBody(body))
 	}
 
 	var result []ModelInfo
 	for _, m := range modelsResp.Data {
 		if !m.ModelPickerEnabled {
+			logrus.Debugf("copilot ListModels: skipping model %q (model_picker_enabled=false)", m.ID)
 			continue
 		}
 		if m.Policy.State == "disabled" {
+			logrus.Debugf("copilot ListModels: skipping model %q (policy.state=%q)", m.ID, m.Policy.State)
 			continue
 		}
 

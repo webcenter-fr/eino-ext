@@ -83,6 +83,11 @@ type Catalog struct {
 	// Fresh reports whether this Catalog was populated from a live network
 	// fetch (true) or the embedded fallback snapshot (false).
 	Fresh bool
+	// LoadErr holds the last network-fetch error when the live refresh failed
+	// and Load fell back to the embedded snapshot (Fresh == false). It is nil
+	// when the fetch succeeded (Fresh == true) or when no network attempt was
+	// made. Callers may log it to surface why the catalog is not fresh.
+	LoadErr error
 }
 
 // LoadOptions configures Load. The zero value uses the package defaults.
@@ -142,7 +147,8 @@ func Load(ctx context.Context, opts LoadOptions) *Catalog {
 		}
 		lastErr = err
 	}
-	_ = lastErr // network refresh is best-effort; embedded snapshot is the fallback.
+	// network refresh is best-effort; the embedded snapshot is the fallback.
+	// lastErr is surfaced via Catalog.LoadErr so callers can log the reason.
 
 	providers, err := parse(embeddedSnapshot)
 	if err != nil {
@@ -150,9 +156,9 @@ func Load(ctx context.Context, opts LoadOptions) *Catalog {
 		// parse failure here indicates a packaging bug, not a runtime
 		// condition callers can recover from. Return an empty catalog rather
 		// than panicking so lookups degrade to ok=false.
-		return &Catalog{}
+		return &Catalog{LoadErr: lastErr}
 	}
-	return &Catalog{providers: providers}
+	return &Catalog{providers: providers, LoadErr: lastErr}
 }
 
 func fetch(ctx context.Context, client *http.Client, baseURL string) (map[string]Provider, error) {

@@ -653,10 +653,16 @@ func redactErrorBody(body []byte) string {
 }
 
 func setAuthHeaders(req *http.Request, token string) {
+	// Match the working GitHub Copilot integrations (e.g. kilocode/opencode):
+	// send only the token, a User-Agent and the intent. Do NOT force
+	// Copilot-Integration-ID / Editor-Version here — forcing a mismatched
+	// integration id (e.g. "vscode-chat") makes the server evaluate the
+	// request against that integration's restricted model allowlist and
+	// reject models the token's own OAuth integration actually permits
+	// (400 "model not available for integrator ..."). Omitting them lets the
+	// token's own integration apply, which is what grants access to the full
+	// model set (e.g. claude-sonnet-5).
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Copilot-Integration-ID", "vscode-chat")
-	req.Header.Set("Editor-Version", "vscode/1.100.0")
-	req.Header.Set("Editor-Plugin-Version", "copilot-chat/0.52.0")
 	req.Header.Set("User-Agent", userAgentHeader)
 	req.Header.Set("Openai-Intent", OpenAIIntent)
 }
