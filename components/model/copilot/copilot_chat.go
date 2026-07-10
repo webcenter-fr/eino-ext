@@ -47,9 +47,9 @@ type copilotMessage struct {
 
 // copilotContentPart is a single part in an array-content Copilot message.
 type copilotContentPart struct {
-	Type     string                `json:"type"`
-	Text     string                `json:"text,omitempty"`
-	ImageURL *copilotImageURLPart  `json:"image_url,omitempty"`
+	Type     string               `json:"type"`
+	Text     string               `json:"text,omitempty"`
+	ImageURL *copilotImageURLPart `json:"image_url,omitempty"`
 }
 
 // copilotImageURLPart holds the URL for an image part.
@@ -69,7 +69,7 @@ type copilotToolCallFunc struct {
 }
 
 type copilotToolDef struct {
-	Type     string            `json:"type"`
+	Type     string             `json:"type"`
 	Function copilotToolDefFunc `json:"function"`
 }
 
@@ -86,17 +86,22 @@ type copilotToolParams struct {
 	Definitions map[string]interface{} `json:"$defs,omitempty"`
 }
 
+type copilotStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type copilotChatRequest struct {
-	Model            string           `json:"model"`
-	Messages         []copilotMessage `json:"messages"`
-	Temperature      *float32         `json:"temperature,omitempty"`
-	MaxTokens        *int             `json:"max_tokens,omitempty"`
-	ReasoningEffort  ReasoningEffort  `json:"reasoning_effort,omitempty"`
-	TopP             *float32         `json:"top_p,omitempty"`
-	Stop             []string         `json:"stop,omitempty"`
-	Stream           bool             `json:"stream"`
-	Tools            []copilotToolDef `json:"tools,omitempty"`
-	ToolChoice       any              `json:"tool_choice,omitempty"`
+	Model           string                `json:"model"`
+	Messages        []copilotMessage      `json:"messages"`
+	Temperature     *float32              `json:"temperature,omitempty"`
+	MaxTokens       *int                  `json:"max_tokens,omitempty"`
+	ReasoningEffort ReasoningEffort       `json:"reasoning_effort,omitempty"`
+	TopP            *float32              `json:"top_p,omitempty"`
+	Stop            []string              `json:"stop,omitempty"`
+	Stream          bool                  `json:"stream"`
+	StreamOptions   *copilotStreamOptions `json:"stream_options,omitempty"`
+	Tools           []copilotToolDef      `json:"tools,omitempty"`
+	ToolChoice      any                   `json:"tool_choice,omitempty"`
 }
 
 type copilotChatResponse struct {
@@ -487,7 +492,6 @@ func convertToolChoice(tc *schema.ToolChoice, allowedToolNames []string) any {
 
 // --- Chat request building ---
 
-
 func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts ...model.Option) (copilotChatRequest, error) {
 	msgs := convertMessages(in)
 
@@ -524,6 +528,9 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 		ReasoningEffort: effort,
 		Stream:          stream,
 		Tools:           convertTools(options.Tools),
+	}
+	if stream {
+		req.StreamOptions = &copilotStreamOptions{IncludeUsage: true}
 	}
 
 	// Only send tool_choice when tools are present.
@@ -720,4 +727,3 @@ func (m *CopilotModel) generateResponses(ctx context.Context, in []*schema.Messa
 	}
 	return m.sendResponsesRequest(ctx, body, in)
 }
-

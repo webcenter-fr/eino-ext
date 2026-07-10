@@ -18,15 +18,15 @@ import (
 )
 
 type Config struct {
-	URLs           []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
-	Username       string   `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
-	Password       string   `validate:"omitempty" jsonschema:"description=Password for basic authentication"`
-	TLSSkipVerify  bool     `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
-	IndexName      string   `validate:"omitempty" jsonschema:"description=OpenSearch index name for storing conversations,default=eino_memory"`
-	MaxWindowSize  int      `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
-	MaxWindowTokens int     `validate:"gte=0" jsonschema:"description=Maximum token budget for GetWindow, 0 means no cap"`
+	URLs            []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
+	Username        string   `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
+	Password        string   `validate:"omitempty" jsonschema:"description=Password for basic authentication"`
+	TLSSkipVerify   bool     `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	IndexName       string   `validate:"omitempty" jsonschema:"description=OpenSearch index name for storing conversations,default=eino_memory"`
+	MaxWindowSize   int      `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
+	MaxWindowTokens int      `validate:"gte=0" jsonschema:"description=Maximum token budget for GetWindow, 0 means no cap"`
 
-	TokenCounter  memory.TokenCounter
+	TokenCounter memory.TokenCounter
 }
 
 type OpenSearchMemory struct {
@@ -46,6 +46,7 @@ type OpenSearchConversation struct {
 	ConversationID string
 	Messages       []*schema.Message
 	Activities     []json.RawMessage
+	UpdatedAt      string
 
 	client          opensearchv4.Client
 	indexName       string
@@ -142,7 +143,7 @@ func NewOpenSearchMemory(cfg Config) (memory.Memory, error) {
 func createIndex(ctx context.Context, client opensearchv4.Client, indexName string) error {
 	body := map[string]any{
 		"settings": map[string]any{
-			"number_of_shards":          1,
+			"number_of_shards":           1,
 			"index.auto_expand_replicas": "0-2",
 		},
 		"mappings": map[string]any{
@@ -213,6 +214,7 @@ func (m *OpenSearchMemory) GetConversation(userID string, conversationID string,
 		}
 
 		conv := m.newConversation(userID, conversationID, doc.Messages)
+		conv.UpdatedAt = doc.UpdatedAt
 		if doc.Activities != nil {
 			conv.Activities = doc.Activities
 		}
@@ -427,6 +429,7 @@ func (c *OpenSearchConversation) Load() error {
 	}
 
 	c.Messages = doc.Messages
+	c.UpdatedAt = doc.UpdatedAt
 	if doc.Activities != nil {
 		c.Activities = doc.Activities
 	}
@@ -453,4 +456,13 @@ func (c *OpenSearchConversation) Save(msg *schema.Message) error {
 	}
 
 	return nil
+}
+
+// GetUpdatedAt returns the RFC3339 timestamp of the last update persisted in
+// OpenSearch. Returns "" for newly created conversations that have not yet
+// been saved.
+func (c *OpenSearchConversation) GetUpdatedAt() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.UpdatedAt
 }

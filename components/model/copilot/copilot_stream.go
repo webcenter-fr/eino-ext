@@ -94,12 +94,32 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 		}
 
 		if strings.TrimSpace(data) == "[DONE]" {
+			// Flush any remaining accumulated tool calls that were never
+			// closed by a finish-reason chunk (defensive).
+			if len(toolAccum) > 0 {
+				msg := &schema.Message{
+					Role:      schema.Assistant,
+					ToolCalls: flushToolAccumToolCalls(toolAccum),
+				}
+				sw.Send(msg, nil)
+			}
 			return nil
 		}
 
 		var chunk copilotChatChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			return errors.Wrap(err, "copilot: failed to parse stream chunk")
+		}
+
+		// Emit usage when the chunk carries it (stream_options.include_usage
+		// usage-only final chunk typically has empty Choices).
+		if chunk.Usage != nil {
+			sw.Send(&schema.Message{
+				Role: schema.Assistant,
+				ResponseMeta: &schema.ResponseMeta{
+					Usage: usageToTokenUsage(chunk.Usage),
+				},
+			}, nil)
 		}
 
 		for _, choice := range chunk.Choices {
@@ -166,23 +186,7 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 
 			// Emit accumulated tool calls on finish, sorted by index.
 			if choice.FinishReason != nil && len(toolAccum) > 0 {
-				indices := make([]int, 0, len(toolAccum))
-				for i := range toolAccum {
-					indices = append(indices, i)
-				}
-				sort.Ints(indices)
-				for _, i := range indices {
-					st := toolAccum[i]
-					idx := i
-					msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
-						Index: &idx,
-						ID:    st.id,
-						Function: schema.FunctionCall{
-							Name:      st.name,
-							Arguments: st.args,
-						},
-					})
-				}
+				msg.ToolCalls = append(msg.ToolCalls, flushToolAccumToolCalls(toolAccum)...)
 				toolAccum = nil
 			}
 
@@ -201,4 +205,29 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 
 type toolCallAccumState struct {
 	id, name, args string
+}
+
+// flushToolAccumToolCalls builds a sorted slice of ToolCalls from a tool-call
+// accumulator map. The map keys are call indices; the result is sorted by
+// ascending index.
+func flushToolAccumToolCalls(acc map[int]*toolCallAccumState) []schema.ToolCall {
+	indices := make([]int, 0, len(acc))
+	for i := range acc {
+		indices = append(indices, i)
+	}
+	sort.Ints(indices)
+	out := make([]schema.ToolCall, 0, len(indices))
+	for _, i := range indices {
+		st := acc[i]
+		idx := i
+		out = append(out, schema.ToolCall{
+			Index: &idx,
+			ID:    st.id,
+			Function: schema.FunctionCall{
+				Name:      st.name,
+				Arguments: st.args,
+			},
+		})
+	}
+	return out
 }

@@ -70,27 +70,27 @@ func (m *CopilotModel) streamResponses(ctx context.Context, in []*schema.Message
 
 // responsesSSEEvent is a single SSE event from the Responses streaming API.
 type responsesSSEEvent struct {
-	Type  string          `json:"type"`
-	Item  *responsesSSEItem `json:"item,omitempty"`
-	Delta string          `json:"delta,omitempty"`
+	Type     string                `json:"type"`
+	Item     *responsesSSEItem     `json:"item,omitempty"`
+	Delta    string                `json:"delta,omitempty"`
 	Response *responsesSSEResponse `json:"response,omitempty"`
 }
 
 type responsesSSEItem struct {
-	ID              string `json:"id"`
-	Type            string `json:"type"`
-	Role            string `json:"role,omitempty"`
-	Name            string `json:"name,omitempty"`
-	CallID          string `json:"call_id,omitempty"`
-	Arguments       string `json:"arguments,omitempty"`
-	EncryptedContent string `json:"encrypted_content,omitempty"`
-	Summary         []responsesSummaryPart `json:"summary,omitempty"`
-	Content         []responsesContentPart `json:"content,omitempty"`
+	ID               string                 `json:"id"`
+	Type             string                 `json:"type"`
+	Role             string                 `json:"role,omitempty"`
+	Name             string                 `json:"name,omitempty"`
+	CallID           string                 `json:"call_id,omitempty"`
+	Arguments        string                 `json:"arguments,omitempty"`
+	EncryptedContent string                 `json:"encrypted_content,omitempty"`
+	Summary          []responsesSummaryPart `json:"summary,omitempty"`
+	Content          []responsesContentPart `json:"content,omitempty"`
 }
 
 type responsesSSEResponse struct {
-	ID                string          `json:"id"`
-	Usage             *responsesUsage `json:"usage,omitempty"`
+	ID                string                      `json:"id"`
+	Usage             *responsesUsage             `json:"usage,omitempty"`
 	IncompleteDetails *responsesIncompleteDetails `json:"incomplete_details,omitempty"`
 }
 
@@ -179,20 +179,14 @@ func streamResponsesEvents(ctx context.Context, body io.Reader, sw *schema.Strea
 			}
 
 		case "response.function_call_arguments.delta":
-			if funcArgsAccum == nil || evt.Item == nil || evt.Item.ID == "" {
+			if evt.Item == nil || evt.Item.ID == "" {
 				continue
 			}
-			// Find accumulator by call_id.
-			for _, acc := range funcArgsAccum {
-				if acc.id == evt.Item.ID && acc.callID == "" {
+			if acc, ok := funcArgsAccum[evt.Item.ID]; ok {
+				if acc.callID == "" && evt.Item.CallID != "" {
 					acc.callID = evt.Item.CallID
-					acc.args += evt.Delta
-					break
 				}
-				if acc.callID == evt.Item.CallID {
-					acc.args += evt.Delta
-					break
-				}
+				acc.args += evt.Delta
 			}
 
 		case "response.reasoning_summary_text.delta":
@@ -243,7 +237,7 @@ func streamResponsesEvents(ctx context.Context, body io.Reader, sw *schema.Strea
 				// Content already emitted via output_text.delta.
 				if evt.Item.ID != "" {
 					sw.Send(&schema.Message{
-						Role: schema.Assistant,
+						Role:  schema.Assistant,
 						Extra: map[string]any{"copilot_item_id": evt.Item.ID},
 					}, nil)
 				}
@@ -284,6 +278,28 @@ func streamResponsesEvents(ctx context.Context, body io.Reader, sw *schema.Strea
 	if err := scanner.Err(); err != nil {
 		return errors.Wrap(err, "copilot: responses stream scanner error")
 	}
+
+	// Flush any remaining function-call accumulators that were never closed
+	// by a response.output_item.done event (e.g. truncated stream).
+	for id, acc := range funcArgsAccum {
+		tc := schema.ToolCall{
+			ID:   acc.callID,
+			Type: "function",
+			Function: schema.FunctionCall{
+				Name:      acc.name,
+				Arguments: acc.args,
+			},
+		}
+		if acc.id != "" {
+			tc.Extra = map[string]any{"copilot_item_id": acc.id}
+		}
+		sw.Send(&schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{tc},
+		}, nil)
+		delete(funcArgsAccum, id)
+	}
+
 	return nil
 }
 

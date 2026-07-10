@@ -221,6 +221,49 @@ func TestStreamEvents(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "streaming token usage in final chunk",
+			sseLines: []string{
+				`data: {"choices":[{"delta":{"content":"response"}}]}`,
+				`data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`,
+				`data: [DONE]`,
+			},
+			want: []*schema.Message{
+				{Role: schema.Assistant, Content: "response"},
+				{
+					Role: schema.Assistant,
+					ResponseMeta: &schema.ResponseMeta{
+						Usage: &schema.TokenUsage{
+							PromptTokens:     10,
+							CompletionTokens: 5,
+							TotalTokens:      15,
+						},
+					},
+				},
+			},
+		},
+		{
+			// Regression test: tool-call deltas followed by [DONE] without
+			// a finish-reason chunk. The defensive flush must emit the
+			// accumulated tool calls before the stream ends.
+			name: "[DONE] without finish_reason flushes accumulated tool calls",
+			sseLines: []string{
+				`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"search","arguments":"q=weather"}}]}}]}`,
+				`data: [DONE]`,
+			},
+			want: []*schema.Message{
+				{
+					Role: schema.Assistant,
+					ToolCalls: []schema.ToolCall{
+						{
+							Index:    idx(0),
+							ID:       "call_1",
+							Function: schema.FunctionCall{Name: "search", Arguments: "q=weather"},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -282,6 +325,23 @@ func compareMsg(t *testing.T, idx int, got, want *schema.Message) {
 	}
 	if got.ReasoningContent != want.ReasoningContent {
 		t.Errorf("message[%d].ReasoningContent = %q, want %q", idx, got.ReasoningContent, want.ReasoningContent)
+	}
+	if got.ResponseMeta != nil && want.ResponseMeta != nil {
+		gotUsage := got.ResponseMeta.Usage
+		wantUsage := want.ResponseMeta.Usage
+		if gotUsage == nil && wantUsage != nil || gotUsage != nil && wantUsage == nil {
+			t.Errorf("message[%d].ResponseMeta.Usage = %v, want %v", idx, gotUsage, wantUsage)
+		} else if gotUsage != nil && wantUsage != nil {
+			if gotUsage.PromptTokens != wantUsage.PromptTokens {
+				t.Errorf("message[%d].ResponseMeta.Usage.PromptTokens = %d, want %d", idx, gotUsage.PromptTokens, wantUsage.PromptTokens)
+			}
+			if gotUsage.CompletionTokens != wantUsage.CompletionTokens {
+				t.Errorf("message[%d].ResponseMeta.Usage.CompletionTokens = %d, want %d", idx, gotUsage.CompletionTokens, wantUsage.CompletionTokens)
+			}
+			if gotUsage.TotalTokens != wantUsage.TotalTokens {
+				t.Errorf("message[%d].ResponseMeta.Usage.TotalTokens = %d, want %d", idx, gotUsage.TotalTokens, wantUsage.TotalTokens)
+			}
+		}
 	}
 	if len(got.ToolCalls) != len(want.ToolCalls) {
 		t.Errorf("message[%d].ToolCalls len = %d, want %d", idx, len(got.ToolCalls), len(want.ToolCalls))

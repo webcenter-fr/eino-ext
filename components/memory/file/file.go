@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/schema"
@@ -318,4 +319,17 @@ func (c *FileConversation) Save(msg *schema.Message) error {
 		return errors.Wrap(err, "failed to write message newline")
 	}
 	return nil
+}
+
+// GetUpdatedAt returns the RFC3339 modification time of the backing .jsonl
+// file. Returns "" when the file cannot be stat'd.
+func (c *FileConversation) GetUpdatedAt() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	info, err := os.Stat(c.filePath)
+	if err != nil {
+		return ""
+	}
+	return info.ModTime().UTC().Format(time.RFC3339)
 }

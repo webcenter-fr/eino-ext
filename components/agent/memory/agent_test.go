@@ -27,7 +27,7 @@ func (m *mockAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.
 	return iter
 }
 
-func TestBuildQuery_FindsLastUserMessage(t *testing.T) {
+func TestBuildQuery_JoinsLastTwoUserMessages(t *testing.T) {
 	agent := &MemoryAgent{}
 	messages := []*schema.Message{
 		schema.SystemMessage("system prompt"),
@@ -35,7 +35,30 @@ func TestBuildQuery_FindsLastUserMessage(t *testing.T) {
 		schema.AssistantMessage("first answer", nil),
 		schema.UserMessage("second question"),
 	}
-	assert.Equal(t, "second question", agent.buildQuery(messages))
+	assert.Equal(t, "first question\nsecond question", agent.buildQuery(messages))
+}
+
+func TestBuildQuery_SingleUserMessage(t *testing.T) {
+	agent := &MemoryAgent{}
+	messages := []*schema.Message{
+		schema.SystemMessage("system prompt"),
+		schema.UserMessage("only question"),
+		schema.AssistantMessage("answer", nil),
+	}
+	assert.Equal(t, "only question", agent.buildQuery(messages))
+}
+
+func TestBuildQuery_ThreeUserMessages_KeepsLastTwo(t *testing.T) {
+	agent := &MemoryAgent{}
+	messages := []*schema.Message{
+		schema.UserMessage("oldest"),
+		schema.AssistantMessage("answer 1", nil),
+		schema.UserMessage("middle"),
+		schema.AssistantMessage("answer 2", nil),
+		schema.UserMessage("latest"),
+	}
+	// Only the last two (middle + latest) in chronological order.
+	assert.Equal(t, "middle\nlatest", agent.buildQuery(messages))
 }
 
 func TestBuildQuery_NoUserMessage(t *testing.T) {

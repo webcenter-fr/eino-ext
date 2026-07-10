@@ -213,3 +213,16 @@ func TestConversationDocSerialization(t *testing.T) {
 	assert.Equal(t, "hello", restored.Messages[0].Content)
 	assert.Equal(t, schema.User, restored.Messages[0].Role)
 }
+
+func TestGetUpdatedAt_EmptyForNewConversation(t *testing.T) {
+	fc := newConv(t, Config{})
+	assert.Equal(t, "", fc.GetUpdatedAt())
+}
+
+func TestGetUpdatedAt_AfterToDoc(t *testing.T) {
+	fc := newConv(t, Config{})
+	doc := fc.toDoc()
+	// toDoc stamps time.Now() in RFC3339; verify it parses back.
+	assert.NotEmpty(t, doc.UpdatedAt)
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`, doc.UpdatedAt)
+}

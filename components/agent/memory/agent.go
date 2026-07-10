@@ -25,16 +25,16 @@ const (
 )
 
 type Config struct {
-	InnerAgent              adk.Agent           `json:"inner_agent" jsonschema:"-" validate:"required"`
-	Store                   MemoryStore         `json:"-" jsonschema:"-"`
-	Model                   model.BaseChatModel `json:"-" jsonschema:"-"`
-	UserID                  string              `json:"user_id" jsonschema:"description=Static user ID for memory scoping; overridden by context value if set"`
-	SessionID               string              `json:"session_id" jsonschema:"description=Static session ID; overridden by context value if set"`
-	AutoExtract             bool                `json:"auto_extract" jsonschema:"description=Auto-extract memories after each turn,default=true when Store and Model are set"`
-	MaintenanceInterval     time.Duration       `json:"maintenance_interval" validate:"gte=0" jsonschema:"description=Background maintenance tick interval, 0 disables"`
-	MaxAge                  time.Duration       `json:"max_age" validate:"gte=0" jsonschema:"description=Max age before cleanup during maintenance, 0 disables"`
-	MaxMemoriesPerRetrieve  int                 `json:"max_memories_per_retrieve" validate:"gte=0" jsonschema:"description=Max memories injected per turn,default=5"`
-	SystemPromptPrefix      string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
+	InnerAgent             adk.Agent           `json:"inner_agent" jsonschema:"-" validate:"required"`
+	Store                  MemoryStore         `json:"-" jsonschema:"-"`
+	Model                  model.BaseChatModel `json:"-" jsonschema:"-"`
+	UserID                 string              `json:"user_id" jsonschema:"description=Static user ID for memory scoping; overridden by context value if set"`
+	SessionID              string              `json:"session_id" jsonschema:"description=Static session ID; overridden by context value if set"`
+	AutoExtract            bool                `json:"auto_extract" jsonschema:"description=Auto-extract memories after each turn,default=true when Store and Model are set"`
+	MaintenanceInterval    time.Duration       `json:"maintenance_interval" validate:"gte=0" jsonschema:"description=Background maintenance tick interval, 0 disables"`
+	MaxAge                 time.Duration       `json:"max_age" validate:"gte=0" jsonschema:"description=Max age before cleanup during maintenance, 0 disables"`
+	MaxMemoriesPerRetrieve int                 `json:"max_memories_per_retrieve" validate:"gte=0" jsonschema:"description=Max memories injected per turn,default=5"`
+	SystemPromptPrefix     string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
 }
 
 type MemoryAgent struct {
@@ -174,13 +174,22 @@ func filterByUser(docs []*schema.Document, userID string) []*schema.Document {
 	return filtered
 }
 
+// buildQuery returns the last N user messages joined in chronological order,
+// bounded to keep embedding/query cost low. N defaults to 2; a single user
+// message is returned as-is if there are fewer.
 func (a *MemoryAgent) buildQuery(messages []*schema.Message) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == schema.User {
-			return messages[i].Content
+	const maxUserMessages = 2
+	var userContents []string
+	for i := len(messages) - 1; i >= 0 && len(userContents) < maxUserMessages; i-- {
+		if messages[i].Role == schema.User && messages[i].Content != "" {
+			userContents = append(userContents, messages[i].Content)
 		}
 	}
-	return ""
+	// Reverse to chronological order.
+	for i, j := 0, len(userContents)-1; i < j; i, j = i+1, j-1 {
+		userContents[i], userContents[j] = userContents[j], userContents[i]
+	}
+	return strings.Join(userContents, "\n")
 }
 
 func (a *MemoryAgent) formatMemories(docs []*schema.Document) *schema.Message {
@@ -239,24 +248,29 @@ func (a *MemoryAgent) monitorRun(
 		if event == nil {
 			continue
 		}
-		outGen.Send(event)
 
 		if event.Err != nil || event.Output == nil || event.Output.MessageOutput == nil {
+			outGen.Send(event)
 			continue
 		}
 		mo := event.Output.MessageOutput
 		if mo.Role != schema.Assistant {
+			outGen.Send(event)
 			continue
 		}
 
-		if mo.IsStreaming {
-			msg, err := a.collectStream(mo.MessageStream)
-			if err != nil {
-				logrus.WithError(err).Debug("failed to collect streaming assistant message")
-				continue
+		if mo.IsStreaming && mo.MessageStream != nil {
+			copies := mo.MessageStream.Copy(2)
+			mo.MessageStream = copies[0] // forwarded downstream
+			outGen.Send(event)
+			if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
+				assistantMsgs = append(assistantMsgs, msg)
 			}
-			assistantMsgs = append(assistantMsgs, msg)
-		} else if mo.Message != nil {
+			continue
+		}
+
+		outGen.Send(event)
+		if mo.Message != nil {
 			assistantMsgs = append(assistantMsgs, mo.Message)
 		}
 	}

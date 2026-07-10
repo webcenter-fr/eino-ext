@@ -59,6 +59,10 @@ type Conversation interface {
 
 	// SetActivities replaces all stored activity events (batch write after run).
 	SetActivities(raw []json.RawMessage)
+
+	// GetUpdatedAt returns the RFC3339 timestamp of the last update, or "" if
+	// the backend does not track this information.
+	GetUpdatedAt() string
 }
 
 // LastSummaryIndex returns the index of the last summary message in msgs, or -1

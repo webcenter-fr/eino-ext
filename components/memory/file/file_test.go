@@ -316,3 +316,13 @@ func TestDeleteConversation(t *testing.T) {
 	_, statErr := os.Stat(filePath)
 	assert.True(t, os.IsNotExist(statErr))
 }
+
+func TestGetUpdatedAt_NonEmptyAfterSave(t *testing.T) {
+	fc := newConv(t, FileMemoryConfig{})
+	// Save creates the backing file; after that GetUpdatedAt should return a
+	// non-empty RFC3339 timestamp.
+	fc.Append(userMsg("hello"))
+	ts := fc.GetUpdatedAt()
+	assert.NotEmpty(t, ts)
+	assert.Regexp(t, `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`, ts)
+}
