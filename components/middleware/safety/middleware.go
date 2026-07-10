@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"time"
 
@@ -17,6 +16,11 @@ import (
 	safety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
+
+
+// dryRunGuidance is appended to tool outputs during dry-run mode to instruct
+// the LLM to present the preview to the user and request confirmation.
+const dryRunGuidance = "\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true."
 
 // Middleware is an adk.ChatModelAgentMiddleware that enforces a safety control
 // layer: audit trails, policy evaluation, and gate logic (dry-run/confirmed).
@@ -70,14 +74,14 @@ func (m *Middleware) WrapInvokableToolCall(_ context.Context, endpoint adk.Invok
 		}
 
 		result, err := endpoint(ctx, argumentsInJSON, opts...)
-		m.auditResult(toolName, callID, phase, args, result, err)
+		m.auditResult(ctx, toolName, callID, phase, args, result, err)
 		if err != nil {
 			return "", err
 		}
 
 		// Append dry-run guidance.
 		if phase == safety.PhaseDryRun {
-			result = fmt.Sprintf("%s\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true.", result)
+			result += dryRunGuidance
 		}
 		return result, nil
 	}, nil
@@ -100,10 +104,10 @@ func (m *Middleware) WrapStreamableToolCall(_ context.Context, endpoint adk.Stre
 
 		sr, err := endpoint(ctx, argumentsInJSON, opts...)
 		if err != nil {
-			m.auditResult(toolName, callID, phase, args, "", err)
+			m.auditResult(ctx, toolName, callID, phase, args, "", err)
 			return nil, err
 		}
-		return wrapStreamAudit(sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
+		return wrapStreamAudit(ctx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
 	}, nil
 }
 
@@ -122,9 +126,16 @@ func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint a
 		}
 
 		result, err := endpoint(ctx, toolArg, opts...)
-		m.auditResult(toolName, callID, phase, args, "", err)
+		m.auditResult(ctx, toolName, callID, phase, args, "", err)
 		if err != nil {
 			return nil, err
+		}
+		// Append dry-run guidance for write tools in dry-run mode.
+		if phase == safety.PhaseDryRun {
+			result.Parts = append(result.Parts, schema.ToolOutputPart{
+				Type: schema.ToolPartTypeText,
+				Text: dryRunGuidance,
+			})
 		}
 		return result, nil
 	}, nil
@@ -146,10 +157,10 @@ func (m *Middleware) WrapEnhancedStreamableToolCall(_ context.Context, endpoint 
 
 		sr, err := endpoint(ctx, toolArg, opts...)
 		if err != nil {
-			m.auditResult(toolName, callID, phase, args, "", err)
+			m.auditResult(ctx, toolName, callID, phase, args, "", err)
 			return nil, err
 		}
-		return wrapEnhancedStreamAudit(sr, toolName, callID, phase, args, m.audit), nil
+		return wrapEnhancedStreamAudit(ctx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
 	}, nil
 }
 
@@ -174,7 +185,7 @@ func (m *Middleware) preflight(ctx context.Context, toolName, callID, args strin
 	// Policy evaluation (applies to ALL tools).
 	if m.cfg.Policy != nil {
 		if err := m.cfg.Policy.Evaluate(ctx, toolName, params); err != nil {
-			m.audit(safety.AuditEvent{
+			m.audit(ctx, safety.AuditEvent{
 				Timestamp:  time.Now(),
 				ToolName:   toolName,
 				CallID:     callID,
@@ -194,11 +205,11 @@ func (m *Middleware) preflight(ctx context.Context, toolName, callID, args strin
 	// Gate check (write tools only).
 	gp, gpErr := safety.ExtractGateParams(args)
 	if gpErr != nil {
-		m.auditReject(toolName, callID, args, gpErr)
+		m.auditReject(ctx, toolName, callID, args, gpErr)
 		return "", gpErr
 	}
 	if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-		m.auditReject(toolName, callID, args, err)
+		m.auditReject(ctx, toolName, callID, args, err)
 		return "", err
 	}
 
@@ -210,8 +221,8 @@ func (m *Middleware) preflight(ctx context.Context, toolName, callID, args strin
 
 // auditReject emits a rejection audit event for a write tool whose gate parsing
 // or gate check failed (policy already passed at that point).
-func (m *Middleware) auditReject(toolName, callID, args string, err error) {
-	m.audit(safety.AuditEvent{
+func (m *Middleware) auditReject(ctx context.Context, toolName, callID, args string, err error) {
+	m.audit(ctx, safety.AuditEvent{
 		Timestamp:  time.Now(),
 		ToolName:   toolName,
 		CallID:     callID,
@@ -224,7 +235,7 @@ func (m *Middleware) auditReject(toolName, callID, args string, err error) {
 
 // auditResult emits the terminal audit event for a completed call: an error
 // event when err is non-nil, otherwise a success event carrying result.
-func (m *Middleware) auditResult(toolName, callID string, phase safety.Phase, args, result string, err error) {
+func (m *Middleware) auditResult(ctx context.Context, toolName, callID string, phase safety.Phase, args, result string, err error) {
 	event := safety.AuditEvent{
 		Timestamp:  time.Now(),
 		ToolName:   toolName,
@@ -238,13 +249,16 @@ func (m *Middleware) auditResult(toolName, callID string, phase safety.Phase, ar
 	} else {
 		event.Result = result
 	}
-	m.audit(event)
+	m.audit(ctx, event)
 }
 
-// audit sends an audit event to the configured sink. Errors from the sink are
-// silently dropped (audit is best-effort, not a critical path).
-func (m *Middleware) audit(event safety.AuditEvent) {
-	_ = m.cfg.AuditSink.Write(context.Background(), event)
+// audit sends an audit event to the configured sink with the given context.
+// The context carries the run's session ID (set via activity.WithSession) so
+// bus-backed sinks can correlate audit events to the correct SSE subscriber.
+// Errors from the sink are silently dropped (audit is best-effort, not a
+// critical path).
+func (m *Middleware) audit(ctx context.Context, event safety.AuditEvent) {
+	_ = m.cfg.AuditSink.Write(ctx, event)
 }
 
 // parseArgs unmarshals a JSON string into a map.
@@ -258,14 +272,16 @@ func parseArgs(raw string) (map[string]any, error) {
 
 // wrapStreamAudit wraps a StreamReader[string] to audit on stream completion.
 // When the stream is consumed to EOF, it emits a single audit event with the
-// full accumulated result and appends dry-run guidance if applicable.
+// full accumulated result. When dryRun is true, a final DRY-RUN RESULT guidance
+// chunk is appended after EOF so the LLM sees the confirmation instruction.
 func wrapStreamAudit(
+	ctx context.Context,
 	sr *schema.StreamReader[string],
 	toolName, callID string,
 	phase safety.Phase,
 	args string,
 	dryRun bool,
-	auditFn func(safety.AuditEvent),
+	auditFn func(context.Context, safety.AuditEvent),
 ) *schema.StreamReader[string] {
 	out, sw := schema.Pipe[string](100)
 
@@ -276,8 +292,14 @@ func wrapStreamAudit(
 			chunk, err := sr.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
+					// Append dry-run guidance as a final chunk before auditing.
+					if dryRun {
+						guidance := dryRunGuidance
+						fullResult += guidance
+						sw.Send(guidance, nil)
+					}
 					// EOF — audit the full result.
-					auditFn(safety.AuditEvent{
+					auditFn(ctx, safety.AuditEvent{
 						Timestamp:  time.Now(),
 						ToolName:   toolName,
 						CallID:     callID,
@@ -287,7 +309,7 @@ func wrapStreamAudit(
 						PolicyPass: true,
 					})
 				} else {
-					auditFn(safety.AuditEvent{
+					auditFn(ctx, safety.AuditEvent{
 						Timestamp:  time.Now(),
 						ToolName:   toolName,
 						CallID:     callID,
@@ -308,13 +330,16 @@ func wrapStreamAudit(
 }
 
 // wrapEnhancedStreamAudit wraps a StreamReader[*schema.ToolResult] to audit on
-// stream completion.
+// stream completion. When dryRun is true, a final ToolResult with DRY-RUN
+// RESULT guidance is appended after EOF.
 func wrapEnhancedStreamAudit(
+	ctx context.Context,
 	sr *schema.StreamReader[*schema.ToolResult],
 	toolName, callID string,
 	phase safety.Phase,
 	args string,
-	auditFn func(safety.AuditEvent),
+	dryRun bool,
+	auditFn func(context.Context, safety.AuditEvent),
 ) *schema.StreamReader[*schema.ToolResult] {
 	out, sw := schema.Pipe[*schema.ToolResult](100)
 
@@ -324,7 +349,16 @@ func wrapEnhancedStreamAudit(
 			chunk, err := sr.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					auditFn(safety.AuditEvent{
+					// Append dry-run guidance as a final result before auditing.
+					if dryRun {
+						sw.Send(&schema.ToolResult{
+							Parts: []schema.ToolOutputPart{{
+								Type: schema.ToolPartTypeText,
+								Text: dryRunGuidance,
+							}},
+						}, nil)
+					}
+					auditFn(ctx, safety.AuditEvent{
 						Timestamp:  time.Now(),
 						ToolName:   toolName,
 						CallID:     callID,
@@ -333,7 +367,7 @@ func wrapEnhancedStreamAudit(
 						PolicyPass: true,
 					})
 				} else {
-					auditFn(safety.AuditEvent{
+					auditFn(ctx, safety.AuditEvent{
 						Timestamp:  time.Now(),
 						ToolName:   toolName,
 						CallID:     callID,

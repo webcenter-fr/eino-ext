@@ -383,3 +383,118 @@ func TestWriteToolNamesHelper(t *testing.T) {
 		t.Fatal("expected 'd' not in write tools map")
 	}
 }
+
+func TestWrapEnhancedInvokableToolCallWriteDryRun(t *testing.T) {
+	channelSink := safety.NewChannelSink(10)
+	defer channelSink.Close()
+
+	m, err := New(&Config{
+		WriteToolNames: []string{"write_tool"},
+		AuditSink:      channelSink,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	endpoint := func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.ToolResult, error) {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: "dry run result"}},
+		}, nil
+	}
+
+	wrapped, err := m.WrapEnhancedInvokableToolCall(context.Background(), endpoint, &adk.ToolContext{
+		Name:   "write_tool",
+		CallID: "call-008",
+	})
+	if err != nil {
+		t.Fatalf("WrapEnhancedInvokableToolCall: %v", err)
+	}
+
+	result, err := wrapped(context.Background(), &schema.ToolArgument{Text: `{"dryRun":true}`})
+	if err != nil {
+		t.Fatalf("wrapped endpoint: %v", err)
+	}
+
+	// Verify dry-run guidance is in Parts.
+	found := false
+	for _, part := range result.Parts {
+		if strings.Contains(part.Text, "DRY-RUN RESULT") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected DRY-RUN RESULT in result Parts, got %+v", result.Parts)
+	}
+
+	// Verify phase is dry-run.
+	event := <-channelSink.Events()
+	if event.Phase != safety.PhaseDryRun {
+		t.Fatalf("expected PhaseDryRun, got %q", event.Phase)
+	}
+}
+
+func TestWrapStreamableToolCallWriteDryRun(t *testing.T) {
+	channelSink := safety.NewChannelSink(10)
+	defer channelSink.Close()
+
+	m, err := New(&Config{
+		WriteToolNames: []string{"write_tool"},
+		AuditSink:      channelSink,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Create a streaming endpoint that returns a few chunks.
+	endpoint := func(ctx context.Context, _ string, _ ...tool.Option) (*schema.StreamReader[string], error) {
+		sr, sw := schema.Pipe[string](3)
+		go func() {
+			defer sw.Close()
+			sw.Send("chunk1", nil)
+			sw.Send("chunk2", nil)
+		}()
+		return sr, nil
+	}
+
+	wrapped, err := m.WrapStreamableToolCall(context.Background(), endpoint, &adk.ToolContext{
+		Name:   "write_tool",
+		CallID: "call-009",
+	})
+	if err != nil {
+		t.Fatalf("WrapStreamableToolCall: %v", err)
+	}
+
+	sr, err := wrapped(context.Background(), `{"dryRun":true}`)
+	if err != nil {
+		t.Fatalf("wrapped endpoint: %v", err)
+	}
+	defer sr.Close()
+
+	var chunks []string
+	for {
+		chunk, recvErr := sr.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("Recv: %v", recvErr)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	// Should have original chunks + the dry-run guidance chunk appended at EOF.
+	if len(chunks) < 3 {
+		t.Fatalf("expected at least 3 chunks (2 original + guidance), got %d: %v", len(chunks), chunks)
+	}
+	last := chunks[len(chunks)-1]
+	if !strings.Contains(last, "DRY-RUN RESULT") {
+		t.Fatalf("expected DRY-RUN RESULT in last chunk, got %q", last)
+	}
+
+	// Verify phase is dry-run.
+	event := <-channelSink.Events()
+	if event.Phase != safety.PhaseDryRun {
+		t.Fatalf("expected PhaseDryRun, got %q", event.Phase)
+	}
+}
