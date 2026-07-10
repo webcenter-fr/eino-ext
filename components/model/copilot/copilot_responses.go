@@ -323,7 +323,10 @@ func (m *CopilotModel) buildResponsesRequest(in []*schema.Message, opts ...model
 		Model:           resolvedModel,
 		Input:           convertToResponsesInput(in),
 		MaxOutputTokens: m.cfg.MaxCompletionTokens,
-		Temperature:     m.cfg.Temperature,
+		// Note: temperature/top_p are intentionally omitted. The /responses
+		// endpoint is used only for GPT-5+ reasoning models, which reject these
+		// parameters (400 "temperature is not supported with this model").
+		// This mirrors kilocode's openai-responses reasoning-model handling.
 	}
 
 	// Tools.
