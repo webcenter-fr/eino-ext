@@ -16,6 +16,12 @@ import (
 )
 
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
+	resolvedModel := m.resolveModel(opts...)
+	if useResponsesAPI(resolvedModel) {
+		return m.streamResponses(ctx, in, opts...)
+	}
+
 	body, err := m.buildChatRequest(in, true, opts...)
 	if err != nil {
 		return nil, err
@@ -32,6 +38,7 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
+	setPerRequestHeaders(req, in)
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := m.httpClient.Do(req)
@@ -68,7 +75,6 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
 	var toolAccum map[int]*toolCallAccumState
-	var reasoningOpen bool
 
 	for scanner.Scan() {
 		select {
@@ -99,38 +105,36 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
 
-			// Reasoning text: emit as reasoning content, skip everything else for this chunk.
+			msg := &schema.Message{Role: schema.Assistant}
+
+			// Emit reasoning first (if present), then process content and
+			// tool_calls in the same iteration. This handles the case where
+			// reasoning_text/reasoning_opaque and content/tool_calls arrive in
+			// the same chunk (the kilocode reference explicitly handles this).
 			if delta.ReasoningText != "" || delta.ReasoningOpaque != "" {
-				reasoningOpen = true
 				reasoningContent := delta.ReasoningText
 				if reasoningContent == "" {
 					reasoningContent = delta.ReasoningOpaque
+				}
+				// Persist opaque for multi-turn round-trip.
+				if delta.ReasoningOpaque != "" {
+					if msg.Extra == nil {
+						msg.Extra = make(map[string]any)
+					}
+					msg.Extra["copilot_reasoning_opaque"] = delta.ReasoningOpaque
 				}
 				sw.Send(&schema.Message{
 					Role:             schema.Assistant,
 					ReasoningContent: reasoningContent,
 				}, nil)
-				continue
 			}
 
-			// Transition to content/tool-calls after a reasoning block.
-			if reasoningOpen && delta.Content == "" && len(delta.ToolCalls) == 0 {
-				reasoningOpen = false
-				continue
-			}
-
-			// Any non-reasoning delta (content or tool calls) signals the end of
-			// the reasoning block. Reset the flag so a subsequent final empty
-			// chunk (finish_reason only, no delta payload) does not match the
-			// transition guard above and skip accumulated tool-call emission.
-			reasoningOpen = false
-
-			msg := &schema.Message{Role: schema.Assistant}
-
+			// Process content delta.
 			if delta.Content != "" {
 				msg.Content = delta.Content
 			}
 
+			// Process tool call deltas.
 			for _, tc := range delta.ToolCalls {
 				if tc.Index == nil {
 					continue
@@ -151,6 +155,13 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 					st.name = tc.Function.Name
 				}
 				st.args += tc.Function.Arguments
+			}
+
+			// Set finish reason when present.
+			if choice.FinishReason != nil {
+				msg.ResponseMeta = &schema.ResponseMeta{
+					FinishReason: mapFinishReason(*choice.FinishReason),
+				}
 			}
 
 			// Emit accumulated tool calls on finish, sorted by index.
@@ -175,7 +186,8 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 				toolAccum = nil
 			}
 
-			if msg.Content != "" || len(msg.ToolCalls) > 0 {
+			// Send the message if it has content, tool calls, or a finish reason.
+			if msg.Content != "" || len(msg.ToolCalls) > 0 || msg.ResponseMeta != nil {
 				sw.Send(msg, nil)
 			}
 		}

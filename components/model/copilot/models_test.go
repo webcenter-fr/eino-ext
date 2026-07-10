@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+func boolPtr(b bool) *bool { return &b }
+func intPtr(i int) *int   { return &i }
+
 func TestListModelsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/models" {
@@ -26,34 +29,74 @@ func TestListModelsSuccess(t *testing.T) {
 					ID:                 "gpt-4o",
 					Name:               "GPT-4o",
 					ModelPickerEnabled: true,
+					Version:            "gpt-4o-2024-08-06",
+					SupportedEndpoints: []string{"/chat/completions"},
 					Policy:             copilotModelPolicy{State: "enabled"},
 					Capabilities: copilotModelCapabilities{
+						Family: "gpt-4",
 						Limits: copilotModelLimits{
 							MaxContextWindowTokens: 128000,
 							MaxOutputTokens:        16384,
+							MaxPromptTokens:        128000,
+							Vision: &copilotModelVision{
+								MaxPromptImageSize:  2048,
+								MaxPromptImages:     10,
+								SupportedMediaTypes: []string{"image/png", "image/jpeg"},
+							},
 						},
-						Supports: []copilotModelSupport{
-							{Type: "tool_calls"},
-							{Type: "streaming"},
-							{Type: "vision"},
+						Supports: copilotModelSupports{
+							ToolCalls: true,
+							Streaming: true,
+							Vision:    boolPtr(true),
 						},
 					},
-					MaxPromptImageSize: 2048,
 				},
 				{
 					ID:                 "claude-3.5-sonnet",
 					Name:               "Claude 3.5 Sonnet",
 					ModelPickerEnabled: true,
+					Version:            "claude-3.5-sonnet-2024-10-22",
 					Policy:             copilotModelPolicy{State: "enabled"},
 					Capabilities: copilotModelCapabilities{
+						Family: "claude-3",
 						Limits: copilotModelLimits{
 							MaxContextWindowTokens: 200000,
 							MaxOutputTokens:        8192,
+							MaxPromptTokens:        200000,
 						},
-						Supports: []copilotModelSupport{
-							{Type: "tool_calls"},
-							{Type: "streaming"},
-							{Type: "reasoning"},
+						Supports: copilotModelSupports{
+							ToolCalls:        true,
+							Streaming:        true,
+							AdaptiveThinking: boolPtr(true),
+							ReasoningEffort:  []string{"low", "medium", "high"},
+							MaxThinkingBudget: intPtr(32000),
+						},
+					},
+				},
+				{
+					ID:                 "gpt-5",
+					Name:               "GPT-5",
+					ModelPickerEnabled: true,
+					Version:            "gpt-5-2025-06-01",
+					SupportedEndpoints: []string{"/chat/completions", "/responses"},
+					Policy:             copilotModelPolicy{State: "enabled"},
+					Capabilities: copilotModelCapabilities{
+						Family: "gpt-5",
+						Limits: copilotModelLimits{
+							MaxContextWindowTokens: 128000,
+							MaxOutputTokens:        16384,
+							MaxPromptTokens:        128000,
+							Vision: &copilotModelVision{
+								MaxPromptImageSize:  2048,
+								MaxPromptImages:     10,
+								SupportedMediaTypes: []string{"image/png", "image/jpeg"},
+							},
+						},
+						Supports: copilotModelSupports{
+							ToolCalls:       true,
+							Streaming:       true,
+							Vision:          boolPtr(true),
+							ReasoningEffort: []string{"low", "medium", "high"},
 						},
 					},
 				},
@@ -68,8 +111,8 @@ func TestListModelsSuccess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(models) != 2 {
-		t.Fatalf("expected 2 models, got %d", len(models))
+	if len(models) != 3 {
+		t.Fatalf("expected 3 models, got %d", len(models))
 	}
 
 	m1 := models[0]
@@ -97,6 +140,15 @@ func TestListModelsSuccess(t *testing.T) {
 	if m1.MaxPromptImageSize != 2048 {
 		t.Errorf("expected 2048 max prompt image size, got %d", m1.MaxPromptImageSize)
 	}
+	if m1.MaxPromptImages != 10 {
+		t.Errorf("expected 10 max prompt images, got %d", m1.MaxPromptImages)
+	}
+	if m1.Family != "gpt-4" {
+		t.Errorf("expected family 'gpt-4', got %q", m1.Family)
+	}
+	if m1.Version != "gpt-4o-2024-08-06" {
+		t.Errorf("expected version 'gpt-4o-2024-08-06', got %q", m1.Version)
+	}
 
 	m2 := models[1]
 	if m2.ID != "claude-3.5-sonnet" {
@@ -104,6 +156,20 @@ func TestListModelsSuccess(t *testing.T) {
 	}
 	if !m2.SupportsReasoning {
 		t.Error("expected claude to support reasoning")
+	}
+	if len(m2.ReasoningEfforts) != 3 {
+		t.Errorf("expected 3 reasoning efforts, got %d", len(m2.ReasoningEfforts))
+	}
+
+	m3 := models[2]
+	if m3.ID != "gpt-5" {
+		t.Errorf("expected ID gpt-5, got %q", m3.ID)
+	}
+	if !m3.SupportsReasoning {
+		t.Error("expected gpt-5 to support reasoning")
+	}
+	if len(m3.SupportedEndpoints) != 2 {
+		t.Errorf("expected 2 supported endpoints, got %d", len(m3.SupportedEndpoints))
 	}
 }
 
@@ -189,5 +255,53 @@ func TestListModelsEmpty(t *testing.T) {
 	}
 	if len(models) != 0 {
 		t.Errorf("expected 0 models, got %d", len(models))
+	}
+}
+
+func TestListModelsVisionViaMediaTypes(t *testing.T) {
+	// Vision should be detected via limits.vision.supported_media_types even
+	// when the "vision" supports flag is not explicitly true.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(copilotModelsResponse{
+			Data: []copilotModelData{
+				{
+					ID:                 "vision-from-media",
+					Name:               "Vision via Media",
+					ModelPickerEnabled: true,
+					Policy:             copilotModelPolicy{State: "enabled"},
+					Capabilities: copilotModelCapabilities{
+						Family: "test",
+						Limits: copilotModelLimits{
+							MaxContextWindowTokens: 128000,
+							MaxOutputTokens:        16384,
+							MaxPromptTokens:        128000,
+							Vision: &copilotModelVision{
+								MaxPromptImageSize:  2048,
+								MaxPromptImages:     5,
+								SupportedMediaTypes: []string{"image/png", "image/jpeg"},
+							},
+						},
+						Supports: copilotModelSupports{
+							ToolCalls: true,
+							Streaming: true,
+							// Vision flag NOT set — must be inferred from media types.
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	models, err := ListModels(ctx, "token", srv.URL, 5*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(models))
+	}
+	if !models[0].SupportsVision {
+		t.Error("expected vision support via media types")
 	}
 }

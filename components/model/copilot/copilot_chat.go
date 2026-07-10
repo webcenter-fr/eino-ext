@@ -7,23 +7,54 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
+const (
+	// OpenAIIntent is the value sent in the Openai-Intent header. kilocode uses
+	// "conversation-edits"; we match that unless there is a known reason otherwise.
+	OpenAIIntent = "conversation-edits"
+)
+
+// CopilotOptions holds per-call implementation-specific options for the
+// Copilot chat model. Use model.WrapImplSpecificOptFn to pass these at
+// call time.
+type CopilotOptions struct {
+	// ReasoningEffort overrides Config.ReasoningEffort for this call.
+	// When empty, the Config default is used.
+	ReasoningEffort ReasoningEffort
+}
+
 // --- Chat completion types ---
 
+// copilotMessage mirrors the OpenAI-compatible chat message shape. Content is
+// any to support both plain strings and array content (for vision/image_url parts).
 type copilotMessage struct {
-	Role       string            `json:"role"`
-	Content    string            `json:"content,omitempty"`
+	Role    string `json:"role"`
+	Content any    `json:"content,omitempty"`
+
 	ToolCalls  []copilotToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string            `json:"tool_call_id,omitempty"`
 	Name       string            `json:"name,omitempty"`
 
 	ReasoningText   string `json:"reasoning_text,omitempty"`
 	ReasoningOpaque string `json:"reasoning_opaque,omitempty"`
+}
+
+// copilotContentPart is a single part in an array-content Copilot message.
+type copilotContentPart struct {
+	Type     string                `json:"type"`
+	Text     string                `json:"text,omitempty"`
+	ImageURL *copilotImageURLPart  `json:"image_url,omitempty"`
+}
+
+// copilotImageURLPart holds the URL for an image part.
+type copilotImageURLPart struct {
+	URL string `json:"url"`
 }
 
 type copilotToolCall struct {
@@ -56,13 +87,16 @@ type copilotToolParams struct {
 }
 
 type copilotChatRequest struct {
-	Model               string           `json:"model"`
-	Messages            []copilotMessage `json:"messages"`
-	Temperature         *float32         `json:"temperature,omitempty"`
-	MaxCompletionTokens *int             `json:"max_completion_tokens,omitempty"`
-	ReasoningEffort     ReasoningEffort  `json:"reasoning_effort,omitempty"`
-	Stream              bool             `json:"stream"`
-	Tools               []copilotToolDef `json:"tools,omitempty"`
+	Model            string           `json:"model"`
+	Messages         []copilotMessage `json:"messages"`
+	Temperature      *float32         `json:"temperature,omitempty"`
+	MaxTokens        *int             `json:"max_tokens,omitempty"`
+	ReasoningEffort  ReasoningEffort  `json:"reasoning_effort,omitempty"`
+	TopP             *float32         `json:"top_p,omitempty"`
+	Stop             []string         `json:"stop,omitempty"`
+	Stream           bool             `json:"stream"`
+	Tools            []copilotToolDef `json:"tools,omitempty"`
+	ToolChoice       any              `json:"tool_choice,omitempty"`
 }
 
 type copilotChatResponse struct {
@@ -119,10 +153,15 @@ type copilotUsage struct {
 	CompletionTokens        int                       `json:"completion_tokens"`
 	TotalTokens             int                       `json:"total_tokens"`
 	CompletionTokensDetails *copilotCompletionDetails `json:"completion_tokens_details,omitempty"`
+	PromptTokensDetails     *copilotPromptDetails     `json:"prompt_tokens_details,omitempty"`
 }
 
 type copilotCompletionDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+type copilotPromptDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 type copilotAPIError struct {
@@ -133,6 +172,25 @@ type copilotAPIError struct {
 
 func (e *copilotAPIError) Error() string {
 	return fmt.Sprintf("copilot API error: %s (type=%s code=%s)", e.Message, e.Type, e.Code)
+}
+
+// --- Finish reason mapping ---
+
+// mapFinishReason maps Copilot/OpenAI-compatible finish reasons to normalized
+// values. Ported from kilocode map-openai-compatible-finish-reason.ts.
+func mapFinishReason(reason string) string {
+	switch reason {
+	case "stop":
+		return "stop"
+	case "length":
+		return "length"
+	case "content_filter":
+		return "content_filter"
+	case "function_call", "tool_calls":
+		return "tool_calls"
+	default:
+		return reason
+	}
 }
 
 // --- Message conversion (eino ↔ Copilot API) ---
@@ -164,10 +222,139 @@ func convertMessage(msg *schema.Message) copilotMessage {
 				},
 			})
 		}
+		// Reasoning round-trip: emit reasoning_text when present.
+		if msg.ReasoningContent != "" {
+			m.ReasoningText = msg.ReasoningContent
+		}
+		// Reasoning round-trip: emit reasoning_opaque from Extra if present.
+		if opaque, ok := msg.Extra["copilot_reasoning_opaque"]; ok {
+			if s, ok := opaque.(string); ok && s != "" {
+				m.ReasoningOpaque = s
+			}
+		}
+	case schema.User:
+		// Vision/image input: build array content when multi-content parts exist.
+		if len(msg.UserInputMultiContent) > 0 {
+			m.Content = buildUserContentParts(msg.UserInputMultiContent)
+		} else if len(msg.MultiContent) > 0 {
+			m.Content = buildUserContentPartsFromDeprecated(msg.MultiContent)
+		} else {
+			m.Content = msg.Content
+		}
+	case schema.System:
+		m.Content = msg.Content
 	default:
 		m.Content = msg.Content
 	}
 	return m
+}
+
+// buildUserContentParts converts MessageInputPart slices to the Copilot
+// array-content format.
+func buildUserContentParts(parts []schema.MessageInputPart) []copilotContentPart {
+	return buildContentParts(parts)
+}
+
+// buildUserContentPartsFromDeprecated converts deprecated MultiContent to
+// Copilot array-content format.
+func buildUserContentPartsFromDeprecated(parts []schema.ChatMessagePart) []copilotContentPart {
+	return buildContentParts(parts)
+}
+
+func buildContentParts(parts interface{}) []copilotContentPart {
+	var result []copilotContentPart
+	switch p := parts.(type) {
+	case []schema.MessageInputPart:
+		for _, part := range p {
+			result = append(result, convertMessageInputPart(part))
+		}
+	case []schema.ChatMessagePart:
+		for _, part := range p {
+			result = append(result, convertChatMessagePart(part))
+		}
+	}
+	return result
+}
+
+func convertMessageInputPart(part schema.MessageInputPart) copilotContentPart {
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		return copilotContentPart{Type: "text", Text: part.Text}
+	case schema.ChatMessagePartTypeImageURL:
+		return copilotContentPart{
+			Type:     "image_url",
+			ImageURL: buildImageURLPart(part.Image),
+		}
+	default:
+		return copilotContentPart{Type: "text", Text: part.Text}
+	}
+}
+
+func convertChatMessagePart(part schema.ChatMessagePart) copilotContentPart {
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		return copilotContentPart{Type: "text", Text: part.Text}
+	case schema.ChatMessagePartTypeImageURL:
+		return copilotContentPart{
+			Type:     "image_url",
+			ImageURL: buildImageURLPartFromDeprecated(part.ImageURL),
+		}
+	default:
+		return copilotContentPart{Type: "text", Text: part.Text}
+	}
+}
+
+func buildImageURLPart(img *schema.MessageInputImage) *copilotImageURLPart {
+	if img == nil {
+		return nil
+	}
+	return &copilotImageURLPart{URL: imageDataToURL(img.URL, img.Base64Data, img.MIMEType)}
+}
+
+func buildImageURLPartFromDeprecated(img *schema.ChatMessageImageURL) *copilotImageURLPart {
+	if img == nil {
+		return nil
+	}
+	// In the deprecated ChatMessageImageURL, the URL field already holds the
+	// final URL (which may be a data: URL). No separate Base64Data field exists.
+	if img.URL != "" {
+		return &copilotImageURLPart{URL: img.URL}
+	}
+	return nil
+}
+
+// imageDataToURL builds an image URL string. If URL is non-nil, it is used directly.
+// Otherwise a data URL is built from Base64Data + MIMEType. When MIMEType is
+// "image/*" it normalises to "image/jpeg".
+func imageDataToURL(url *string, base64 *string, mimeType string) string {
+	if url != nil {
+		return *url
+	}
+	mt := mimeType
+	if mt == "image/*" {
+		mt = "image/jpeg"
+	}
+	if base64 != nil {
+		return fmt.Sprintf("data:%s;base64,%s", mt, *base64)
+	}
+	return ""
+}
+
+// hasImageParts returns true if any input message carries an image part.
+func hasImageParts(in []*schema.Message) bool {
+	for _, msg := range in {
+		for _, part := range msg.UserInputMultiContent {
+			if part.Type == schema.ChatMessagePartTypeImageURL {
+				return true
+			}
+		}
+		for _, part := range msg.MultiContent {
+			if part.Type == schema.ChatMessagePartTypeImageURL {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func roleString(role schema.RoleType) string {
@@ -189,11 +376,18 @@ func convertChoiceToMessage(choice copilotChatChoice) *schema.Message {
 	out := &schema.Message{Role: schema.Assistant}
 	msg := choice.Message
 
-	if msg.Content != "" {
-		out.Content = msg.Content
+	if s, ok := msg.Content.(string); ok && s != "" {
+		out.Content = s
 	}
 	if msg.ReasoningText != "" {
 		out.ReasoningContent = msg.ReasoningText
+	}
+	// Persist reasoning_opaque into Extra so the next turn can send it back.
+	if msg.ReasoningOpaque != "" {
+		if out.Extra == nil {
+			out.Extra = make(map[string]any)
+		}
+		out.Extra["copilot_reasoning_opaque"] = msg.ReasoningOpaque
 	}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, schema.ToolCall{
@@ -264,7 +458,35 @@ func extractToolParams(t *schema.ToolInfo) (map[string]interface{}, []string, ma
 	return props, s.Required, defs
 }
 
+// --- Tool choice conversion ---
+
+// convertToolChoice maps eino schema.ToolChoice to the Copilot API value.
+func convertToolChoice(tc *schema.ToolChoice, allowedToolNames []string) any {
+	if tc == nil {
+		return nil
+	}
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		return "none"
+	case schema.ToolChoiceAllowed:
+		return "auto"
+	case schema.ToolChoiceForced:
+		if len(allowedToolNames) == 1 {
+			return map[string]any{
+				"type": "function",
+				"function": map[string]string{
+					"name": allowedToolNames[0],
+				},
+			}
+		}
+		return "required"
+	default:
+		return "auto"
+	}
+}
+
 // --- Chat request building ---
+
 
 func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts ...model.Option) (copilotChatRequest, error) {
 	msgs := convertMessages(in)
@@ -277,18 +499,42 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 		ToolChoice:  m.toolChoice,
 	}, opts...)
 
-	return copilotChatRequest{
-		Model:               *options.Model,
-		Messages:            msgs,
-		Temperature:         options.Temperature,
-		MaxCompletionTokens: options.MaxTokens,
-		ReasoningEffort:     m.cfg.ReasoningEffort,
-		Stream:              stream,
-		Tools:               convertTools(options.Tools),
-	}, nil
+	// Per-call reasoning effort override via CopilotOptions.
+	effort := m.cfg.ReasoningEffort
+	if copilotOpts := model.GetImplSpecificOptions[CopilotOptions](nil, opts...); copilotOpts != nil && copilotOpts.ReasoningEffort != "" {
+		effort = copilotOpts.ReasoningEffort
+	}
+
+	// Validate model: if the resolved model is empty, fail before calling the API.
+	resolvedModel := ""
+	if options.Model != nil {
+		resolvedModel = *options.Model
+	}
+	if resolvedModel == "" {
+		return copilotChatRequest{}, errors.New("copilot: model must not be empty; set Config.Model or pass model.WithModel()")
+	}
+
+	req := copilotChatRequest{
+		Model:           resolvedModel,
+		Messages:        msgs,
+		Temperature:     options.Temperature,
+		MaxTokens:       options.MaxTokens,
+		TopP:            options.TopP,
+		Stop:            options.Stop,
+		ReasoningEffort: effort,
+		Stream:          stream,
+		Tools:           convertTools(options.Tools),
+	}
+
+	// Only send tool_choice when tools are present.
+	if len(req.Tools) > 0 {
+		req.ToolChoice = convertToolChoice(options.ToolChoice, options.AllowedToolNames)
+	}
+
+	return req, nil
 }
 
-func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequest) ([]byte, error) {
+func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequest, in []*schema.Message) ([]byte, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to marshal request")
@@ -300,6 +546,7 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
+	setPerRequestHeaders(req, in)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
@@ -327,18 +574,27 @@ func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
 	if u.CompletionTokensDetails != nil {
 		t.CompletionTokensDetails.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
+	if u.PromptTokensDetails != nil {
+		t.PromptTokenDetails.CachedTokens = u.PromptTokensDetails.CachedTokens
+	}
 	return t
 }
 
 // --- Generate ---
 
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
+	resolvedModel := m.resolveModel(opts...)
+	if useResponsesAPI(resolvedModel) {
+		return m.generateResponses(ctx, in, opts...)
+	}
+
 	body, err := m.buildChatRequest(in, false, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	respBody, err := m.sendChatRequest(ctx, body)
+	respBody, err := m.sendChatRequest(ctx, body, in)
 	if err != nil {
 		return nil, err
 	}
@@ -355,13 +611,24 @@ func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts 
 	}
 
 	msg := convertChoiceToMessage(chatResp.Choices[0])
+	msg.ResponseMeta = &schema.ResponseMeta{
+		FinishReason: mapFinishReason(chatResp.Choices[0].FinishReason),
+	}
 	if chatResp.Usage != nil {
-		msg.ResponseMeta = &schema.ResponseMeta{
-			FinishReason: chatResp.Choices[0].FinishReason,
-			Usage:        usageToTokenUsage(chatResp.Usage),
-		}
+		msg.ResponseMeta.Usage = usageToTokenUsage(chatResp.Usage)
 	}
 	return msg, nil
+}
+
+// resolveModel returns the effective model ID after applying Config and per-call options.
+func (m *CopilotModel) resolveModel(opts ...model.Option) string {
+	options := model.GetCommonOptions(&model.Options{
+		Model: &m.cfg.Model,
+	}, opts...)
+	if options.Model != nil {
+		return *options.Model
+	}
+	return m.cfg.Model
 }
 
 // --- Auth headers ---
@@ -383,5 +650,74 @@ func setAuthHeaders(req *http.Request, token string) {
 	req.Header.Set("Editor-Version", "vscode/1.100.0")
 	req.Header.Set("Editor-Plugin-Version", "copilot-chat/0.52.0")
 	req.Header.Set("User-Agent", userAgentHeader)
-	req.Header.Set("Openai-Intent", "conversation-agent")
+	req.Header.Set("Openai-Intent", OpenAIIntent)
 }
+
+// setPerRequestHeaders adds dynamic headers: x-initiator and Copilot-Vision-Request.
+func setPerRequestHeaders(req *http.Request, in []*schema.Message) {
+	// x-initiator: "user" when the last message is a plain user text prompt,
+	// "agent" otherwise (tool/continuation/assistant follow-up, tool results,
+	// synthetic attachment).
+	req.Header.Set("x-initiator", xInitiator(in))
+
+	// Copilot-Vision-Request: true when any message carries an image part.
+	if hasImageParts(in) {
+		req.Header.Set("Copilot-Vision-Request", "true")
+	}
+}
+
+// xInitiator returns the x-initiator value for the given messages.
+func xInitiator(in []*schema.Message) string {
+	if len(in) == 0 {
+		return "user"
+	}
+	last := in[len(in)-1]
+	// Assistant/tool roles: agent-initiated (follow-up).
+	if last.Role == schema.Assistant || last.Role == schema.Tool {
+		return "agent"
+	}
+	// User role: "user" only when it's a plain text prompt (not a synthetic
+	// attachment or tool result).
+	if last.Role == schema.User {
+		// If the message has image parts, it's a user-attached image — still "user".
+		return "user"
+	}
+	return "agent"
+}
+
+// --- GPT-5 Responses API routing ---
+
+// gpt5ModelPattern matches GPT-N model IDs where N >= 5.
+var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
+
+// useResponsesAPI returns true when the model should use the Copilot Responses
+// API endpoint (/responses) instead of /chat/completions. GPT-5-class models
+// (gpt-5, gpt-6, etc.) use Responses, except gpt-5-mini which stays on chat.
+// Ported from kilocode shouldUseResponsesApi / shouldUseResponses.
+func useResponsesAPI(modelID string) bool {
+	match := gpt5ModelPattern.FindStringSubmatch(modelID)
+	if match == nil {
+		return false
+	}
+	// gpt-5-mini is excluded from Responses routing.
+	if modelID == "gpt-5-mini" {
+		return false
+	}
+	// gpt-N with N >= 5 uses Responses.
+	var n int
+	if _, err := fmt.Sscanf(match[1], "%d", &n); err == nil && n >= 5 {
+		return true
+	}
+	return false
+}
+
+// generateResponses is the non-streaming Responses API path for GPT-5-class models.
+// Implemented in copilot_responses.go.
+func (m *CopilotModel) generateResponses(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	body, err := m.buildResponsesRequest(in, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return m.sendResponsesRequest(ctx, body, in)
+}
+

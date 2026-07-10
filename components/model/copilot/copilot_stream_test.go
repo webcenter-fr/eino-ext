@@ -188,6 +188,19 @@ func TestStreamEvents(t *testing.T) {
 			},
 		},
 		{
+			// Regression test: reasoning_text and content in the SAME chunk.
+			// The pre-fix code silently dropped content when reasoning was present.
+			name: "reasoning and content in same chunk (regression: both must be emitted)",
+			sseLines: []string{
+				`data: {"choices":[{"delta":{"reasoning_text":"Let me think...","content":"Here is the answer"}}]}`,
+				`data: [DONE]`,
+			},
+			want: []*schema.Message{
+				{Role: schema.Assistant, ReasoningContent: "Let me think..."},
+				{Role: schema.Assistant, Content: "Here is the answer"},
+			},
+		},
+		{
 			name: "argument accumulation across tool call chunks",
 			sseLines: []string{
 				`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"search","arguments":"hello "}}]}}]}`,
