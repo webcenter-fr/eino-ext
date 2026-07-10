@@ -7,6 +7,7 @@ package copilot
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/sirupsen/logrus"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -42,6 +44,7 @@ type Config struct {
 	MaxCompletionTokens *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
 	ReasoningEffort       ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
 	ForceChatCompletions  bool            `validate:"omitempty" jsonschema:"description=Force chat/completions endpoint even for models that would use /responses"`
+	Logger               *logrus.Entry    `validate:"omitempty" jsonschema:"-"`
 }
 
 type CopilotModel struct {
@@ -50,6 +53,7 @@ type CopilotModel struct {
 	cfg           *Config
 	cancelRefresh context.CancelFunc
 	httpClient    *http.Client
+	logger        *logrus.Entry
 
 	tools      []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
@@ -82,6 +86,23 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 		return nil, err
 	}
 
+	// Default to a discard logger when none is provided so the model never
+	// panics on a nil logger. Callers can inject a *logrus.Entry to receive
+	// structured diagnostics (e.g. ForceChatCompletions routing decisions).
+	logger := cfg.Logger
+	if logger == nil {
+		l := logrus.New()
+		l.SetOutput(io.Discard)
+		logger = logrus.NewEntry(l)
+	}
+
+	// Log once at construction time so operators have immediate visibility
+	// when ForceChatCompletions is set — this flag silently downgrades all
+	// GPT-5+ models from /responses to /chat/completions on every call.
+	if cfg.ForceChatCompletions {
+		logger.Warn("copilot: ForceChatCompletions is enabled; all GPT-5+ models will use /chat/completions instead of /responses")
+	}
+
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		baseURL = ResolveBaseURL(cfg.EnterpriseURL)
@@ -111,6 +132,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 		cfg:           cfg,
 		cancelRefresh: cancelRefresh,
 		httpClient:    httpClient,
+		logger:        logger,
 	}, nil
 }
 

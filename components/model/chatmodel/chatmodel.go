@@ -124,6 +124,13 @@ type Config struct {
 
 	// APIKey is the provider API key or token (Copilot bearer token for github-copilot).
 	APIKey string `validate:"omitempty" jsonschema:"description=Provider API key or token (Copilot bearer token for github-copilot)"`
+
+	// ForceChatCompletions disables the Copilot Responses API routing and forces
+	// all models (including GPT-5+) to use /chat/completions instead. Only
+	// meaningful for the github-copilot provider; ignored for ollama and openai.
+	// When set, the copilot package logs a warning at construction time and on
+	// every call for any model that would have used /responses.
+	ForceChatCompletions bool `validate:"omitempty" jsonschema:"description=Force /chat/completions endpoint for github-copilot even for models that would use /responses"`
 }
 
 // New constructs a model.ToolCallingChatModel from cfg.
@@ -183,11 +190,12 @@ func newCopilot(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, e
 	}
 
 	copilotCfg := &copilot.Config{
-		CopilotToken:  cfg.APIKey,
-		BaseURL:       cfg.BaseURL,
-		Timeout:       timeout,
-		TLSSkipVerify: cfg.TLSSkipVerify,
-		Model:         cfg.Model,
+		CopilotToken:          cfg.APIKey,
+		BaseURL:               cfg.BaseURL,
+		Timeout:               timeout,
+		TLSSkipVerify:         cfg.TLSSkipVerify,
+		Model:                 cfg.Model,
+		ForceChatCompletions:  cfg.ForceChatCompletions,
 	}
 
 	if cfg.Temperature > 0 {

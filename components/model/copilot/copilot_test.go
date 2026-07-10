@@ -621,6 +621,33 @@ func TestUseResponsesAPI(t *testing.T) {
 	}
 }
 
+func TestWouldUseResponses(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		{model: "gpt-5", want: true},
+		{model: "gpt-5-chat-latest", want: true},
+		{model: "gpt-5-mini", want: false},
+		{model: "gpt-5.4-nano", want: false},
+		{model: "gpt-6.1", want: false},
+		{model: "gpt-6", want: true},
+		{model: "gpt-4o", want: false},
+		{model: "gpt-4", want: false},
+		{model: "claude-3.5-sonnet", want: false},
+		{model: "", want: false},
+		{model: "gpt-55", want: true},
+		{model: "gpt-5-dashed", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := wouldUseResponses(tt.model); got != tt.want {
+				t.Errorf("wouldUseResponses(%q) = %v, want %v", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestXInitiator(t *testing.T) {
 	tests := []struct {
 		name string

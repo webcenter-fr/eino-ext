@@ -699,16 +699,11 @@ func xInitiator(in []*schema.Message) string {
 // Dotted versions (gpt-5.4-nano) are excluded from Responses API routing.
 var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)([.\-]|$)`)
 
-// useResponsesAPI returns true when the model should use the Copilot Responses
-// API endpoint (/responses) instead of /chat/completions. GPT-5-class models
-// (gpt-5, gpt-6, etc.) use Responses, except gpt-5-mini which stays on chat.
-// Dotted versions (gpt-5.4-nano, gpt-6.1) are always routed to chat completions.
-// When m.cfg.ForceChatCompletions is true, returns false unconditionally.
-// Ported from kilocode shouldUseResponsesApi / shouldUseResponses.
-func (m *CopilotModel) useResponsesAPI(modelID string) bool {
-	if m.cfg.ForceChatCompletions {
-		return false
-	}
+// wouldUseResponses reports whether a model ID would be routed to /responses
+// based purely on the name heuristic (ignoring the ForceChatCompletions
+// override). This is used for diagnostic logging so operators can see which
+// models are affected when ForceChatCompletions is enabled.
+func wouldUseResponses(modelID string) bool {
 	match := gpt5ModelPattern.FindStringSubmatch(modelID)
 	if match == nil {
 		return false
@@ -721,12 +716,30 @@ func (m *CopilotModel) useResponsesAPI(modelID string) bool {
 	if match[2] == "." {
 		return false
 	}
-	// gpt-N with N >= 5 uses Responses.
+	// gpt-N with N >= 5 would use Responses.
 	var n int
 	if _, err := fmt.Sscanf(match[1], "%d", &n); err == nil && n >= 5 {
 		return true
 	}
 	return false
+}
+
+// useResponsesAPI returns true when the model should use the Copilot Responses
+// API endpoint (/responses) instead of /chat/completions. GPT-5-class models
+// (gpt-5, gpt-6, etc.) use Responses, except gpt-5-mini which stays on chat.
+// Dotted versions (gpt-5.4-nano, gpt-6.1) are always routed to chat completions.
+// When m.cfg.ForceChatCompletions is true, returns false unconditionally and
+// logs at Debug level for any model that would have used Responses — giving
+// operators visibility into the downgrade.
+// Ported from kilocode shouldUseResponsesApi / shouldUseResponses.
+func (m *CopilotModel) useResponsesAPI(modelID string) bool {
+	if m.cfg.ForceChatCompletions {
+		if wouldUseResponses(modelID) && m.logger != nil {
+			m.logger.Debugf("copilot: ForceChatCompletions=true overriding /responses routing for model %q; using /chat/completions instead", modelID)
+		}
+		return false
+	}
+	return wouldUseResponses(modelID)
 }
 
 // generateResponses is the non-streaming Responses API path for GPT-5-class models.
