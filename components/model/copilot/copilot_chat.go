@@ -592,7 +592,7 @@ func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
 	resolvedModel := m.resolveModel(opts...)
-	if useResponsesAPI(resolvedModel) {
+	if m.useResponsesAPI(resolvedModel) {
 		return m.generateResponses(ctx, in, opts...)
 	}
 
@@ -695,19 +695,30 @@ func xInitiator(in []*schema.Message) string {
 // --- GPT-5 Responses API routing ---
 
 // gpt5ModelPattern matches GPT-N model IDs where N >= 5.
-var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
+// Group 1 = major version, Group 2 = separator (., -, or end-of-string).
+// Dotted versions (gpt-5.4-nano) are excluded from Responses API routing.
+var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)([.\-]|$)`)
 
 // useResponsesAPI returns true when the model should use the Copilot Responses
 // API endpoint (/responses) instead of /chat/completions. GPT-5-class models
 // (gpt-5, gpt-6, etc.) use Responses, except gpt-5-mini which stays on chat.
+// Dotted versions (gpt-5.4-nano, gpt-6.1) are always routed to chat completions.
+// When m.cfg.ForceChatCompletions is true, returns false unconditionally.
 // Ported from kilocode shouldUseResponsesApi / shouldUseResponses.
-func useResponsesAPI(modelID string) bool {
+func (m *CopilotModel) useResponsesAPI(modelID string) bool {
+	if m.cfg.ForceChatCompletions {
+		return false
+	}
 	match := gpt5ModelPattern.FindStringSubmatch(modelID)
 	if match == nil {
 		return false
 	}
 	// gpt-5-mini is excluded from Responses routing.
 	if modelID == "gpt-5-mini" {
+		return false
+	}
+	// Dotted versions (gpt-5.4-nano) use chat completions, not Responses.
+	if match[2] == "." {
 		return false
 	}
 	// gpt-N with N >= 5 uses Responses.

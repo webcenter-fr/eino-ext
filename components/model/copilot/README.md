@@ -111,6 +111,7 @@ m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{
 | `Temperature` | `*float32` | Sampling temperature (0 to 2) |
 | `MaxCompletionTokens` | `*int` | Upper bound on generated tokens (sent as `max_tokens` for chat, `max_output_tokens` for responses) |
 | `ReasoningEffort` | `ReasoningEffort` | Reasoning effort: `low`, `medium`, or `high` |
+| `ForceChatCompletions` | `bool` | Force `/chat/completions` endpoint even for models that would use `/responses` |
 
 ## Vision / image input
 
@@ -161,11 +162,17 @@ call via `model.WrapImplSpecificOptFn`. The effort is passed as the
 GPT-5-class models (`gpt-5`, `gpt-5-chat-latest`, `gpt-6`, etc.)
 automatically use the Copilot `/responses` endpoint instead of
 `/chat/completions`. The exception is `gpt-5-mini`, which stays on the chat
-completions path.
+completions path. Dotted-version models (`gpt-5.4-nano`, `gpt-6.1`) also
+stay on `/chat/completions` — only bare integer-version models (e.g.,
+`gpt-5`, `gpt-5-chat-latest`) or dash-suffixed variants route to `/responses`.
 
 The routing is handled by `useResponsesAPI(modelID)`:
-- Models matching `gpt-N` where N ≥ 5 (and not `gpt-5-mini`) → `/responses`
+- Models matching `gpt-N` where N ≥ 5 AND not dotted AND not `gpt-5-mini` → `/responses`
 - All other models → `/chat/completions`
+
+When the heuristic is incorrect or the API changes, set
+`ForceChatCompletions: true` in `Config` to bypass the routing and always use
+`/chat/completions`.
 
 **Built-in provider tools** (web_search, code_interpreter, image_generation,
 file_search, local_shell) and their approval/mcp_approval_response flows are

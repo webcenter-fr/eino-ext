@@ -589,24 +589,33 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 
 func TestUseResponsesAPI(t *testing.T) {
 	tests := []struct {
-		model string
-		want  bool
+		model               string
+		forceChatCompletions bool
+		want                bool
 	}{
-		{"gpt-5", true},
-		{"gpt-5-chat-latest", true},
-		{"gpt-5-mini", false},
-		{"gpt-6", true},
-		{"gpt-4o", false},
-		{"gpt-4", false},
-		{"claude-3.5-sonnet", false},
-		{"", false},
-		{"gpt-5-turbo", true},
-		{"gpt-55", true},
+		{model: "gpt-5", forceChatCompletions: false, want: true},
+		{model: "gpt-5-chat-latest", forceChatCompletions: false, want: true},
+		{model: "gpt-5-mini", forceChatCompletions: false, want: false},
+		{model: "gpt-5.4-nano", forceChatCompletions: false, want: false},
+		{model: "gpt-6.1", forceChatCompletions: false, want: false},
+		{model: "gpt-6", forceChatCompletions: false, want: true},
+		{model: "gpt-4o", forceChatCompletions: false, want: false},
+		{model: "gpt-4", forceChatCompletions: false, want: false},
+		{model: "claude-3.5-sonnet", forceChatCompletions: false, want: false},
+		{model: "", forceChatCompletions: false, want: false},
+		{model: "gpt-55", forceChatCompletions: false, want: true},
+		{model: "gpt-5", forceChatCompletions: true, want: false},
+		{model: "gpt-5-chat-latest", forceChatCompletions: true, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
-			if got := useResponsesAPI(tt.model); got != tt.want {
-				t.Errorf("useResponsesAPI(%q) = %v, want %v", tt.model, got, tt.want)
+			m := &CopilotModel{
+				cfg: &Config{
+					ForceChatCompletions: tt.forceChatCompletions,
+				},
+			}
+			if got := m.useResponsesAPI(tt.model); got != tt.want {
+				t.Errorf("useResponsesAPI(%q) with ForceChatCompletions=%v = %v, want %v", tt.model, tt.forceChatCompletions, got, tt.want)
 			}
 		})
 	}

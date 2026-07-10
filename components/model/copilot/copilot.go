@@ -40,7 +40,8 @@ type Config struct {
 	Model               string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
 	Temperature         *float32        `validate:"omitempty,gte=0,lte=2" jsonschema:"description=Sampling temperature (0 to 2)"`
 	MaxCompletionTokens *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
-	ReasoningEffort     ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
+	ReasoningEffort       ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
+	ForceChatCompletions  bool            `validate:"omitempty" jsonschema:"description=Force chat/completions endpoint even for models that would use /responses"`
 }
 
 type CopilotModel struct {

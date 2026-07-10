@@ -18,7 +18,7 @@ import (
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
 	resolvedModel := m.resolveModel(opts...)
-	if useResponsesAPI(resolvedModel) {
+	if m.useResponsesAPI(resolvedModel) {
 		return m.streamResponses(ctx, in, opts...)
 	}
 
