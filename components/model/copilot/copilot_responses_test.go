@@ -75,6 +75,54 @@ func TestResponsesNonStreaming(t *testing.T) {
 	}
 }
 
+// TestResponsesStoreOmitted guards against regressing the GitHub Copilot
+// "store is not supported" 400: the /responses request must never carry a
+// `store` field on the wire.
+func TestResponsesStoreOmitted(t *testing.T) {
+	tokenVal := "test-token"
+	var rawBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/responses") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&rawBody)
+
+		resp := responsesResponse{
+			ID:    "resp-1",
+			Model: "gpt-5",
+			Output: []responsesOutputItem{
+				{
+					Type: "message",
+					Role: "assistant",
+					ID:   "msg-1",
+					Content: []responsesContentPart{
+						{Type: "output_text", Text: "ok"},
+					},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	m, err := newTestModel(srv.URL, tokenVal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m.cfg.Model = "gpt-5"
+
+	if _, err := m.Generate(context.Background(), []*schema.Message{
+		{Role: schema.User, Content: "Hello"},
+	}); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if _, ok := rawBody["store"]; ok {
+		t.Errorf("responses request must not include a 'store' field, got: %v", rawBody["store"])
+	}
+}
+
 func TestResponsesWithFunctionCall(t *testing.T) {
 	tokenVal := "test-token"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

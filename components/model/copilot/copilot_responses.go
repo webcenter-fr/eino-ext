@@ -28,7 +28,11 @@ type responsesRequest struct {
 	Temperature    *float32             `json:"temperature,omitempty"`
 	TopP           *float32             `json:"top_p,omitempty"`
 	Stream         bool                 `json:"stream"`
-	Store          bool                 `json:"store"`
+	// GitHub Copilot's /responses endpoint does not support the `store`
+	// parameter (it rejects any value with a 400 "store is not supported").
+	// Copilot is stateless: reasoning is round-tripped via encrypted_content
+	// rather than server-side stored items, so store is always omitted.
+	Store          bool                 `json:"store,omitempty"`
 	Tools          []responsesTool      `json:"tools,omitempty"`
 	ToolChoice     any                  `json:"tool_choice,omitempty"`
 	Include        []string             `json:"include,omitempty"`
@@ -300,12 +304,6 @@ func convertAssistantToResponses(msg *schema.Message) []responsesInputItem {
 				EncryptedContent: encContent,
 				Summary:          summary,
 			})
-		} else if reasonItemID != "" {
-			// Store is true, use item_reference.
-			items = append(items, responsesInputItem{
-				Type: "item_reference",
-				ID:   reasonItemID,
-			})
 		}
 	}
 
@@ -326,7 +324,6 @@ func (m *CopilotModel) buildResponsesRequest(in []*schema.Message, opts ...model
 		Input:           convertToResponsesInput(in),
 		MaxOutputTokens: m.cfg.MaxCompletionTokens,
 		Temperature:     m.cfg.Temperature,
-		Store:           true,
 	}
 
 	// Tools.
