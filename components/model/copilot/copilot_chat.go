@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
@@ -584,6 +585,37 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 
 	m.logger.Debugf("copilot: sending %d-byte chat request (model=%s, msgs=%d, tools=%d)", len(payload), body.Model, len(body.Messages), len(body.Tools))
 
+	// Retry transient "model not available for integrator" errors caused by
+	// Copilot API backend desync. Up to 2 retries with exponential backoff.
+	const maxRetries = 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt) * 2 * time.Second
+			m.logger.Warnf("copilot: retrying chat request for model %q (attempt %d/%d, backoff %v)", body.Model, attempt, maxRetries, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		respBody, err := m.sendChatRequestOnce(ctx, payload, body, in)
+		if err == nil {
+			return respBody, nil
+		}
+
+		// Only retry on transient "model not available" errors (API backend desync).
+		if !isModelNotAvailableError(err) {
+			return nil, err
+		}
+		m.logger.Warnf("copilot: model %q not available on attempt %d: %v", body.Model, attempt, err)
+	}
+
+	return nil, errors.Errorf("copilot: model %q not available after %d attempts", body.Model, maxRetries+1)
+}
+
+// sendChatRequestOnce executes a single chat completions HTTP call without retries.
+func (m *CopilotModel) sendChatRequestOnce(ctx context.Context, payload []byte, body copilotChatRequest, in []*schema.Message) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to create request")
@@ -608,10 +640,18 @@ func (m *CopilotModel) sendChatRequest(ctx context.Context, body copilotChatRequ
 		m.logger.Errorf("copilot: %d-byte chat request failed with %d: %s (model=%s, msgs=%d, tools=%d)", len(payload), resp.StatusCode, bodyPreview, body.Model, len(body.Messages), len(body.Tools))
 		return nil, errors.Errorf("copilot: API returned status %d: %s", resp.StatusCode, bodyPreview)
 	}
+
 	return respBody, nil
 }
 
-func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
+// isModelNotAvailableError reports whether err is a transient "model not
+// available for integrator" error from the Copilot API, caused by backend
+// desync during model rollouts.
+func isModelNotAvailableError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "model not available for integrator")
+}
+
+	func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
 	t := &schema.TokenUsage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,

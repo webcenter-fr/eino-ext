@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
@@ -454,6 +455,36 @@ func (m *CopilotModel) sendResponsesRequest(ctx context.Context, body responsesR
 		return nil, errors.Wrap(err, "copilot: failed to marshal responses request")
 	}
 
+	// Retry transient "model not available for integrator" errors caused by
+	// Copilot API backend desync. Up to 2 retries with exponential backoff.
+	const maxRetries = 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt) * 2 * time.Second
+			m.logger.Warnf("copilot: retrying responses request for model %q (attempt %d/%d, backoff %v)", body.Model, attempt, maxRetries, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		msg, err := m.sendResponsesRequestOnce(ctx, payload, body, in)
+		if err == nil {
+			return msg, nil
+		}
+
+		// Only retry on transient "model not available" errors (API backend desync).
+		if !isModelNotAvailableError(err) {
+			return nil, err
+		}
+		m.logger.Warnf("copilot: model %q not available on responses attempt %d: %v", body.Model, attempt, err)
+	}
+
+	return nil, errors.Errorf("copilot: model %q not available via responses after %d attempts", body.Model, maxRetries+1)
+}
+
+func (m *CopilotModel) sendResponsesRequestOnce(ctx context.Context, payload []byte, body responsesRequest, in []*schema.Message) (*schema.Message, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/responses", bytes.NewReader(payload))
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to create responses request")
@@ -474,7 +505,8 @@ func (m *CopilotModel) sendResponsesRequest(ctx context.Context, body responsesR
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: responses API returned status %d: %s", resp.StatusCode, redactErrorBody(respBody))
+		bodyPreview := redactErrorBody(respBody)
+		return nil, errors.Errorf("copilot: responses API returned status %d: %s", resp.StatusCode, bodyPreview)
 	}
 
 	var r responsesResponse
