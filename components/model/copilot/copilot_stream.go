@@ -102,9 +102,13 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 			// Reasoning text: emit as reasoning content, skip everything else for this chunk.
 			if delta.ReasoningText != "" || delta.ReasoningOpaque != "" {
 				reasoningOpen = true
+				reasoningContent := delta.ReasoningText
+				if reasoningContent == "" {
+					reasoningContent = delta.ReasoningOpaque
+				}
 				sw.Send(&schema.Message{
 					Role:             schema.Assistant,
-					ReasoningContent: delta.ReasoningText,
+					ReasoningContent: reasoningContent,
 				}, nil)
 				continue
 			}
@@ -114,6 +118,12 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 				reasoningOpen = false
 				continue
 			}
+
+			// Any non-reasoning delta (content or tool calls) signals the end of
+			// the reasoning block. Reset the flag so a subsequent final empty
+			// chunk (finish_reason only, no delta payload) does not match the
+			// transition guard above and skip accumulated tool-call emission.
+			reasoningOpen = false
 
 			msg := &schema.Message{Role: schema.Assistant}
 
