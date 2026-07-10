@@ -121,6 +121,11 @@ type StepEnded struct {
 	Finish string  `json:"finish,omitempty"`
 	Cost   float64 `json:"cost"`
 	Tokens Tokens  `json:"tokens"`
+	// Estimated is true when Tokens (and any derived Cost) were computed by a
+	// client-side heuristic TokenCounter fallback (see Handler.WithTokenCounter)
+	// because the gateway did not report real usage for this step. Omitted
+	// entirely (false) when Tokens came from real gateway usage.
+	Estimated bool `json:"estimated,omitempty"`
 }
 
 // StepFailed carries the error that aborted a step.

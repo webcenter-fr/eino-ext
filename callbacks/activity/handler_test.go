@@ -171,6 +171,114 @@ func TestHandlerChatModelStepEndedCostWithoutPricer(t *testing.T) {
 	}
 }
 
+func TestHandlerChatModelStepEndedNoUsageNoFallbackStaysZero(t *testing.T) {
+	// Without WithTokenCounter configured, a step with no gateway usage keeps
+	// reporting all-zero tokens (pre-existing behavior, unaffected).
+	h, _, ch, ctx := setup(t)
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
+	ctx = h.OnStart(ctx, info, &model.CallbackInput{Messages: []*schema.Message{schema.UserMessage("hello there")}})
+	out := &model.CallbackOutput{
+		Message: &schema.Message{Role: schema.Assistant, Content: "hi", ResponseMeta: &schema.ResponseMeta{FinishReason: "stop"}},
+		// TokenUsage intentionally nil: gateway did not report usage.
+	}
+	h.OnEnd(ctx, info, out)
+
+	var stepEnd *Event
+	for _, e := range collect(t, ch, 4) {
+		e := e
+		if e.Type == TypeStepEnded {
+			stepEnd = &e
+		}
+	}
+	if stepEnd == nil {
+		t.Fatal("no step.ended emitted")
+	}
+	se := stepEnd.Data.(StepEnded)
+	if se.Tokens.Input != 0 || se.Tokens.Output != 0 || se.Estimated {
+		t.Fatalf("expected all-zero, non-estimated tokens without a TokenCounter, got %+v", se)
+	}
+}
+
+func TestHandlerChatModelStepEndedFallbackTokenCounter(t *testing.T) {
+	// With WithTokenCounter configured, a step with no gateway usage falls
+	// back to the heuristic counter for both input and output tokens, and is
+	// flagged Estimated.
+	b := mustBus(t, Config{})
+	t.Cleanup(func() { b.Close() })
+	ch, unsub := b.Subscribe(context.Background(), "s", "")
+	t.Cleanup(unsub)
+	ctx := WithSession(context.Background(), "s")
+
+	counter := func(msgs []*schema.Message) int {
+		total := 0
+		for _, m := range msgs {
+			total += len(m.Content)
+		}
+		return total
+	}
+	h := NewHandlerWithConfig(b, WithTokenCounter(counter))
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
+	ctx = h.OnStart(ctx, info, &model.CallbackInput{Messages: []*schema.Message{schema.UserMessage("hello there")}}) // 11 chars
+	out := &model.CallbackOutput{
+		Message: &schema.Message{Role: schema.Assistant, Content: "hi", ResponseMeta: &schema.ResponseMeta{FinishReason: "stop"}}, // 2 chars
+		// TokenUsage intentionally nil: gateway did not report usage.
+	}
+	h.OnEnd(ctx, info, out)
+
+	var stepEnd *Event
+	for _, e := range collect(t, ch, 4) {
+		e := e
+		if e.Type == TypeStepEnded {
+			stepEnd = &e
+		}
+	}
+	if stepEnd == nil {
+		t.Fatal("no step.ended emitted")
+	}
+	se := stepEnd.Data.(StepEnded)
+	if se.Tokens.Input != 11 || se.Tokens.Output != 2 {
+		t.Fatalf("estimated tokens = %+v, want Input=11 Output=2", se.Tokens)
+	}
+	if !se.Estimated {
+		t.Fatal("expected Estimated=true for fallback-counted tokens")
+	}
+}
+
+func TestHandlerChatModelStepEndedRealUsageNotEstimated(t *testing.T) {
+	// Real gateway usage takes priority over the fallback counter and is
+	// never flagged Estimated, even when a TokenCounter is configured.
+	b := mustBus(t, Config{})
+	t.Cleanup(func() { b.Close() })
+	ch, unsub := b.Subscribe(context.Background(), "s", "")
+	t.Cleanup(unsub)
+	ctx := WithSession(context.Background(), "s")
+
+	h := NewHandlerWithConfig(b, WithTokenCounter(func([]*schema.Message) int { return 999 }))
+	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
+	ctx = h.OnStart(ctx, info, &model.CallbackInput{Messages: []*schema.Message{schema.UserMessage("hello there")}})
+	out := &model.CallbackOutput{
+		Message:    &schema.Message{Role: schema.Assistant, Content: "hi", ResponseMeta: &schema.ResponseMeta{FinishReason: "stop"}},
+		TokenUsage: &model.TokenUsage{PromptTokens: 10, CompletionTokens: 5},
+	}
+	h.OnEnd(ctx, info, out)
+
+	var stepEnd *Event
+	for _, e := range collect(t, ch, 4) {
+		e := e
+		if e.Type == TypeStepEnded {
+			stepEnd = &e
+		}
+	}
+	if stepEnd == nil {
+		t.Fatal("no step.ended emitted")
+	}
+	se := stepEnd.Data.(StepEnded)
+	if se.Tokens.Input != 10 || se.Tokens.Output != 5 || se.Estimated {
+		t.Fatalf("real usage should win over fallback counter, got %+v", se)
+	}
+}
+
+
 func TestHandlerChatModelStreaming(t *testing.T) {
 	h, _, ch, ctx := setup(t)
 	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}

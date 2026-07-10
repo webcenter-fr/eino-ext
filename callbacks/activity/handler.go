@@ -29,7 +29,12 @@ import (
 type Handler struct {
 	bus    Bus
 	pricer Pricer
-	ids    atomic.Uint64
+	// tokenCounter estimates token counts from messages when the gateway does
+	// not report real usage (e.g. a streaming provider that ignores
+	// stream_options.include_usage). nil disables the fallback: Tokens stays
+	// all-zero in that case, exactly as before this field was introduced.
+	tokenCounter TokenCounter
+	ids          atomic.Uint64
 	// lastAgent tracks the most recently seen agent name per session so the
 	// Handler can emit a single agent.switched event on each transition. Keyed
 	// by sessionID; values are strings.
@@ -49,6 +54,21 @@ type Handler struct {
 // libs/modelsdev.CatalogPricer for a models.dev-backed implementation.
 type Pricer interface {
 	Cost(model string, t Tokens) float64
+}
+
+// TokenCounter estimates a token count for a slice of messages. Used as a
+// fallback when a step completes without real gateway-reported usage (see
+// WithTokenCounter). Implementations are typically a cheap heuristic (e.g.
+// chars/4); libs/counter.DefaultTokenCounter is a ready-to-use one.
+type TokenCounter func(msgs []*schema.Message) int
+
+// WithTokenCounter attaches a fallback TokenCounter used to estimate
+// StepEnded.Tokens when a completed step carries no real usage from the
+// gateway (usage == nil). Without this option, such steps report all-zero
+// tokens/cost, exactly as before this option existed. Estimated tokens are
+// approximate (chars/4-class heuristics), not gateway-accurate.
+func WithTokenCounter(tc TokenCounter) Option {
+	return func(h *Handler) { h.tokenCounter = tc }
 }
 
 // NewHandler returns a Handler publishing to bus. StepEnded.Cost stays 0 (no
@@ -93,6 +113,7 @@ type SubscriberCounter interface {
 type ctxKey string
 
 const ctxKeyCallID ctxKey = "activity.callID"
+const ctxKeyInputMsgs ctxKey = "activity.inputMsgs"
 
 func (h *Handler) newID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, h.ids.Add(1))
@@ -183,6 +204,11 @@ func (h *Handler) OnStart(ctx context.Context, info *callbacks.RunInfo, input ca
 		agent, _ := AgentFromContext(ctx)
 		h.publish(ctx, TypeStepStarted, StepStarted{Agent: agent, Model: modelName(info)})
 		h.publish(ctx, TypeTextStarted, TextStarted{})
+		if h.tokenCounter != nil {
+			if mi := model.ConvCallbackInput(input); mi != nil && len(mi.Messages) > 0 {
+				return context.WithValue(ctx, ctxKeyInputMsgs, mi.Messages)
+			}
+		}
 	case components.ComponentOfTool:
 		callID := h.newID("call")
 		name := toolName(info)
@@ -217,7 +243,7 @@ func (h *Handler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output cal
 			text = mo.Message.Content
 		}
 		h.publish(ctx, TypeTextEnded, TextEnded{Text: text})
-		h.publish(ctx, TypeStepEnded, h.stepEnded(modelName(info), finishReason(mo), mo.TokenUsage))
+		h.publish(ctx, TypeStepEnded, h.stepEnded(ctx, modelName(info), finishReason(mo), mo.TokenUsage, mo.Message))
 	case components.ComponentOfTool:
 		callID, _ := ctx.Value(ctxKeyCallID).(string)
 		var content string
@@ -345,7 +371,8 @@ func (h *Handler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.Run
 			h.publish(ctx, TypeReasoningEnded, ReasoningEnded{ReasoningID: rid, Text: reasonBuf.String()})
 		}
 		h.publish(ctx, TypeTextEnded, TextEnded{Text: textBuf.String()})
-		h.publish(ctx, TypeStepEnded, h.stepEnded(modelName(info), finish, usage))
+		outMsg := &schema.Message{Role: schema.Assistant, Content: textBuf.String(), ReasoningContent: reasonBuf.String()}
+		h.publish(ctx, TypeStepEnded, h.stepEnded(ctx, modelName(info), finish, usage, outMsg))
 	}()
 
 	return ctx
@@ -354,7 +381,12 @@ func (h *Handler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.Run
 // stepEnded builds a StepEnded payload from a finish reason and token usage,
 // pricing it via h.pricer when one is configured (nil pricer leaves Cost at
 // its zero value, so NewHandler(bus) callers are unaffected).
-func (h *Handler) stepEnded(gatewayModel string, finish string, usage *model.TokenUsage) StepEnded {
+//
+// When usage is nil and h.tokenCounter is configured, Tokens is estimated
+// from the input messages (read back from ctx, stashed by OnStart) and the
+// completed output message — a fallback for gateways that don't report real
+// usage on streaming responses (e.g. ignore stream_options.include_usage).
+func (h *Handler) stepEnded(ctx context.Context, gatewayModel string, finish string, usage *model.TokenUsage, outMsg *schema.Message) StepEnded {
 	se := StepEnded{Finish: finish}
 	if usage != nil {
 		se.Tokens = Tokens{
@@ -365,6 +397,15 @@ func (h *Handler) stepEnded(gatewayModel string, finish string, usage *model.Tok
 			// TokenUsage exposes only a cache-read (CachedTokens) count.
 			Cache: CacheTokens{Read: usage.PromptTokenDetails.CachedTokens},
 		}
+	} else if h.tokenCounter != nil {
+		inMsgs, _ := ctx.Value(ctxKeyInputMsgs).([]*schema.Message)
+		se.Tokens = Tokens{
+			Input: h.tokenCounter(inMsgs),
+		}
+		if outMsg != nil {
+			se.Tokens.Output = h.tokenCounter([]*schema.Message{outMsg})
+		}
+		se.Estimated = true
 	}
 	if h.pricer != nil {
 		se.Cost = h.pricer.Cost(gatewayModel, se.Tokens)
