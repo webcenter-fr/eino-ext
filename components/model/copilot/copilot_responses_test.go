@@ -523,8 +523,8 @@ func TestResponsesWithTemperatureOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if gotTemp == nil || *gotTemp != 0.5 {
-		t.Errorf("expected temperature 0.5, got %v", gotTemp)
+	if gotTemp != nil {
+		t.Errorf("expected temperature nil (omitted for reasoning model), got %v", gotTemp)
 	}
 }
 

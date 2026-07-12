@@ -17,10 +17,14 @@ import (
 const (
 	tokenURLPath       = "/copilot_internal/v2/token"
 	defaultAPIBase     = "https://api.github.com"
-	defaultCopilotBase = "https://api.githubcopilot.com"
+	defaultCopilotBase = "https://api.individual.githubcopilot.com"
 
-	userAgentHeader = "GitHubCopilotChat/0.52.0"
-	apiVersion      = "2025-04-01"
+	userAgentHeader = "copilot/1.0.70 (client/github/cli linux v24.16.0) term/unknown"
+
+	gitHubAPIVersion    = "2025-04-01"
+	copilotAPIVersion   = "2026-07-01"
+	integrationID       = "copilot-developer-cli"
+	editorVersion       = "copilot/1.0.70"
 
 	refreshBufSecs     = 60
 	refreshMinSecs     = 1
@@ -54,7 +58,7 @@ func exchangeGitHubTokenWithBase(ctx context.Context, githubToken, apiBase strin
 	}
 	req.Header.Set("Authorization", "token "+githubToken)
 	req.Header.Set("User-Agent", userAgentHeader)
-	req.Header.Set("X-GitHub-Api-Version", apiVersion)
+	req.Header.Set("X-GitHub-Api-Version", gitHubAPIVersion)
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: timeout}

@@ -17,8 +17,11 @@ import (
 )
 
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
 	resolvedModel := m.resolveModel(opts...)
+	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
+		return nil, err
+	}
+
 	if m.useResponsesAPI(resolvedModel) {
 		return m.streamResponses(ctx, in, opts...)
 	}
@@ -40,6 +43,7 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
 	setPerRequestHeaders(req, in)
+	m.setCommonRequestHeaders(req)
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := m.httpClient.Do(req)

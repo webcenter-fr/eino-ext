@@ -67,7 +67,7 @@ func TestListModelsSuccess(t *testing.T) {
 						Supports: copilotModelSupports{
 							ToolCalls:        true,
 							Streaming:        true,
-							AdaptiveThinking: boolPtr(true),
+							AdaptiveThinking: flexibleBool{Set: true, Value: true},
 							ReasoningEffort:  []string{"low", "medium", "high"},
 							MaxThinkingBudget: intPtr(32000),
 						},
@@ -208,11 +208,20 @@ func TestListModelsFiltersDisabled(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(models) != 1 {
-		t.Fatalf("expected 1 model, got %d", len(models))
+	if len(models) != 4 {
+		t.Fatalf("expected 4 models (no filtering), got %d", len(models))
 	}
 	if models[0].ID != "enabled-model" {
 		t.Errorf("expected 'enabled-model', got %q", models[0].ID)
+	}
+	if models[0].State != "enabled" || !models[0].ModelPickerEnabled {
+		t.Errorf("enabled-model: expected state=enabled, picker=true, got state=%s picker=%v", models[0].State, models[0].ModelPickerEnabled)
+	}
+	if models[1].ModelPickerEnabled {
+		t.Errorf("picker-disabled: expected ModelPickerEnabled=false")
+	}
+	if models[2].State != "disabled" {
+		t.Errorf("policy-disabled: expected state=disabled, got %s", models[2].State)
 	}
 }
 

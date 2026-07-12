@@ -343,8 +343,11 @@ func (m *CopilotModel) buildResponsesRequest(in []*schema.Message, opts ...model
 		Model:           resolvedModel,
 		Input:           convertToResponsesInput(in),
 		MaxOutputTokens: options.MaxTokens,
-		Temperature:     options.Temperature,
 		TopP:            options.TopP,
+	}
+
+	if !isReasoningModel(resolvedModel) {
+		req.Temperature = options.Temperature
 	}
 
 	// Reasoning: apply GPT-5 defaults when no explicit effort is configured.
@@ -494,6 +497,7 @@ func (m *CopilotModel) sendResponsesRequestOnce(ctx context.Context, payload []b
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
 	setPerRequestHeaders(req, in)
+	m.setCommonRequestHeaders(req)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {

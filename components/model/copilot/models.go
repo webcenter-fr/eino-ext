@@ -12,6 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const maxModelPickerLog = 5
+
 type ModelInfo struct {
 	ID                     string
 	Name                   string
@@ -28,6 +30,8 @@ type ModelInfo struct {
 	Version                string
 	ReasoningEfforts       []string
 	SupportedEndpoints     []string
+	State                  string
+	ModelPickerEnabled     bool
 }
 
 type copilotModelsResponse struct {
@@ -67,39 +71,77 @@ type copilotModelVision struct {
 	SupportedMediaTypes  []string `json:"supported_media_types"`
 }
 
+// flexibleBool handles JSON fields that can be a boolean or the string
+// "unsupported" (Copilot API returns "unsupported" for adaptive_thinking on
+// some models).  Marshals to false for "unsupported", the raw bool value
+// otherwise, and nil on absence.
+type flexibleBool struct {
+	Set   bool
+	Value bool
+}
+
+func (fb *flexibleBool) UnmarshalJSON(data []byte) error {
+	var b bool
+	if json.Unmarshal(data, &b) == nil {
+		fb.Set = true
+		fb.Value = b
+		return nil
+	}
+	var s string
+	if json.Unmarshal(data, &s) != nil {
+		return nil
+	}
+	if s == "unsupported" {
+		fb.Set = true
+		fb.Value = false
+	}
+	return nil
+}
+
+func (fb flexibleBool) MarshalJSON() ([]byte, error) {
+	if !fb.Set {
+		return []byte("null"), nil
+	}
+	return json.Marshal(fb.Value)
+}
+
 // copilotModelSupports matches the real Copilot API /models response shape where
 // "supports" is an object (not an array). The previous []copilotModelSupport
 // type never populated any capability flag against the live API.
 type copilotModelSupports struct {
-	ToolCalls        bool     `json:"tool_calls"`
-	Streaming        bool     `json:"streaming"`
-	Vision           *bool    `json:"vision,omitempty"`
-	AdaptiveThinking *bool    `json:"adaptive_thinking,omitempty"`
-	StructuredOutputs *bool   `json:"structured_outputs,omitempty"`
-	ReasoningEffort  []string `json:"reasoning_effort,omitempty"`
-	MaxThinkingBudget *int    `json:"max_thinking_budget,omitempty"`
-	MinThinkingBudget *int    `json:"min_thinking_budget,omitempty"`
+	ToolCalls         bool         `json:"tool_calls"`
+	Streaming         bool         `json:"streaming"`
+	Vision            *bool        `json:"vision,omitempty"`
+	AdaptiveThinking  flexibleBool `json:"adaptive_thinking,omitempty"`
+	StructuredOutputs *bool        `json:"structured_outputs,omitempty"`
+	ReasoningEffort   []string     `json:"reasoning_effort,omitempty"`
+	MaxThinkingBudget *int         `json:"max_thinking_budget,omitempty"`
+	MinThinkingBudget *int         `json:"min_thinking_budget,omitempty"`
 }
 
+// ListModels fetches available models from GET /models with the
+// Copilot-Integration-Id header to return the full catalog.
 func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.Duration) ([]ModelInfo, error) {
+	return listModelsWithClient(ctx, copilotToken, baseURL, &http.Client{Timeout: timeout})
+}
+
+// listModelsWithClient is the inner implementation of ListModels that accepts
+// an http.Client so callers can reuse a shared transport (TLS settings, etc.).
+func listModelsWithClient(ctx context.Context, copilotToken, baseURL string, client *http.Client) ([]ModelInfo, error) {
 	url := baseURL + "/models"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: failed to create models request")
 	}
-	// Do NOT force a Copilot-Integration-ID here: the /models endpoint honors
-	// that header and would report the full catalog for e.g. "vscode-chat",
-	// whereas the chat/completions endpoint enforces the integrator bound to
-	// the token itself. Sending a different integration id here makes /models
-	// over-report models the token cannot actually use (chat returns 400
-	// "model not available for integrator ..."). Send only the token so the
-	// list reflects the token's real entitlement.
+	// Send copilot-integration-id to receive the full 32-model catalog.
+	// Without this header, the API returns only legacy models (~7) and
+	// premium models (GPT-5, Claude, Gemini) are hidden.
 	req.Header.Set("Authorization", "Bearer "+copilotToken)
 	req.Header.Set("User-Agent", userAgentHeader)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Copilot-Integration-Id", integrationID)
 
-	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: models request failed")
@@ -124,14 +166,16 @@ func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.
 	}
 
 	var result []ModelInfo
+	var skippedPicker int
 	for _, m := range modelsResp.Data {
 		if !m.ModelPickerEnabled {
-			logrus.Debugf("copilot ListModels: skipping model %q (model_picker_enabled=false)", m.ID)
-			continue
+			if skippedPicker < maxModelPickerLog {
+				logrus.Debugf("copilot ListModels: model %q has model_picker_enabled=false", m.ID)
+				skippedPicker++
+			}
 		}
 		if m.Policy.State == "disabled" {
-			logrus.Debugf("copilot ListModels: skipping model %q (policy.state=%q)", m.ID, m.Policy.State)
-			continue
+			logrus.Debugf("copilot ListModels: model %q has policy.state=disabled", m.ID)
 		}
 
 		supports := m.Capabilities.Supports
@@ -150,7 +194,7 @@ func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.
 
 		// SupportsReasoning: true if any reasoning-related capability is set.
 		hasReasoning := false
-		if supports.AdaptiveThinking != nil && *supports.AdaptiveThinking {
+		if supports.AdaptiveThinking.Set && supports.AdaptiveThinking.Value {
 			hasReasoning = true
 		}
 		if len(supports.ReasoningEffort) > 0 {
@@ -174,6 +218,8 @@ func ListModels(ctx context.Context, copilotToken, baseURL string, timeout time.
 			Version:                m.Version,
 			ReasoningEfforts:       supports.ReasoningEffort,
 			SupportedEndpoints:     m.SupportedEndpoints,
+			State:                  m.Policy.State,
+			ModelPickerEnabled:     m.ModelPickerEnabled,
 		}
 
 		if m.Capabilities.Limits.Vision != nil {

@@ -19,7 +19,7 @@ func TestExchangeGitHubTokenWithBaseSuccess(t *testing.T) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if r.Header.Get("User-Agent") != userAgentHeader || r.Header.Get("X-GitHub-Api-Version") != apiVersion {
+		if r.Header.Get("User-Agent") != userAgentHeader || r.Header.Get("X-GitHub-Api-Version") != gitHubAPIVersion {
 			t.Error("missing required headers")
 		}
 

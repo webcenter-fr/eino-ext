@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// OpenAIIntent is the value sent in the Openai-Intent header. kilocode uses
-	// "conversation-edits"; we match that unless there is a known reason otherwise.
-	OpenAIIntent = "conversation-edits"
+	OpenAIIntent = "conversation-agent"
 )
+
+const copilotOpenAIIntent = OpenAIIntent
 
 // CopilotOptions holds per-call implementation-specific options for the
 // Copilot chat model. Use model.WrapImplSpecificOptFn to pass these at
@@ -553,7 +553,6 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 	req := copilotChatRequest{
 		Model:            resolvedModel,
 		Messages:         msgs,
-		Temperature:      options.Temperature,
 		MaxTokens:        options.MaxTokens,
 		TopP:             options.TopP,
 		Stop:             options.Stop,
@@ -564,6 +563,10 @@ func (m *CopilotModel) buildChatRequest(in []*schema.Message, stream bool, opts 
 		FrequencyPenalty: freqPen,
 		PresencePenalty:  presPen,
 		Seed:             seed,
+	}
+
+	if !isReasoningModel(resolvedModel) {
+		req.Temperature = options.Temperature
 	}
 	if stream {
 		req.StreamOptions = &copilotStreamOptions{IncludeUsage: true}
@@ -629,6 +632,7 @@ func (m *CopilotModel) sendChatRequestOnce(ctx context.Context, payload []byte, 
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
 	setPerRequestHeaders(req, in)
+	m.setCommonRequestHeaders(req)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
@@ -675,8 +679,11 @@ func isModelNotAvailableError(err error) bool {
 // --- Generate ---
 
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	// GPT-5 routing: when the resolved model needs the Responses API, dispatch there.
 	resolvedModel := m.resolveModel(opts...)
+	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
+		return nil, err
+	}
+
 	if m.useResponsesAPI(resolvedModel) {
 		return m.generateResponses(ctx, in, opts...)
 	}
@@ -737,30 +744,30 @@ func redactErrorBody(body []byte) string {
 }
 
 func setAuthHeaders(req *http.Request, token string) {
-	// Match the working GitHub Copilot integrations (e.g. kilocode/opencode):
-	// send only the token, a User-Agent and the intent. Do NOT force
-	// Copilot-Integration-ID / Editor-Version here — forcing a mismatched
-	// integration id (e.g. "vscode-chat") makes the server evaluate the
-	// request against that integration's restricted model allowlist and
-	// reject models the token's own OAuth integration actually permits
-	// (400 "model not available for integrator ..."). Omitting them lets the
-	// token's own integration apply, which is what grants access to the full
-	// model set (e.g. claude-sonnet-5).
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", userAgentHeader)
-	req.Header.Set("Openai-Intent", OpenAIIntent)
+	req.Header.Set("Openai-Intent", copilotOpenAIIntent)
+	req.Header.Set("Copilot-Integration-Id", integrationID)
+	req.Header.Set("Editor-Version", editorVersion)
 }
 
-// setPerRequestHeaders adds dynamic headers: x-initiator and Copilot-Vision-Request.
+// setPerRequestHeaders adds dynamic headers for each API call.
 func setPerRequestHeaders(req *http.Request, in []*schema.Message) {
-	// x-initiator: "user" when the last message is a plain user text prompt,
-	// "agent" otherwise (tool/continuation/assistant follow-up, tool results,
-	// synthetic attachment).
-	req.Header.Set("x-initiator", xInitiator(in))
+	req.Header.Set("X-Initiator", xInitiator(in))
+	req.Header.Set("X-GitHub-Api-Version", copilotAPIVersion)
+	req.Header.Set("X-Interaction-Id", newUUID())
 
-	// Copilot-Vision-Request: true when any message carries an image part.
 	if hasImageParts(in) {
-		req.Header.Set("Copilot-Vision-Request", "true")
+		req.Header.Set("X-Copilot-Vision-Request", "true")
+	}
+}
+
+// setCommonRequestHeaders adds per-instance headers (machine ID, session token)
+// to every API request.
+func (m *CopilotModel) setCommonRequestHeaders(req *http.Request) {
+	req.Header.Set("X-Client-Machine-Id", m.clientMachineID)
+	if st := m.sessionToken.get(); st != "" {
+		req.Header.Set("Copilot-Session-Token", st)
 	}
 }
 
@@ -785,42 +792,33 @@ func xInitiator(in []*schema.Message) string {
 
 // GPT-5 Responses API routing
 //
-// Ported verbatim from kilocode packages/llm/src/providers/github-copilot.ts:
+// Endpoint selection: models are routed based on the /models catalog. When the
+// catalog is not yet cached, a model-ID heuristic is used as fallback.
 //
-//	Copilot supports Responses for GPT-5 class models, except gpt-5-mini
-//	and gpt-5.4-nano variants which still need the chat-completions endpoint
-//	(the /responses endpoint rejects them with "model not available").
+// Preference order per model:
+//  1. /responses — if supported AND the model is GPT-5-class (reasoning).
+//  2. /chat/completions — if supported (all models).
+//  3. /v1/messages — Claude native (future).
+//
+// gpt-5.4-nano, gpt-5.4-mini, and gpt-5.5 list only /responses in their
+// supported_endpoints — they must use /responses.
 
 // gpt5ModelPattern matches GPT-N model IDs where N >= 5.
 var gpt5ModelPattern = regexp.MustCompile(`^gpt-(\d+)`)
 
 // wouldUseResponses reports whether a model ID would be routed to /responses
-// based purely on the name heuristic (ignoring the ForceChatCompletions
-// override). Matches the kilocode reference exactly: regex ^gpt-(\d+) with N>=5
-// and exact/dash-prefix exclusion for gpt-5-mini, gpt-5.4-mini, and
-// gpt-5.4-nano variants — all of which degrade on /responses (model not
-// available, broken tool calling, or hallucinating about tools).
+// based on the model-ID heuristic (fallback when catalog is not cached).
 func wouldUseResponses(modelID string) bool {
 	match := gpt5ModelPattern.FindStringSubmatch(modelID)
 	if match == nil {
 		return false
 	}
-	// gpt-5-mini exactly or date-suffixed (e.g. gpt-5-mini-2025-08-07)
-	// stay on chat completions — the Copilot API rejects them on /responses.
+	// gpt-5-mini — both /chat/completions and /responses work; prefer /chat/completions.
 	if modelID == "gpt-5-mini" || strings.HasPrefix(modelID, "gpt-5-mini-") {
 		return false
 	}
-	// gpt-5.4-mini — degraded tool-calling behavior on /responses (model
-	// hallucinates about unavailable tools instead of calling them).
-	if modelID == "gpt-5.4-mini" || strings.HasPrefix(modelID, "gpt-5.4-mini-") {
-		return false
-	}
-	// gpt-5.4-nano — the /responses endpoint rejects this model
-	// ("model not available for integrator").
-	if modelID == "gpt-5.4-nano" || strings.HasPrefix(modelID, "gpt-5.4-nano-") {
-		return false
-	}
-	// gpt-N with N >= 5 uses Responses.
+	// All other gpt-5+ models → /responses.  gpt-5.4-nano, gpt-5.4-mini, gpt-5.5
+	// list only /responses in their catalog and must not be routed to /chat/completions.
 	var n int
 	if _, err := fmt.Sscanf(match[1], "%d", &n); err == nil && n >= 5 {
 		return true
@@ -831,13 +829,9 @@ func wouldUseResponses(modelID string) bool {
 // useResponsesAPI returns true when the model should use the Copilot Responses
 // API endpoint (/responses) instead of /chat/completions.
 //
-// Rules (backported and extended from kilocode shouldUseResponsesApi):
-//   - GPT-5+ models (gpt-5, gpt-5.1-codex, gpt-6, etc.) → /responses
-//   - gpt-5-mini, gpt-5.4-mini, gpt-5.4-nano and variants → /chat/completions
-//   - Non-GPT models and GPT-4 and below → /chat/completions
-//
-// When m.cfg.ForceChatCompletions is true, returns false unconditionally and
-// logs at Debug level for any model that would have used Responses.
+// When a model catalog is cached via ListModelsCache, supported_endpoints from
+// the catalog drive the decision. Otherwise the model-ID heuristic (wouldUseResponses)
+// is used as fallback. ForceChatCompletions overrides both to false.
 func (m *CopilotModel) useResponsesAPI(modelID string) bool {
 	if m.cfg.ForceChatCompletions {
 		if wouldUseResponses(modelID) && m.logger != nil {
@@ -845,7 +839,57 @@ func (m *CopilotModel) useResponsesAPI(modelID string) bool {
 		}
 		return false
 	}
+
+	if cached := m.getCachedModels(); len(cached) > 0 {
+		for _, mi := range cached {
+			if mi.ID == modelID {
+				for _, ep := range mi.SupportedEndpoints {
+					if ep == "/responses" {
+						return true
+					}
+				}
+				return false
+			}
+		}
+	}
+
 	return wouldUseResponses(modelID)
+}
+
+// PopulateModelsCache calls ListModels with the model's current token and base
+// URL and stores the result for endpoint-routing decisions. Subsequent calls to
+// useResponsesAPI will consult the catalog's supported_endpoints instead of
+// falling back to the model-ID heuristic.
+//
+// Call this once after construction if you want catalog-driven routing.
+// The method is idempotent and safe for concurrent use.
+func (m *CopilotModel) PopulateModelsCache(ctx context.Context) error {
+	models, err := listModelsWithClient(ctx, m.lockedToken.get(), m.baseURL, m.httpClient)
+	if err != nil {
+		return err
+	}
+	m.setModelsCache(models)
+	return nil
+}
+
+// setModelsCache stores a model catalog for routing decisions.
+func (m *CopilotModel) setModelsCache(models []ModelInfo) {
+	if m.modelsMu == nil {
+		return
+	}
+	m.modelsMu.Lock()
+	m.modelsCache = models
+	m.modelsMu.Unlock()
+}
+
+// getCachedModels returns the cached model catalog or nil.
+func (m *CopilotModel) getCachedModels() []ModelInfo {
+	if m.modelsMu == nil {
+		return nil
+	}
+	m.modelsMu.RLock()
+	defer m.modelsMu.RUnlock()
+	return m.modelsCache
 }
 
 // generateResponses is the non-streaming Responses API path for GPT-5-class models.
@@ -856,4 +900,21 @@ func (m *CopilotModel) generateResponses(ctx context.Context, in []*schema.Messa
 		return nil, err
 	}
 	return m.sendResponsesRequest(ctx, body, in)
+}
+
+// isReasoningModel reports whether a model ID corresponds to a reasoning-capable
+// model for which temperature is unsupported (any gpt-5*, Claude, Gemini).
+// Temperature must be omitted for these models to avoid 400 errors.
+func isReasoningModel(modelID string) bool {
+	lower := strings.ToLower(modelID)
+	if strings.HasPrefix(lower, "gpt-5") {
+		return true
+	}
+	if strings.HasPrefix(lower, "claude-") {
+		return true
+	}
+	if strings.HasPrefix(lower, "gemini-") {
+		return true
+	}
+	return false
 }

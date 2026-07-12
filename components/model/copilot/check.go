@@ -102,7 +102,7 @@ func probeModels(ctx context.Context, baseURL string, cfg *Config, timeout time.
 		return checkup.Result{
 			Component: "copilot_models",
 			Status:    checkup.StatusLimited,
-			Message:   "GET /models returned 200 but no enabled models found",
+			Message:   "GET /models returned 200 but no models found",
 		}
 	}
 

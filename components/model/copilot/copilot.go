@@ -6,10 +6,13 @@ package copilot
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -27,9 +30,13 @@ const copilotGetType = "GitHubCopilot"
 type ReasoningEffort string
 
 const (
-	ReasoningEffortLow    ReasoningEffort = "low"
-	ReasoningEffortMedium ReasoningEffort = "medium"
-	ReasoningEffortHigh   ReasoningEffort = "high"
+	ReasoningEffortNone    ReasoningEffort = "none"
+	ReasoningEffortMinimal ReasoningEffort = "minimal"
+	ReasoningEffortLow     ReasoningEffort = "low"
+	ReasoningEffortMedium  ReasoningEffort = "medium"
+	ReasoningEffortHigh    ReasoningEffort = "high"
+	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+	ReasoningEffortMax     ReasoningEffort = "max"
 )
 
 type Config struct {
@@ -42,8 +49,9 @@ type Config struct {
 	Model                string          `validate:"omitempty" jsonschema:"description=Model ID to use"`
 	Temperature          *float32        `validate:"omitempty,gte=0,lte=2" jsonschema:"description=Sampling temperature (0 to 2)"`
 	MaxCompletionTokens  *int            `validate:"omitempty,gte=1" jsonschema:"description=Upper bound on generated tokens"`
-	ReasoningEffort      ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: low, medium, or high"`
+	ReasoningEffort      ReasoningEffort `validate:"omitempty" jsonschema:"description=Reasoning effort: none, minimal, low, medium, high, xhigh, max"`
 	ForceChatCompletions bool            `validate:"omitempty" jsonschema:"description=Force chat/completions endpoint even for models that would use /responses"`
+	SessionToken         string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot model session token (JWT)"`
 	Logger               *logrus.Entry   `validate:"omitempty" jsonschema:"-"`
 
 	// Chat completion fields backported from kilocode bodyFields.
@@ -60,6 +68,15 @@ type CopilotModel struct {
 	cancelRefresh context.CancelFunc
 	httpClient    *http.Client
 	logger        *logrus.Entry
+
+	sessionToken         *copilotSessionToken
+	sessionMu            *sync.Mutex
+	cancelSessionRefresh context.CancelFunc
+
+	modelsCache []ModelInfo
+	modelsMu    *sync.RWMutex
+
+	clientMachineID string
 
 	tools      []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
@@ -132,13 +149,24 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 
 	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)
 
+	sessionToken := &copilotSessionToken{logger: logger}
+	if cfg.SessionToken != "" {
+		sessionToken.token = cfg.SessionToken
+	}
+
+	clientMachineID := newUUID()
+
 	return &CopilotModel{
-		lockedToken:   lockedToken,
-		baseURL:       baseURL,
-		cfg:           cfg,
-		cancelRefresh: cancelRefresh,
-		httpClient:    httpClient,
-		logger:        logger,
+		lockedToken:      lockedToken,
+		baseURL:          baseURL,
+		cfg:              cfg,
+		cancelRefresh:    cancelRefresh,
+		httpClient:       httpClient,
+		logger:           logger,
+		sessionToken:     sessionToken,
+		sessionMu:        &sync.Mutex{},
+		modelsMu:         &sync.RWMutex{},
+		clientMachineID:  clientMachineID,
 	}, nil
 }
 
@@ -157,9 +185,9 @@ func (m *CopilotModel) GetType() string { return copilotGetType }
 func (m *CopilotModel) IsCallbacksEnabled() bool { return true }
 
 func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	n := *m
+	n := *m // safe: mutex fields are pointers (shared across copies), rest are values or safe-to-copy pointers
 	n.tools = tools
-	if len(tools) > 0 && n.toolChoice == nil {
+	if len(tools) > 0 {
 		tc := schema.ToolChoiceAllowed
 		n.toolChoice = &tc
 	}
@@ -173,4 +201,15 @@ func (m *CopilotModel) BindTools(tools []*schema.ToolInfo) error {
 		m.toolChoice = &tc
 	}
 	return nil
+}
+
+func newUUID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

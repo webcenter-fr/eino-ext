@@ -37,6 +37,7 @@ func (m *CopilotModel) streamResponses(ctx context.Context, in []*schema.Message
 	req.Header.Set("Content-Type", "application/json")
 	setAuthHeaders(req, m.lockedToken.get())
 	setPerRequestHeaders(req, in)
+	m.setCommonRequestHeaders(req)
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := m.httpClient.Do(req)

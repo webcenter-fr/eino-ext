@@ -600,8 +600,8 @@ func TestUseResponsesAPI(t *testing.T) {
 		{model: "gpt-5", forceChatCompletions: false, want: true},
 		{model: "gpt-5-chat-latest", forceChatCompletions: false, want: true},
 		{model: "gpt-5.1-codex", forceChatCompletions: false, want: true},
-		{model: "gpt-5.4-mini", forceChatCompletions: false, want: false},
-		{model: "gpt-5.4-nano", forceChatCompletions: false, want: false},
+		{model: "gpt-5.4-mini", forceChatCompletions: false, want: true},
+		{model: "gpt-5.4-nano", forceChatCompletions: false, want: true},
 		{model: "gpt-6", forceChatCompletions: false, want: true},
 		{model: "gpt-6.1", forceChatCompletions: false, want: true},
 		{model: "gpt-55", forceChatCompletions: false, want: true},
@@ -644,16 +644,15 @@ func TestWouldUseResponses(t *testing.T) {
 		{model: "gpt-5", want: true},
 		{model: "gpt-5-chat-latest", want: true},
 		{model: "gpt-5.1-codex", want: true},
-		{model: "gpt-5.4-mini", want: false},
+		{model: "gpt-5.4-mini", want: true},
 		{model: "gpt-6", want: true},
 		{model: "gpt-6.1", want: true},
 		{model: "gpt-55", want: true},
 		{model: "gpt-5-dashed", want: true},
-		// gpt-5-mini variants and gpt-5.4 mini/nano → false (degraded on /responses)
+		// gpt-5-mini variants → false (prefer /chat/completions)
 		{model: "gpt-5-mini", want: false},
 		{model: "gpt-5-mini-2025-08-07", want: false},
-		{model: "gpt-5.4-mini", want: false},
-		{model: "gpt-5.4-nano", want: false},
+		{model: "gpt-5.4-nano", want: true},
 		// gpt-5-minimal (not gpt-5-mini) still routes to Responses
 		{model: "gpt-5-minimal", want: true},
 		// GPT-4 and below, non-GPT → false
@@ -774,6 +773,7 @@ func newTestModel(baseURL, token string) (*CopilotModel, error) {
 		BaseURL:      baseURL,
 		Model:        "gpt-4o",
 		Timeout:      10 * time.Second,
+		SessionToken: "test-session",
 	}
 	return NewCopilotChatModel(ctx, cfg)
 }
