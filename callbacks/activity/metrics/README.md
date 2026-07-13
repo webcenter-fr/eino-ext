@@ -22,10 +22,13 @@ go metrics.Watch(ctx, bus, sessionID)
 |---|---|---|
 | `llm_tokens_total` | `model`, `agent`, `type` | Token count by type (`input`, `output`, `reasoning`, `cache_read`). |
 | `llm_cost_usd_total` | `model`, `agent` | Cumulative cost in USD. Populated when a `Pricer` is configured on the activity `Handler`. |
+| `llm_cost_savings_usd_total` | `model`, `agent` | Cumulative USD saved via prompt caching. Recorded when `WithBreakdown` is configured. |
+| `llm_cost_usd_by_component_total` | `model`, `agent`, `component` | Cost broken down by component (`input`, `output`, `cache_read`, `cache_write`). Recorded when `WithBreakdown` is configured. |
 | `cost_saver_complexity_ratio` | `session_id`, `agent` | Complexity ratio of the session (0.0-1.0) computed by LLM analyzer. |
 | `cost_saver_human_time_saved_seconds` | `session_id`, `agent` | Estimated human time saved in seconds. |
 | `cost_saver_money_saved_usd` | `session_id`, `agent` | Estimated money saved in USD based on human time and hourly rate. |
 | `cost_saver_fallback_count_total` | `reason` | Count of fallback to simple formula when LLM analysis failed. |
+| `cost_saver_runs_total` | `agent` | Total number of cost saver analysis runs completed. |
 
 ## Usage
 

@@ -71,9 +71,9 @@ Callers do not need to special-case ollama in their `NameResolver`: returning
 `"ollama"` is sufficient; the conversion and local-model gating are handled
 automatically.
 
-## Design: cost breakdown, cache savings & context-window usage (planned)
+## Design: cost breakdown, cache savings & context-window usage (implemented)
 
-> Status: **designed, not yet implemented.** `CatalogPricer.Cost` today
+> Status: **implemented.** `CatalogPricer.Cost` today
 > returns a single `float64` total. This section specs a superset API that
 > exposes *where* the money went and *how much prompt caching saved*, plus
 > first-class context-window usage/remaining helpers, without breaking the

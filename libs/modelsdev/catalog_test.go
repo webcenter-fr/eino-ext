@@ -146,3 +146,72 @@ func TestEmbeddedSnapshot_Parses(t *testing.T) {
 		t.Fatal("expected embedded snapshot to contain providers")
 	}
 }
+
+func TestContextUsage_Fraction(t *testing.T) {
+	tests := []struct {
+		name     string
+		used     int
+		window   int
+		fraction float64
+	}{
+		{"empty", 0, 1000, 0},
+		{"half", 500, 1000, 0.5},
+		{"full", 1000, 1000, 1.0},
+		{"over", 2000, 1000, 2.0},
+		{"zero window", 100, 0, 0},
+		{"negative window", 100, -1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := ContextUsage{Used: tt.used, Window: tt.window}
+			if got := u.Fraction(); got != tt.fraction {
+				t.Errorf("Fraction() = %v, want %v", got, tt.fraction)
+			}
+		})
+	}
+}
+
+func TestContextUsage_Remaining(t *testing.T) {
+	if got := (ContextUsage{Used: 300, Window: 1000}).Remaining(); got != 700 {
+		t.Errorf("Remaining = %d, want 700", got)
+	}
+	if got := (ContextUsage{Used: 1200, Window: 1000}).Remaining(); got != 0 {
+		t.Errorf("Remaining = %d, want 0 (clamped)", got)
+	}
+}
+
+func TestContextUsage_NearLimit(t *testing.T) {
+	u := ContextUsage{Used: 850, Window: 1000}
+	if !u.NearLimit(0.8) {
+		t.Error("NearLimit(0.8) = false, want true")
+	}
+	if u.NearLimit(0.9) {
+		t.Error("NearLimit(0.9) = true, want false")
+	}
+}
+
+func TestCatalog_Usage(t *testing.T) {
+	c := testCatalog()
+
+	u, ok := c.Usage("anthropic", "claude-opus-4-5", 100000)
+	if !ok {
+		t.Fatal("Usage ok = false")
+	}
+	if u.Used != 100000 {
+		t.Errorf("Used = %d, want 100000", u.Used)
+	}
+	if u.Window != 200000 {
+		t.Errorf("Window = %d, want 200000", u.Window)
+	}
+
+	_, ok = c.Usage("unknown", "model", 100)
+	if ok {
+		t.Error("Usage ok = true for unknown model, want false")
+	}
+
+	var nc *Catalog
+	_, ok = nc.Usage("any", "any", 0)
+	if ok {
+		t.Error("Usage ok = true for nil catalog, want false")
+	}
+}

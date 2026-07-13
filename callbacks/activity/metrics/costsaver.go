@@ -13,6 +13,7 @@ type CostSaverCollector struct {
 	humanTimeSavedSeconds *prometheus.GaugeVec
 	moneySavedUSD         *prometheus.GaugeVec
 	fallbackCount         *prometheus.CounterVec
+	runs                  *prometheus.CounterVec
 }
 
 // NewCostSaverCollector creates a CostSaverCollector and registers its metrics on reg.
@@ -34,6 +35,10 @@ func NewCostSaverCollector(reg prometheus.Registerer) (*CostSaverCollector, erro
 			Name: "cost_saver_fallback_count_total",
 			Help: "Count of fallback to simple formula when LLM analysis failed.",
 		}, []string{"reason"}),
+		runs: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "cost_saver_runs_total",
+			Help: "Total number of cost saver analysis runs completed.",
+		}, []string{"agent"}),
 	}
 	if err := reg.Register(c.complexityRatio); err != nil {
 		return nil, err
@@ -47,6 +52,9 @@ func NewCostSaverCollector(reg prometheus.Registerer) (*CostSaverCollector, erro
 	if err := reg.Register(c.fallbackCount); err != nil {
 		return nil, err
 	}
+	if err := reg.Register(c.runs); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -58,6 +66,7 @@ func (c *CostSaverCollector) RecordAnalysis(sessionID, agent string, analysis *a
 	c.complexityRatio.WithLabelValues(sessionID, agent).Set(analysis.ComplexityRatio)
 	c.humanTimeSavedSeconds.WithLabelValues(sessionID, agent).Set(analysis.HumanTimeSavedSeconds)
 	c.moneySavedUSD.WithLabelValues(sessionID, agent).Set(analysis.MoneySavedUSD)
+	c.runs.WithLabelValues(agent).Inc()
 }
 
 // RecordFallback increments the fallback counter for a given reason.

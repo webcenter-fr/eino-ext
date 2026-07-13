@@ -18,7 +18,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -107,10 +106,4 @@ func (m *Middleware) WrapEnhancedStreamableToolCall(_ context.Context, endpoint 
 	return func(ctx context.Context, arg *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
 		return endpoint(activity.WithAgent(ctx, m.name), arg, opts...)
 	}, nil
-}
-
-// WrapModel is a no-op pass-through; attribution is handled via context, not by
-// wrapping the model.
-func (m *Middleware) WrapModel(_ context.Context, cm model.BaseChatModel, _ *adk.ModelContext) (model.BaseChatModel, error) {
-	return cm, nil
 }

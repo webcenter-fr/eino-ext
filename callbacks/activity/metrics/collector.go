@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
+	"github.com/webcenter-fr/eino-ext/libs/modelsdev"
 )
 
 // Collector records llm_tokens_total and llm_cost_usd_total from step.ended
@@ -27,12 +28,15 @@ import (
 // name before it reaches StepStarted.Model, or cardinality will grow
 // unbounded.
 type Collector struct {
-	tokens     *prometheus.CounterVec
-	cost       *prometheus.CounterVec
-	reg        prometheus.Registerer
-	costSaver  *CostSaverCollector
-	summarizer *activity.SessionSummarizer
-	analyzer   *activity.CompositeComplexityAnalyzer
+	tokens          *prometheus.CounterVec
+	cost            *prometheus.CounterVec
+	savings         *prometheus.CounterVec
+	costByComponent *prometheus.CounterVec
+	reg             prometheus.Registerer
+	costSaver       *CostSaverCollector
+	summarizer      *activity.SessionSummarizer
+	analyzer        *activity.CompositeComplexityAnalyzer
+	breakdownFn     func(model string, t activity.Tokens) (modelsdev.CostBreakdown, bool)
 }
 
 // CostSaverConfig configures the cost saver feature.
@@ -56,6 +60,38 @@ func WithCostSaver(cfg CostSaverConfig, bus activity.Bus) Option {
 			c.costSaver = costSaver
 			c.summarizer = activity.NewSessionSummarizer(bus)
 			c.analyzer = activity.NewCompositeComplexityAnalyzer(*cfg.AnalyzerConfig)
+		}
+	}
+}
+
+// WithBreakdown attaches a breakdown function so the collector records
+// llm_cost_savings_usd_total and llm_cost_usd_by_component_total on each
+// step.ended event. The counters are registered on the collector's registry
+// when this option is applied. When fn is nil, only llm_tokens_total and
+// llm_cost_usd_total are recorded, preserving backward compatibility.
+func WithBreakdown(fn func(model string, t activity.Tokens) (modelsdev.CostBreakdown, bool)) Option {
+	return func(c *Collector) {
+		if fn == nil {
+			return
+		}
+		c.breakdownFn = fn
+		if c.savings == nil {
+			c.savings = prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "llm_cost_savings_usd_total",
+				Help: "Total LLM cost savings in USD from prompt caching, by model and agent.",
+			}, []string{"model", "agent"})
+			if err := c.reg.Register(c.savings); err != nil {
+				logrus.WithError(err).Warn("metrics: failed to register llm_cost_savings_usd_total")
+			}
+		}
+		if c.costByComponent == nil {
+			c.costByComponent = prometheus.NewCounterVec(prometheus.CounterOpts{
+				Name: "llm_cost_usd_by_component_total",
+				Help: "Total LLM cost in USD broken down by cost component, by model and agent.",
+			}, []string{"model", "agent", "component"})
+			if err := c.reg.Register(c.costByComponent); err != nil {
+				logrus.WithError(err).Warn("metrics: failed to register llm_cost_usd_by_component_total")
+			}
 		}
 	}
 }
@@ -105,6 +141,18 @@ func (c *Collector) Observe(model, agent string, se activity.StepEnded) {
 	if se.Cost != 0 {
 		c.cost.WithLabelValues(model, agent).Add(se.Cost)
 	}
+	if c.breakdownFn != nil {
+		b, ok := c.breakdownFn(model, se.Tokens)
+		if ok {
+			c.costByComponent.WithLabelValues(model, agent, "input").Add(b.Input)
+			c.costByComponent.WithLabelValues(model, agent, "output").Add(b.Output)
+			c.costByComponent.WithLabelValues(model, agent, "cache_read").Add(b.CacheRead)
+			c.costByComponent.WithLabelValues(model, agent, "cache_write").Add(b.CacheWrite)
+			if b.Savings > 0 {
+				c.savings.WithLabelValues(model, agent).Add(b.Savings)
+			}
+		}
+	}
 }
 
 // Watch subscribes to bus for sessionID and records every step.ended event
@@ -145,6 +193,10 @@ func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID strin
 				currentModel[e.Agent] = data.Model
 			case activity.StepEnded:
 				c.Observe(currentModel[e.Agent], e.Agent, data)
+			case activity.SessionEnded:
+				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil {
+					go c.handleSessionEnded(ctx, sessionID, e.Agent, data)
+				}
 			case *activity.SessionEnded:
 				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil {
 					go c.handleSessionEnded(ctx, sessionID, e.Agent, *data)

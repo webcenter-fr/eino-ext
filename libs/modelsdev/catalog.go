@@ -219,3 +219,13 @@ func (c *Catalog) Limits(provider, id string) (contextWindow, output int, ok boo
 	}
 	return contextWindow, m.Limit.Output, true
 }
+
+// Usage returns a ContextUsage for (provider, id) given the number of tokens
+// already consumed. ok mirrors Limits (false when the model is not found).
+func (c *Catalog) Usage(provider, id string, usedTokens int) (ContextUsage, bool) {
+	ctxWindow, _, ok := c.Limits(provider, id)
+	if !ok {
+		return ContextUsage{}, false
+	}
+	return ContextUsage{Used: usedTokens, Window: ctxWindow}, true
+}
