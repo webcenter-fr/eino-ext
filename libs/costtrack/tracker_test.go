@@ -343,3 +343,46 @@ func (fr *fakeRecorder) RecordAnalysis(sessionID, agent string, a *activity.Comp
 func (fr *fakeRecorder) RecordFallback(reason string) {}
 
 func (fr *fakeRecorder) SetRealtimeCost(sessionID, agent string, cost float64) {}
+
+func TestPrometheusRecorder_HumanSavings(t *testing.T) {
+	bus, err := activity.NewBus(activity.Config{})
+	if err != nil {
+		t.Fatalf("NewBus: %v", err)
+	}
+	defer bus.Close()
+
+	holder := new(atomic.Pointer[modelsdev.Catalog])
+	holder.Store(&modelsdev.Catalog{})
+
+	reg := prometheus.NewRegistry()
+	cfg := &Config{
+		Bus:             bus,
+		PricingProvider: "anthropic",
+		Resolve:         func(gw string) (string, string, bool) { return "", "", false },
+		CatalogHolder:   holder,
+		Registry:        reg,
+	}
+	pricer := modelsdev.CatalogPricer{
+		Catalog: holder.Load(),
+		Resolve: cfg.Resolve,
+	}
+
+	pr, err := newPrometheusRecorder(cfg, pricer)
+	if err != nil {
+		t.Fatalf("newPrometheusRecorder: %v", err)
+	}
+
+	pr.RecordAnalysis("s1", "coder", &activity.ComplexityAnalysis{
+		ComplexityRatio:       0.5,
+		HumanTimeSavedSeconds: 300,
+		MoneySavedUSD:         5.0,
+	})
+
+	got := gatherMetric(t, reg, "human_savings_usd_total", map[string]string{"agent": "coder"})
+	if got != 5.0 {
+		t.Errorf("human_savings_usd_total = %v, want 5.0", got)
+	}
+
+	// nil analysis should no-op
+	pr.RecordAnalysis("s1", "coder", nil)
+}

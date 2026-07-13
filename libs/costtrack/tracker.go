@@ -49,6 +49,7 @@ type PrometheusRecorder struct {
 	realtimeCost    *prometheus.GaugeVec
 	savings         *prometheus.CounterVec
 	costByComponent *prometheus.CounterVec
+	humanSavings    *prometheus.CounterVec
 }
 
 // Config for NewTracker. Validate+jsonschema tags; defaults applied in New.
@@ -219,7 +220,6 @@ func (t *Tracker) Watch(ctx context.Context, sessionID string) {
 					t.handleSessionEnded(ctx, sessionID, e.Agent, se)
 				}
 			}
-			_ = e.ID
 		}
 	}
 }
@@ -359,6 +359,7 @@ func newPrometheusRecorder(cfg *Config, pricer modelsdev.CatalogPricer) (*Promet
 		realtimeCost:    realtimeCost,
 		savings:         savings,
 		costByComponent: costByComponent,
+		humanSavings:    humanSavings,
 	}, nil
 }
 
@@ -402,10 +403,11 @@ func (r *PrometheusRecorder) RecordCompaction(agent string) {
 }
 
 func (r *PrometheusRecorder) RecordAnalysis(sessionID, agent string, a *activity.ComplexityAnalysis) {
-	if r == nil {
+	if r == nil || a == nil {
 		return
 	}
 	r.costSaverColl.RecordAnalysis(sessionID, agent, a)
+	r.humanSavings.WithLabelValues(agent).Add(a.MoneySavedUSD)
 }
 
 func (r *PrometheusRecorder) RecordFallback(reason string) {

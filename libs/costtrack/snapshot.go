@@ -148,13 +148,12 @@ func (st *snapshotTracker) buildSessionEnded(sessionID string) activity.SessionE
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ended = true
-	s.endedData = activity.SessionEnded{
+	return activity.SessionEnded{
 		Duration: time.Since(s.startTime).Round(time.Second),
 		Cost:     s.totals.Cost,
 		Steps:    s.totals.Steps,
 		Tools:    0,
 	}
-	return s.endedData
 }
 
 func (st *snapshotTracker) finalize(sessionID, agent string, se activity.SessionEnded) snapshotInternal {

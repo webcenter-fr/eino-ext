@@ -51,19 +51,22 @@ stays 0 → every metric stays 0.
 zero. This is the exact fix that landed in the rancher project (commit
 `cb81ae3`).
 
-## Recorder seam (OpenTelemetry future)
+## OpenTelemetry
 
-The `Recorder` interface is the pluggable metric backend seam. The default
-implementation is `PrometheusRecorder` (wraps `metrics.Collector` +
-`CostSaverCollector` + facade counters). An OpenTelemetry metrics adapter can
-be added later by implementing `Recorder` — no facade changes required.
+The `Recorder` interface is the pluggable metric backend seam. OpenTelemetry
+adapters are available via:
 
-OpenTelemetry traces (span per supervisor step / sub-agent delegation / tool
-call) are a separate cross-cutting concern, intentionally out of scope here.
+- **Metrics:** `libs/costtrack/otel` — an `OTelRecorder` implementing
+  `Recorder` using the shared OTel metric scope (`libs/otelmetrics`).
+- **Traces:** `callbacks/oteltrace` — a `callbacks.Handler` that records
+  spans for eino component lifecycle.
 
-When a non-Prometheus `Recorder` is used via `Config.Recorder`,
-`PrometheusHandler` returns nil and `/metrics` becomes a no-op. The JSON
-`/cost/usage` endpoint still works (it reads `Snapshot`, not the Recorder).
+Dual-export (Prometheus + OTel) is supported via `MultiRecorder` in
+`libs/costtrack`. See the individual package READMEs for usage snippets.
+
+> **Note:** OTel dependencies (`go.opentelemetry.io/otel/*` v1.43.0) are
+> direct dependencies of eino-ext. The `otel/exporters/prometheus` bridge is
+> an optional, caller-side dependency not included in eino-ext's `go.mod`.
 
 ## Metrics
 
