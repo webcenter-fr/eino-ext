@@ -88,7 +88,10 @@ func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (re
 		},
 	}
 
-	issues, _, err := c.Issues.ListByRepo(ctx, params.Owner, params.Repo, opts)
+	issues, err := paginateList(func(page int) ([]*github.Issue, *github.Response, error) {
+		opts.Page = page
+		return c.Issues.ListByRepo(ctx, params.Owner, params.Repo, opts)
+	}, defaultMaxPages)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to list issues")
 	}

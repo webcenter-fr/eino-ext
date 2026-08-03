@@ -21,9 +21,11 @@ func (s *GitHubToolTestSuite) TestOrgRepoList() {
 	var outputs []OrgRepoListOutput
 	err = json.Unmarshal([]byte(result), &outputs)
 	s.NoError(err)
-	s.Len(outputs, 1)
+	s.Len(outputs, 2)
 	s.Equal("repo1", outputs[0].Name)
 	s.Equal("testorg/repo1", outputs[0].FullName)
+	s.Equal("repo2", outputs[1].Name)
+	s.Equal("testorg/repo2", outputs[1].FullName)
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "invalid-instance", "org": "testorg"}`)
 	s.Error(err)

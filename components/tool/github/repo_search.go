@@ -78,12 +78,19 @@ func (t *RepoSearchTool) Invoke(ctx context.Context, params *RepoSearchParams) (
 		},
 	}
 
-	result_, _, err := c.Search.Repositories(ctx, params.Query, opts)
+	repos, err := paginateList(func(page int) ([]*github.Repository, *github.Response, error) {
+		opts.Page = page
+		result_, resp, err := c.Search.Repositories(ctx, params.Query, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		return result_.Repositories, resp, nil
+	}, defaultMaxPages)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to search repositories")
 	}
 
-	return filterMapMarshal(result_.Repositories, re, func(item *github.Repository) RepoSearchOutput {
+	return filterMapMarshal(repos, re, func(item *github.Repository) RepoSearchOutput {
 		return RepoSearchOutput{
 			Name:          item.GetName(),
 			FullName:      item.GetFullName(),

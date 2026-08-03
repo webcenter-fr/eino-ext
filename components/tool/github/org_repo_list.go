@@ -85,7 +85,10 @@ func (t *OrgRepoListTool) Invoke(ctx context.Context, params *OrgRepoListParams)
 		},
 	}
 
-	repos, _, err := c.Repositories.ListByOrg(ctx, params.Org, opts)
+	repos, err := paginateList(func(page int) ([]*github.Repository, *github.Response, error) {
+		opts.Page = page
+		return c.Repositories.ListByOrg(ctx, params.Org, opts)
+	}, defaultMaxPages)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to list organization repositories")
 	}

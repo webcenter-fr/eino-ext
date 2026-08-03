@@ -92,7 +92,10 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 		},
 	}
 
-	prs, _, err := c.PullRequests.List(ctx, params.Owner, params.Repo, opts)
+	prs, err := paginateList(func(page int) ([]*github.PullRequest, *github.Response, error) {
+		opts.Page = page
+		return c.PullRequests.List(ctx, params.Owner, params.Repo, opts)
+	}, defaultMaxPages)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to list pull requests")
 	}

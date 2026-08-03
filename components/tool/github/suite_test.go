@@ -24,9 +24,17 @@ func (s *GitHubToolTestSuite) SetupSuite() {
 
 		switch {
 		case strings.Contains(path, "/search/repositories"):
+			page := r.URL.Query().Get("page")
 			w.Header().Set("Content-Type", "application/vnd.github.v3+json")
+			if page == "2" {
+				w.Header().Set("Link", `<https://api.github.com/search/repositories?page=2>; rel="last"`)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"total_count": 2, "incomplete_results": false, "items": [{"name": "searched-repo-2", "full_name": "testorg/searched-repo-2", "description": "Search result 2", "language": "Python", "private": false, "stargazers_count": 3, "open_issues_count": 1, "default_branch": "develop", "html_url": "https://github.com/testorg/searched-repo-2"}]`))
+				return
+			}
+			w.Header().Set("Link", `<https://api.github.com/search/repositories?page=2>; rel="next", <https://api.github.com/search/repositories?page=2>; rel="last"`)
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"total_count": 1, "incomplete_results": false, "items": [{"name": "searched-repo", "full_name": "testorg/searched-repo", "description": "Search result", "language": "Go", "private": false, "stargazers_count": 5, "open_issues_count": 0, "default_branch": "main", "html_url": "https://github.com/testorg/searched-repo"}]`))
+			w.Write([]byte(`{"total_count": 2, "incomplete_results": false, "items": [{"name": "searched-repo", "full_name": "testorg/searched-repo", "description": "Search result", "language": "Go", "private": false, "stargazers_count": 5, "open_issues_count": 0, "default_branch": "main", "html_url": "https://github.com/testorg/searched-repo"}]`))
 		case strings.HasSuffix(path, "/comments") && strings.Contains(path, "/issues/1/"):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
@@ -94,7 +102,15 @@ func (s *GitHubToolTestSuite) SetupSuite() {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`[{"number": 10, "title": "Test PR", "state": "open", "user": {"login": "pruser"}, "head": {"ref": "feature-branch"}, "base": {"ref": "main"}, "draft": false, "created_at": "2025-03-01T00:00:00Z", "updated_at": "2025-03-02T00:00:00Z", "html_url": "https://github.com/testowner/testrepo/pull/10"}]`))
 		case strings.HasPrefix(path, "/api/v3/orgs/") && strings.HasSuffix(path, "/repos"):
+			page := r.URL.Query().Get("page")
 			w.Header().Set("Content-Type", "application/json")
+			if page == "2" {
+				w.Header().Set("Link", `<https://api.github.com/orgs/testorg/repos?page=2>; rel="last"`)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`[{"name": "repo2", "full_name": "testorg/repo2", "description": "Second repo", "language": "Python", "private": false, "stargazers_count": 5, "open_issues_count": 1, "default_branch": "develop", "html_url": "https://github.com/testorg/repo2"}]`))
+				return
+			}
+			w.Header().Set("Link", `<https://api.github.com/orgs/testorg/repos?page=2>; rel="next", <https://api.github.com/orgs/testorg/repos?page=2>; rel="last"`)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`[{"name": "repo1", "full_name": "testorg/repo1", "description": "First repo", "language": "Go", "private": false, "stargazers_count": 10, "open_issues_count": 2, "default_branch": "main", "html_url": "https://github.com/testorg/repo1"}]`))
 		case strings.HasSuffix(path, "/repos/testowner/testrepo/hooks/500"):

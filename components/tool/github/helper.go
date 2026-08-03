@@ -8,6 +8,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/goccy/go-json"
+	ghlib "github.com/google/go-github/v71/github" // aliased to avoid conflict with package name
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
@@ -62,6 +63,35 @@ func sanitizeSegment(s string) string {
 		s = "repo"
 	}
 	return s
+}
+
+const defaultMaxPages = 5
+
+// paginateList iterates through paginated GitHub API results up to maxPages
+// pages, accumulating all items into a single slice. The fetch callback is
+// called for each page; it must set opts.Page to the supplied page number
+// before making the API call.
+func paginateList[T any](
+	fetch func(page int) ([]T, *ghlib.Response, error),
+	maxPages int,
+) ([]T, error) {
+	var allItems []T
+	page := 1
+	for pagesFetched := 0; pagesFetched < maxPages; pagesFetched++ {
+		items, resp, err := fetch(page)
+		if err != nil {
+			return nil, errors.Wrapf(err, "paginateList fetch page %d", page)
+		}
+		if resp == nil {
+			return nil, errors.Errorf("paginateList fetch page %d: nil response", page)
+		}
+		allItems = append(allItems, items...)
+		if resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+	return allItems, nil
 }
 
 //go:embed prompts/list_output_guidance.md
