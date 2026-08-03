@@ -6,6 +6,42 @@ import (
 	"github.com/goccy/go-json"
 )
 
+func (s *GitHubToolTestSuite) TestInstanceList() {
+	ctx := context.Background()
+
+	listTool, err := newInstanceListTool(ctx, []string{"default", "ghes-prod"})
+	s.NoError(err)
+
+	_, err = listTool.Info(ctx)
+	s.NoError(err)
+
+	result, err := listTool.InvokableRun(ctx, `{}`)
+	s.NoError(err)
+	s.NotEmpty(result)
+	s.Contains(result, "default")
+	s.Contains(result, "ghes-prod")
+}
+
+func (s *GitHubToolTestSuite) TestInstanceListDiscoveryViaAllTools() {
+	ctx := context.Background()
+
+	tools, err := NewReadOnlyTools(ctx, s.configs())
+	s.NoError(err)
+
+	var listResult string
+	for _, tl := range tools {
+		info, err := tl.Info(ctx)
+		s.NoError(err)
+		if info.Name == "github_instance_list" {
+			listResult, err = tl.InvokableRun(ctx, `{}`)
+			s.NoError(err)
+			break
+		}
+	}
+	s.NotEmpty(listResult, "expected to find github_instance_list tool in read-only tools")
+	s.Contains(listResult, "test")
+}
+
 func (s *GitHubToolTestSuite) TestIssueList() {
 	ctx := context.Background()
 
