@@ -858,3 +858,33 @@ func TestBuildChatRequestHasMissingFields(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsSessionToken(t *testing.T) {
+	tests := []struct {
+		model string
+		want  bool
+	}{
+		// GPT-5+ models need session tokens.
+		{model: "gpt-5-mini", want: true},
+		{model: "gpt-5.4-nano", want: true},
+		{model: "gpt-5.4-mini", want: true},
+		{model: "gpt-5.5", want: true},
+		{model: "gpt-5.4", want: true},
+		// Non-GPT-5 models do NOT need session tokens.
+		{model: "gpt-4o", want: false},
+		{model: "gpt-4.1", want: false},
+		{model: "gpt-3.5-turbo", want: false},
+		{model: "claude-sonnet-5", want: false},
+		{model: "claude-haiku-4.5", want: false},
+		{model: "claude-opus-5", want: false},
+		{model: "gemini-2.5-flash", want: false},
+		{model: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := needsSessionToken(tt.model); got != tt.want {
+				t.Errorf("needsSessionToken(%q) = %v, want %v", tt.model, got, tt.want)
+			}
+		})
+	}
+}

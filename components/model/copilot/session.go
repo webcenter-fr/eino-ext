@@ -104,28 +104,18 @@ func acquireSession(ctx context.Context, baseURL, copilotToken string, modelHint
 }
 
 // needsSessionToken reports whether a model requires a session token.
-// Legacy models (gpt-4o, gpt-4, gpt-3.5-turbo, gpt-4.1 and dated variants)
-// work without one. Premium models (GPT-5, Claude, Gemini) need it.
+// GPT-5+ models (both /chat/completions and /responses endpoints) need one.
+// Claude and Gemini models work via /chat/completions without a session token;
+// the session endpoint does not currently return Claude/Gemini models in its
+// available_models list.
 func needsSessionToken(modelID string) bool {
 	if modelID == "" {
 		return false
 	}
-	legacy := map[string]bool{
-		"gpt-4o":        true,
-		"gpt-4o-mini":   true,
-		"gpt-4":         true,
-		"gpt-3.5-turbo": true,
-		"gpt-4.1":       true,
+	if strings.HasPrefix(modelID, "gpt-5") {
+		return true
 	}
-	if legacy[modelID] {
-		return false
-	}
-	for prefix := range legacy {
-		if strings.HasPrefix(modelID, prefix+"-") {
-			return false
-		}
-	}
-	return true
+	return false
 }
 
 // startSessionRefresh launches a background goroutine that refreshes the session

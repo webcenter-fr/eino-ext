@@ -499,7 +499,7 @@ func TestIntegration_EndpointRouting(t *testing.T) {
 func TestIntegration_DisabledModels(t *testing.T) {
 	requireIntegration(t)
 
-	disabledModels := []string{"claude-sonnet-5", "gpt-5.4-mini", "gemini-3.1-pro-preview"}
+	disabledModels := []string{"gpt-5.4-mini", "gemini-3.1-pro-preview"}
 
 	for _, modelID := range disabledModels {
 		t.Run(modelID, func(t *testing.T) {
@@ -508,6 +508,225 @@ func TestIntegration_DisabledModels(t *testing.T) {
 			t.Skipf("model %s needs policy enablement (plan §2.6, open question §4.1)", modelID)
 		})
 	}
+}
+
+// requireBusinessIntegration skips unless a raw GitHub PAT is available for
+// token exchange, which is required to auto-detect the business/enterprise plan
+// host via endpoints.api.
+func requireBusinessIntegration(t *testing.T) {
+	t.Helper()
+	requireIntegration(t)
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		t.Skip("GITHUB_TOKEN (raw PAT) not set — business/enterprise plan requires token exchange auto-detection")
+	}
+}
+
+// TestIntegration_ClaudeSonnet5 proves claude-sonnet-5 works with business
+// (and enterprise) API keys via token exchange auto-detection.
+// Set COPILOT_INTEGRATION=1 and GITHUB_TOKEN.
+func TestIntegration_ClaudeSonnet5(t *testing.T) {
+	requireBusinessIntegration(t)
+
+	const modelID = "claude-sonnet-5"
+
+	ctx := context.Background()
+	cfg := &Config{
+		Model:       modelID,
+		GitHubToken: os.Getenv("GITHUB_TOKEN"),
+	}
+	if url := os.Getenv("COPILOT_API_URL"); url != "" {
+		cfg.BaseURL = url
+	}
+
+	m, err := NewCopilotChatModel(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewCopilotChatModel: %v", err)
+	}
+	if m.cancelRefresh != nil {
+		defer m.cancelRefresh()
+	}
+	t.Logf("claude-sonnet-5 base URL: %s", m.baseURL)
+
+	t.Run("ListModels", func(t *testing.T) {
+		if err := m.PopulateModelsCache(ctx); err != nil {
+			t.Fatalf("PopulateModelsCache: %v", err)
+		}
+		cached := m.getCachedModels()
+		t.Logf("total models in catalog: %d", len(cached))
+
+		found := false
+		for _, mi := range cached {
+			if mi.ID == modelID {
+				found = true
+				t.Logf("FOUND %s: family=%s state=%s endpoints=%v reasoning_efforts=%v picker=%v tool_calls=%v streaming=%v reasoning=%v vision=%v",
+					mi.ID, mi.Family, mi.State, mi.SupportedEndpoints,
+					mi.ReasoningEfforts, mi.ModelPickerEnabled,
+					mi.SupportsToolCalls, mi.SupportsStreaming,
+					mi.SupportsReasoning, mi.SupportsVision)
+				break
+			}
+			if strings.HasPrefix(mi.ID, "claude-") {
+				t.Logf("  claude model: %s family=%s state=%s endpoints=%v",
+					mi.ID, mi.Family, mi.State, mi.SupportedEndpoints)
+			}
+		}
+		if !found {
+			t.Errorf("%s NOT found in model catalog (%d models)", modelID, len(cached))
+		}
+	})
+
+	t.Run("SessionDiagnostics", func(t *testing.T) {
+		sresp, err := acquireSession(ctx, m.baseURL, m.lockedToken.get(), modelID, m.httpClient, m.clientMachineID)
+		if err != nil {
+			t.Fatalf("acquireSession: %v", err)
+		}
+		t.Logf("session selected_model: %s", sresp.SelectedModel)
+		t.Logf("session available_models (%d):", len(sresp.AvailableModels))
+		for _, am := range sresp.AvailableModels {
+			t.Logf("  - %s", am)
+		}
+		hasModel := false
+		for _, am := range sresp.AvailableModels {
+			if am == modelID {
+				hasModel = true
+				break
+			}
+		}
+		if hasModel {
+			t.Logf("%s is in session available_models", modelID)
+		} else {
+			t.Logf("%s NOT in session available_models (session selected %q)", modelID, sresp.SelectedModel)
+		}
+	})
+
+	t.Run("Generate", func(t *testing.T) {
+		msg, err := m.Generate(ctx, []*schema.Message{
+			{Role: schema.User, Content: "Reply with exactly one word: hello"},
+		}, model.WithMaxTokens(20))
+		if err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		if msg == nil {
+			t.Fatal("expected non-nil message")
+		}
+		if msg.Content == "" {
+			t.Fatal("expected non-empty content")
+		}
+		t.Logf("content: %q", msg.Content)
+		if msg.ResponseMeta == nil {
+			t.Fatal("expected ResponseMeta")
+		}
+		if msg.ResponseMeta.FinishReason == "" {
+			t.Error("expected non-empty finish reason")
+		}
+		t.Logf("finish: %s tokens=%v",
+			msg.ResponseMeta.FinishReason, msg.ResponseMeta.Usage)
+	})
+
+	t.Run("Generate_Temperature", func(t *testing.T) {
+		temps := []*float32{nil, float32Ptr(0.0), float32Ptr(0.5), float32Ptr(1.0)}
+		for _, temp := range temps {
+			name := "T" + formatFloatTemp(temp)
+			t.Run(name, func(t *testing.T) {
+				opts := []model.Option{model.WithMaxTokens(20)}
+				if temp != nil {
+					opts = append(opts, model.WithTemperature(*temp))
+				}
+				msg, err := m.Generate(ctx, []*schema.Message{
+					{Role: schema.User, Content: "Hi"},
+				}, opts...)
+				if err != nil {
+					t.Fatalf("Generate(temp=%v): %v", temp, err)
+				}
+				if msg == nil || msg.Content == "" {
+					t.Fatal("expected non-empty content")
+				}
+				t.Logf("temp=%v content=%q finish=%s",
+					temp, truncate(msg.Content, 40),
+					msg.ResponseMeta.FinishReason)
+			})
+		}
+	})
+
+	t.Run("Stream", func(t *testing.T) {
+		sr, err := m.Stream(ctx, []*schema.Message{
+			{Role: schema.User, Content: "Say hello in one word"},
+		}, model.WithMaxTokens(10))
+		if err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+
+		var content string
+		var sawFinish bool
+		for {
+			chunk, err := sr.Recv()
+			if errors.Is(err, context.DeadlineExceeded) ||
+				(err != nil && strings.Contains(err.Error(), "EOF")) {
+				break
+			}
+			if err != nil {
+				if strings.Contains(err.Error(), "stream closed") {
+					break
+				}
+				t.Fatalf("Recv: %v", err)
+			}
+			if chunk == nil {
+				break
+			}
+			content += chunk.Content
+			if chunk.ResponseMeta != nil && chunk.ResponseMeta.FinishReason != "" {
+				sawFinish = true
+				t.Logf("stream finish: %s usage=%v",
+					chunk.ResponseMeta.FinishReason,
+					chunk.ResponseMeta.Usage)
+			}
+		}
+		if content == "" {
+			t.Error("expected non-empty content from stream")
+		}
+		if !sawFinish {
+			t.Log("stream did not receive a finish-reason chunk")
+		}
+		t.Logf("stream content: %q", truncate(content, 50))
+	})
+
+	t.Run("ToolCalling", func(t *testing.T) {
+		mWithTools, err := m.WithTools([]*schema.ToolInfo{
+			{
+				Name: "get_weather",
+				Desc: "Get the current weather for a city",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"city": {
+						Type:     "string",
+						Desc:     "The city name",
+						Required: true,
+					},
+				}),
+			},
+		})
+		if err != nil {
+			t.Fatalf("WithTools: %v", err)
+		}
+		msg, err := mWithTools.Generate(ctx, []*schema.Message{
+			{Role: schema.User, Content: "What is the weather in Paris?"},
+		}, model.WithMaxTokens(50))
+		if err != nil {
+			t.Fatalf("Generate with tools: %v", err)
+		}
+		if msg == nil {
+			t.Fatal("expected non-nil message")
+		}
+		t.Logf("content: %q", msg.Content)
+		if len(msg.ToolCalls) > 0 {
+			t.Logf("tool calls: %d", len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				t.Logf("  - %s(%s)", tc.Function.Name, tc.Function.Arguments)
+			}
+		}
+		if msg.ResponseMeta != nil {
+			t.Logf("finish: %s", msg.ResponseMeta.FinishReason)
+		}
+	})
 }
 
 // TestIntegration_ReasoningEffort tests reasoning effort values for a reasoning model.
