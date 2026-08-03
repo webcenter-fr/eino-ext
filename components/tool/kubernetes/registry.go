@@ -13,76 +13,11 @@ import (
 // toolConstructor is a function that creates a single Kubernetes tool from configs.
 type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 
-// readOnlyConstructors lists all read-only Kubernetes tools (list + describe + pod logs).
+// readOnlyConstructors lists all read-only Kubernetes tools.
 var readOnlyConstructors = []toolConstructor{
-	// Cluster discovery
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewClusterListTool(ctx, c) },
-
-	// Core list tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPodListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDeploymentListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewStatefulSetListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDaemonSetListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewConfigMapListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewSecretListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewServiceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewIngressListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPVCListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewNodeListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewNamespaceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewEventListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewServiceAccountListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewStorageClassListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewCustomResourceDefinitionListTool(ctx, c) },
-
-	// Core describe tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPodDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDeploymentDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewStatefulsetDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDaemonsetDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewConfigMapDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewSecretDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewServiceDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewIngressDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPVCDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewNodeDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewNamespaceDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewEventDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewServiceAccountDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewStorageClassDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewCustomResourceDefinitionDescribeTool(ctx, c) },
-
-	// Kafka tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaClusterListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaClusterDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaTopicListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaTopicDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaNodePoolListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaNodePoolDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaUserListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewKafkaUserDescribeTool(ctx, c) },
-
-	// OLM tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMClusterServiceVersionListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMClusterServiceVersionDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMSubscriptionListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMSubscriptionDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMInstallPlanListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOLMInstallPlanDescribeTool(ctx, c) },
-
-	// OpenShift tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOcpRouteListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewOcpRouteDescribeTool(ctx, c) },
-
-	// Spark tools
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewSparkApplicationListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewSparkApplicationDescribeTool(ctx, c) },
-
-	// Generic tools (for custom resources)
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewResourceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewResourceDescribeTool(ctx, c) },
-
-	// Pod log (read-only streaming)
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewListTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDescribeTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewPodLogTool(ctx, c) },
 }
 
@@ -182,14 +117,14 @@ func NewAllToolsWithSafety(ctx context.Context, configs Configs, scheme *runtime
 
 var (
 	_ tool.InvokableTool = (*ClusterListTool)(nil)
+	_ tool.InvokableTool = (*ListTool)(nil)
+	_ tool.InvokableTool = (*DescribeTool)(nil)
 	_ tool.InvokableTool = (*PodLogTool)(nil)
 	_ tool.InvokableTool = (*PodExecTool)(nil)
-	_ tool.InvokableTool = (*ResourceListTool)(nil)
 	_ tool.InvokableTool = (*ResourceCreateTool)(nil)
 	_ tool.InvokableTool = (*ResourceApplyTool)(nil)
 	_ tool.InvokableTool = (*ResourceDeleteTool)(nil)
 	_ tool.InvokableTool = (*ResourcePatchTool)(nil)
-	_ tool.InvokableTool = (*ResourceDescribeTool)(nil)
 	_ tool.StreamableTool = (*PodExecTool)(nil)
 	_ tool.StreamableTool = (*PodLogTool)(nil)
 )

@@ -11,6 +11,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // blocklistedKinds contains Kubernetes resource kinds that must not be created
@@ -25,6 +26,18 @@ var blocklistedKinds = map[string]bool{
 	"ValidatingWebhookConfiguration": true,
 	"MutatingWebhookConfiguration":   true,
 	"RuntimeClass":                   true,
+}
+
+// checkBlocklist returns an error if the given GVK or GVR is security-blocklisted
+// for the specified operation (e.g. "creating", "patching").
+func checkBlocklist(gvk schema.GroupVersionKind, gvr schema.GroupVersionResource, op string) error {
+	if blocklistedKinds[gvk.Kind] {
+		return errors.Errorf("%s resources of kind %q is blocked for security reasons", op, gvk.Kind)
+	}
+	if res, ok := blocklistedResources[gvr.Group]; ok && res[gvr.Resource] {
+		return errors.Errorf("%s resources of type %q in API group %q is blocked for security reasons", op, gvr.Resource, gvr.Group)
+	}
+	return nil
 }
 
 const resourceCreateDescription = `
@@ -42,19 +55,17 @@ It returns the created resource as a JSON object.
 
 // ResourceCreateParams defines the parameters for the ResourceCreate function.
 type ResourceCreateParams struct {
-	Cluster    string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace  string `json:"namespace,omitempty" jsonschema:"(optional) The namespace for the resource. Omit for cluster-scoped resources."`
-	ApiGroup   string `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource. For example, 'apps' for Deployments, or empty string for core resources like Pods."`
-	ApiVersion string `json:"apiVersion" validate:"required" jsonschema:"(required) The API version. For example, 'v1' or 'v1beta1'."`
-	Resource   string `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase. For example, 'deployments', 'pods', 'configmaps'."`
-	Manifest   string `json:"manifest" validate:"required" jsonschema:"(required) The full resource manifest as a JSON string. Must include apiVersion, kind, and metadata."`
-	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without creating. Show the result to the user and ask for confirmation."`
-	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`
+	Cluster   string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace string `json:"namespace,omitempty" jsonschema:"(optional) The namespace for the resource. Omit for cluster-scoped resources."`
+	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Manifest  string `json:"manifest" validate:"required" jsonschema:"(required) The full resource manifest as a JSON string. Must include apiVersion, kind, and metadata."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without creating. Show the result to the user and ask for confirmation."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`
 }
 
 // ResourceCreateTool creates any Kubernetes resource from a JSON manifest.
 type ResourceCreateTool struct {
-	*baseToolWithDynamic
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -80,6 +91,12 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		return "", err
 	}
 
+	// Resolve kind to GVR via cached mapper.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	if err != nil {
+		return "", err
+	}
+
 	// Parse the manifest JSON into an unstructured object.
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(params.Manifest), &obj.Object); err != nil {
@@ -91,10 +108,14 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		return "", errors.New("manifest must include apiVersion, kind, and metadata.name")
 	}
 
+	// Verify resolved GVK matches manifest GVK.
+	if obj.GetKind() != resolved.GVK.Kind {
+		return "", errors.Errorf("resolved kind %q does not match manifest kind %q", resolved.GVK.Kind, obj.GetKind())
+	}
+
 	// Block creation of security-sensitive resource kinds.
-	kind := obj.GetKind()
-	if blocklistedKinds[kind] {
-		return "", errors.Errorf("creating resources of kind %q is blocked for security reasons", kind)
+	if err := checkBlocklist(resolved.GVK, resolved.GVR, "creating"); err != nil {
+		return "", err
 	}
 
 	// Validate pod spec security for Pod/Job/CronJob kinds.
@@ -107,7 +128,7 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		obj.SetNamespace(params.Namespace)
 	}
 
-	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
+	gvr := resolved.GVR
 
 	ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
 	defer cancel()
@@ -119,7 +140,7 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 
 	created, err := c.Resource(gvr).Namespace(params.Namespace).Create(ctx, obj, opts)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to create resource %s.%s/%s", params.ApiGroup, params.ApiVersion, params.Resource)
+		return "", errors.Wrapf(err, "failed to create resource %s (GVR: %s)", resolved.GVK.Kind, gvr)
 	}
 
 	// Remove managedFields to reduce noise in the output.
@@ -136,13 +157,13 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 // NewResourceCreateTool creates a new instance of the ResourceCreateTool.
 func NewResourceCreateTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(ctx, configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
 
 	createTool := &ResourceCreateTool{
-		baseToolWithDynamic: base,
+		baseTool: base,
 	}
 
 	// Infer tool

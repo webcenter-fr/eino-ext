@@ -66,8 +66,8 @@ func TestCheckResultStatuses(t *testing.T) {
 
 func TestCheckClientErrorResults(t *testing.T) {
 	r := clientErrorResults("test-cluster", context.DeadlineExceeded)
-	if len(r) < 40 {
-		t.Fatalf("expected 40+ results, got %d", len(r))
+	if len(r) != 8 {
+		t.Fatalf("expected 8 results, got %d", len(r))
 	}
 	for i, rr := range r {
 		if rr.Instance != "test-cluster" {
@@ -81,8 +81,8 @@ func TestCheckClientErrorResults(t *testing.T) {
 
 func TestAllComponentNames(t *testing.T) {
 	names := allComponentNames()
-	if len(names) < 40 {
-		t.Errorf("expected 40+ component names, got %d", len(names))
+	if len(names) != 8 {
+		t.Errorf("expected 8 component names, got %d", len(names))
 	}
 	seen := make(map[string]bool)
 	for _, name := range names {

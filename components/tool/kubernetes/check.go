@@ -7,14 +7,9 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	storagev1 "k8s.io/api/storage/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 const kubeCheckTimeout = 10 * time.Second
@@ -28,11 +23,6 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 		}}
 	}
 
-	// Register apiextensions types on the global scheme so that CRD
-	// probes (kubernetes_list_custom_resource_definitions etc.) resolve
-	// their GVK when the controller-runtime client calls ObjectKinds.
-	utilruntime.Must(apiextensionsv1.AddToScheme(scheme.Scheme))
-
 	clusters := configs.GetClusterNames()
 	var all checkup.Results
 
@@ -44,16 +34,11 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 		}
 
 		baseCtx, cancel := context.WithTimeout(ctx, kubeCheckTimeout)
-		c, err := NewClient(baseCtx, cc.Config, nil)
-		if err != nil {
-			all = append(all, clientErrorResults(cluster, err)...)
-			cancel()
-			continue
-		}
+		cfg := cc.Config
 
 		results := func() checkup.Results {
 			defer cancel()
-			return probeCluster(baseCtx, c, cluster)
+			return probeCluster(baseCtx, cfg, cluster)
 		}()
 		all = append(all, results...)
 	}
@@ -63,7 +48,7 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 
 func clientErrorResults(cluster string, err error) checkup.Results {
 	errStr := err.Error()
-	r := make(checkup.Results, 0, 66)
+	r := make(checkup.Results, 0, 8)
 	for _, name := range allComponentNames() {
 		r = append(r, checkup.Result{
 			Component: name,
@@ -75,34 +60,11 @@ func clientErrorResults(cluster string, err error) checkup.Results {
 	return r
 }
 
-type kubeResourceDescriptor struct {
-	componentList    string
-	componentDescribe string
-	listObj          client.ObjectList
-	getObj           client.Object
+func coreKinds() []string {
+	return []string{"pods", "configmaps", "nodes", "namespaces"}
 }
 
-func coreResources() []kubeResourceDescriptor {
-	return []kubeResourceDescriptor{
-		{"kubernetes_list_pods", "kubernetes_describe_pod", &corev1.PodList{}, &corev1.Pod{}},
-		{"kubernetes_list_deployments", "kubernetes_describe_deployment", &appsv1.DeploymentList{}, &appsv1.Deployment{}},
-		{"kubernetes_list_statefulsets", "kubernetes_describe_statefulset", &appsv1.StatefulSetList{}, &appsv1.StatefulSet{}},
-		{"kubernetes_list_daemonsets", "kubernetes_describe_daemonset", &appsv1.DaemonSetList{}, &appsv1.DaemonSet{}},
-		{"kubernetes_list_configmaps", "kubernetes_describe_config_map", &corev1.ConfigMapList{}, &corev1.ConfigMap{}},
-		{"kubernetes_list_secrets", "kubernetes_describe_secret", &corev1.SecretList{}, &corev1.Secret{}},
-		{"kubernetes_list_services", "kubernetes_describe_service", &corev1.ServiceList{}, &corev1.Service{}},
-		{"kubernetes_list_ingresses", "kubernetes_describe_ingress", &networkingv1.IngressList{}, &networkingv1.Ingress{}},
-		{"kubernetes_list_persistent_volume_claims", "kubernetes_describe_persistent_volume_claim", &corev1.PersistentVolumeClaimList{}, &corev1.PersistentVolumeClaim{}},
-		{"kubernetes_list_nodes", "kubernetes_describe_node", &corev1.NodeList{}, &corev1.Node{}},
-		{"kubernetes_list_namespaces", "kubernetes_describe_namespace", &corev1.NamespaceList{}, &corev1.Namespace{}},
-		{"kubernetes_list_events", "kubernetes_describe_event", &corev1.EventList{}, &corev1.Event{}},
-		{"kubernetes_list_service_accounts", "kubernetes_describe_service_account", &corev1.ServiceAccountList{}, &corev1.ServiceAccount{}},
-		{"kubernetes_list_storage_classes", "kubernetes_describe_storage_class", &storagev1.StorageClassList{}, &storagev1.StorageClass{}},
-		{"kubernetes_list_custom_resource_definitions", "kubernetes_describe_custom_resource_definition", &apiextensionsv1.CustomResourceDefinitionList{}, &apiextensionsv1.CustomResourceDefinition{}},
-	}
-}
-
-func probeCluster(ctx context.Context, c client.Client, cluster string) checkup.Results {
+func probeCluster(ctx context.Context, cfg *rest.Config, cluster string) checkup.Results {
 	var results checkup.Results
 
 	results = append(results, checkup.Result{
@@ -111,22 +73,27 @@ func probeCluster(ctx context.Context, c client.Client, cluster string) checkup.
 		Status:    checkup.StatusOK,
 	})
 
-	for _, rd := range coreResources() {
-		r := probeCoreResource(ctx, c, cluster, rd)
+	dc, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return append(results, clientErrorResults(cluster, errors.Wrap(err, "failed to create dynamic client"))...)
+	}
+
+	mapper, err := newCachedMapper(cfg)
+	if err != nil {
+		return append(results, clientErrorResults(cluster, errors.Wrap(err, "failed to create mapper"))...)
+	}
+
+	for _, kind := range coreKinds() {
+		r := probeKind(ctx, dc, mapper, cluster, kind)
 		results = append(results, r...)
 	}
 
-	results = append(results, limitedResults(cluster,
-		"kubernetes_list_kafka_clusters", "kubernetes_describe_kafka_cluster",
-		"kubernetes_list_kafka_topics", "kubernetes_describe_kafka_topic",
-		"kubernetes_list_kafka_node_pools", "kubernetes_describe_kafka_node_pool",
-		"kubernetes_list_kafka_users", "kubernetes_describe_kafka_user",
-		"kubernetes_list_olm_cluster_service_versions", "kubernetes_describe_olm_cluster_service_version",
-		"kubernetes_list_olm_subscriptions", "kubernetes_describe_olm_subscription",
-		"kubernetes_list_olm_install_plans", "kubernetes_describe_olm_install_plan",
-		"kubernetes_list_ocp_routes", "kubernetes_describe_ocp_route",
-		"kubernetes_list_spark_applications", "kubernetes_describe_spark_application",
-	)...)
+	results = append(results, checkup.Result{
+		Component: "kubernetes_list",
+		Instance:  cluster,
+		Status:    checkup.StatusLimited,
+		Message:   "CRD-only kinds (kafka, olm, ocp, spark) tested with dedicated env",
+	})
 
 	results = append(results, checkup.Result{
 		Component: "kubernetes_pod_log",
@@ -135,34 +102,38 @@ func probeCluster(ctx context.Context, c client.Client, cluster string) checkup.
 		Message:   "requires pod name and container to probe",
 	})
 
-	results = append(results, checkup.Result{
-		Component: "kubernetes_resource_list",
-		Instance:  cluster,
-		Status:    checkup.StatusLimited,
-		Message:   "requires GVR to probe",
-	})
-	results = append(results, checkup.Result{
-		Component: "kubernetes_resource_describe",
-		Instance:  cluster,
-		Status:    checkup.StatusLimited,
-		Message:   "requires GVR to probe",
-	})
+	// Write tools are not probed (side effects); report as limited.
+	writeLimited := []string{
+		"kubernetes_resource_create",
+		"kubernetes_resource_apply",
+		"kubernetes_resource_patch",
+		"kubernetes_resource_delete",
+	}
+	for _, name := range writeLimited {
+		results = append(results, checkup.Result{
+			Component: name,
+			Instance:  cluster,
+			Status:    checkup.StatusLimited,
+			Message:   "write tool, not probed to avoid side effects",
+		})
+	}
 
 	return results
 }
 
-func probeCoreResource(ctx context.Context, c client.Client, cluster string, rd kubeResourceDescriptor) checkup.Results {
+func probeKind(ctx context.Context, dc dynamic.Interface, mapper *cachedMapper, cluster, kind string) checkup.Results {
 	var results checkup.Results
 
-	if err := c.List(ctx, rd.listObj, &client.ListOptions{}); err != nil {
+	resolved, err := mapper.Resolve(ctx, kind)
+	if err != nil {
 		results = append(results, checkup.Result{
-			Component: rd.componentList,
+			Component: "kubernetes_list",
 			Instance:  cluster,
 			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to list").Error(),
+			Error:     errors.Wrapf(err, "failed to resolve kind %q", kind).Error(),
 		})
 		results = append(results, checkup.Result{
-			Component: rd.componentDescribe,
+			Component: "kubernetes_describe",
 			Instance:  cluster,
 			Status:    checkup.StatusError,
 			Error:     "dependency failed",
@@ -170,17 +141,24 @@ func probeCoreResource(ctx context.Context, c client.Client, cluster string, rd 
 		return results
 	}
 
-	items := listItems(rd.listObj)
+	list, err := dc.Resource(resolved.GVR).List(ctx, metav1.ListOptions{Limit: 1})
+	if err != nil {
+		return checkup.Results{
+			{Component: "kubernetes_list", Instance: cluster, Status: checkup.StatusError, Error: errors.Wrap(err, "failed to list").Error()},
+			{Component: "kubernetes_describe", Instance: cluster, Status: checkup.StatusError, Error: "dependency failed"},
+		}
+	}
+
 	results = append(results, checkup.Result{
-		Component: rd.componentList,
+		Component: "kubernetes_list",
 		Instance:  cluster,
 		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("%d items found, RBAC ok", len(items)),
+		Message:   fmt.Sprintf("%d items found, RBAC ok", len(list.Items)),
 	})
 
-	if len(items) == 0 {
+	if len(list.Items) == 0 {
 		results = append(results, checkup.Result{
-			Component: rd.componentDescribe,
+			Component: "kubernetes_describe",
 			Instance:  cluster,
 			Status:    checkup.StatusLimited,
 			Message:   "no resources to test describe",
@@ -188,11 +166,11 @@ func probeCoreResource(ctx context.Context, c client.Client, cluster string, rd 
 		return results
 	}
 
-	first := items[0]
-	name, ns := itemNameAndNamespace(first)
-	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, rd.getObj); err != nil {
+	first := list.Items[0]
+	_, err = dc.Resource(resolved.GVR).Namespace(first.GetNamespace()).Get(ctx, first.GetName(), metav1.GetOptions{})
+	if err != nil {
 		results = append(results, checkup.Result{
-			Component: rd.componentDescribe,
+			Component: "kubernetes_describe",
 			Instance:  cluster,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to describe").Error(),
@@ -201,159 +179,24 @@ func probeCoreResource(ctx context.Context, c client.Client, cluster string, rd 
 	}
 
 	results = append(results, checkup.Result{
-		Component: rd.componentDescribe,
+		Component: "kubernetes_describe",
 		Instance:  cluster,
 		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("described %q, RBAC ok", name),
+		Message:   fmt.Sprintf("described %q, RBAC ok", first.GetName()),
 	})
 
 	return results
 }
 
-type listItem interface {
-	GetName() string
-	GetNamespace() string
-}
-
-func listItems(ol client.ObjectList) []listItem {
-	switch l := ol.(type) {
-	case *corev1.PodList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *appsv1.DeploymentList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *appsv1.StatefulSetList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *appsv1.DaemonSetList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.ConfigMapList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.SecretList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.ServiceList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *networkingv1.IngressList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.PersistentVolumeClaimList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.NodeList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name}
-		}
-		return r
-	case *corev1.NamespaceList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name}
-		}
-		return r
-	case *corev1.EventList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *corev1.ServiceAccountList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name, namespace: l.Items[i].Namespace}
-		}
-		return r
-	case *storagev1.StorageClassList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name}
-		}
-		return r
-	case *apiextensionsv1.CustomResourceDefinitionList:
-		r := make([]listItem, len(l.Items))
-		for i := range l.Items {
-			r[i] = listItemAdapter{name: l.Items[i].Name}
-		}
-		return r
-	default:
-		panic("checkup: unhandled list type")
-	}
-}
-
-type listItemAdapter struct {
-	name      string
-	namespace string
-}
-
-func (a listItemAdapter) GetName() string      { return a.name }
-func (a listItemAdapter) GetNamespace() string { return a.namespace }
-
-func itemNameAndNamespace(item listItem) (string, string) {
-	return item.GetName(), item.GetNamespace()
-}
-
-func limitedResults(cluster string, names ...string) checkup.Results {
-	r := make(checkup.Results, len(names))
-	for i, name := range names {
-		r[i] = checkup.Result{
-			Component: name,
-			Instance:  cluster,
-			Status:    checkup.StatusLimited,
-			Message:   "requires specialized CRD schemas not available in checkup",
-		}
-	}
-	return r
-}
-
 func allComponentNames() []string {
-	names := []string{"kubernetes_cluster_list"}
-	for _, rd := range coreResources() {
-		names = append(names, rd.componentList, rd.componentDescribe)
-	}
-	names = append(names,
-		"kubernetes_list_kafka_clusters", "kubernetes_describe_kafka_cluster",
-		"kubernetes_list_kafka_topics", "kubernetes_describe_kafka_topic",
-		"kubernetes_list_kafka_node_pools", "kubernetes_describe_kafka_node_pool",
-		"kubernetes_list_kafka_users", "kubernetes_describe_kafka_user",
-		"kubernetes_list_olm_cluster_service_versions", "kubernetes_describe_olm_cluster_service_version",
-		"kubernetes_list_olm_subscriptions", "kubernetes_describe_olm_subscription",
-		"kubernetes_list_olm_install_plans", "kubernetes_describe_olm_install_plan",
-		"kubernetes_list_ocp_routes", "kubernetes_describe_ocp_route",
-		"kubernetes_list_spark_applications", "kubernetes_describe_spark_application",
+	return []string{
+		"kubernetes_cluster_list",
+		"kubernetes_list",
+		"kubernetes_describe",
 		"kubernetes_pod_log",
-		"kubernetes_resource_list", "kubernetes_resource_describe",
-	)
-	return names
+		"kubernetes_resource_create",
+		"kubernetes_resource_apply",
+		"kubernetes_resource_patch",
+		"kubernetes_resource_delete",
+	}
 }

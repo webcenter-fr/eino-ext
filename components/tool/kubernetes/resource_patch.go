@@ -35,21 +35,19 @@ It returns the patched resource as a JSON object.
 
 // ResourcePatchParams defines the parameters for the ResourcePatch function.
 type ResourcePatchParams struct {
-	Cluster    string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace  string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
-	ApiGroup   string `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource."`
-	ApiVersion string `json:"apiVersion" validate:"required" jsonschema:"(required) The API version."`
-	Resource   string `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase."`
-	Name       string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
-	PatchType  string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
-	Patch      string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`
-	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without patching."`
-	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute."`
+	Cluster   string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
+	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Name      string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
+	PatchType string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
+	Patch     string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without patching."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute."`
 }
 
 // ResourcePatchTool patches any Kubernetes resource.
 type ResourcePatchTool struct {
-	*baseToolWithDynamic
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -84,9 +82,15 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 		return "", err
 	}
 
+	// Resolve kind to GVR via cached mapper.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	if err != nil {
+		return "", err
+	}
+
 	// Block patching of security-sensitive resources.
-	if res, ok := blocklistedResources[params.ApiGroup]; ok && res[params.Resource] {
-		return "", errors.Errorf("patching resources of type %q in API group %q is blocked for security reasons", params.Resource, params.ApiGroup)
+	if err := checkBlocklist(resolved.GVK, resolved.GVR, "patching"); err != nil {
+		return "", err
 	}
 
 	c, err := t.dynamicClient(params.Cluster)
@@ -94,7 +98,7 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 		return "", err
 	}
 
-	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
+	gvr := resolved.GVR
 
 	patchType := mapPatchType(params.PatchType)
 
@@ -111,10 +115,9 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr == nil {
 			ownership := safety.CheckOwnership(existing)
-			// Pre-fetch and attach ownership to the dry-run result below.
 			patched, patchErr := c.Resource(gvr).Namespace(params.Namespace).Patch(ctx, params.Name, patchType, []byte(params.Patch), opts)
 			if patchErr != nil {
-				return "", errors.Wrapf(patchErr, "failed to patch resource %s/%s of type %s.%s/%s (dry-run)", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+				return "", errors.Wrapf(patchErr, "failed to patch resource %s/%s of type %s (dry-run)", params.Namespace, params.Name, resolved.GVK.Kind)
 			}
 			unstructured.RemoveNestedField(patched.Object, "metadata", "managedFields")
 			dryRunResult := map[string]any{
@@ -134,7 +137,7 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 
 	patched, err := c.Resource(gvr).Namespace(params.Namespace).Patch(ctx, params.Name, patchType, []byte(params.Patch), opts)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to patch resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+		return "", errors.Wrapf(err, "failed to patch resource %s/%s of type %s", params.Namespace, params.Name, resolved.GVK.Kind)
 	}
 
 	// Remove managedFields to reduce noise in the output.
@@ -151,13 +154,13 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 // NewResourcePatchTool creates a new instance of the ResourcePatchTool.
 func NewResourcePatchTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(ctx, configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
 
 	patchTool := &ResourcePatchTool{
-		baseToolWithDynamic: base,
+		baseTool: base,
 	}
 
 	// Infer tool

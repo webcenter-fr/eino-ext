@@ -64,9 +64,7 @@ On success, returns a confirmation message. On dry-run, returns the resource tha
 type ResourceDeleteParams struct {
 	Cluster            string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace          string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
-	ApiGroup           string `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource."`
-	ApiVersion         string `json:"apiVersion" validate:"required" jsonschema:"(required) The API version."`
-	Resource           string `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase."`
+	Kind               string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
 	Name               string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to delete."`
 	Cascade            string `json:"cascade,omitempty" validate:"omitempty,oneof=background foreground orphan" jsonschema:"(optional) Deletion propagation: 'background' (default, delete dependents in background), 'foreground' (wait for dependents), 'orphan' (leave dependents)."`
 	GracePeriodSeconds *int64 `json:"gracePeriodSeconds,omitempty" jsonschema:"(optional) Grace period in seconds before the resource is deleted. Use 0 for immediate deletion."`
@@ -76,7 +74,7 @@ type ResourceDeleteParams struct {
 
 // ResourceDeleteTool deletes any Kubernetes resource.
 type ResourceDeleteTool struct {
-	*baseToolWithDynamic
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -113,9 +111,15 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 		return "", err
 	}
 
+	// Resolve kind to GVR via cached mapper.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	if err != nil {
+		return "", err
+	}
+
 	// Block deletion of security-sensitive resources.
-	if res, ok := blocklistedResources[params.ApiGroup]; ok && res[params.Resource] {
-		return "", errors.Errorf("deleting resources of type %q in API group %q is blocked for security reasons", params.Resource, params.ApiGroup)
+	if err := checkBlocklist(resolved.GVK, resolved.GVR, "deleting"); err != nil {
+		return "", err
 	}
 
 	c, err := t.dynamicClient(params.Cluster)
@@ -123,7 +127,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 		return "", err
 	}
 
-	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
+	gvr := resolved.GVR
 
 	// Dry-run: fetch the resource and return what would be deleted.
 	if params.DryRun {
@@ -132,7 +136,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 
 		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr != nil {
-			return "", errors.Wrapf(getErr, "failed to fetch resource for dry-run %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+			return "", errors.Wrapf(getErr, "failed to fetch resource for dry-run %s/%s of type %s", params.Namespace, params.Name, resolved.GVK.Kind)
 		}
 		unstructured.RemoveNestedField(existing.Object, "metadata", "managedFields")
 
@@ -163,7 +167,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 	defer cancel()
 
 	if err := c.Resource(gvr).Namespace(params.Namespace).Delete(ctx, params.Name, opts); err != nil {
-		return "", errors.Wrapf(err, "failed to delete resource %s/%s of type %s.%s/%s", params.Namespace, params.Name, params.Resource, params.ApiGroup, params.ApiVersion)
+		return "", errors.Wrapf(err, "failed to delete resource %s/%s of type %s", params.Namespace, params.Name, resolved.GVK.Kind)
 	}
 
 	data, err := json.Marshal(map[string]any{
@@ -182,13 +186,13 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 // NewResourceDeleteTool creates a new instance of the ResourceDeleteTool.
 func NewResourceDeleteTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(ctx, configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
 
 	deleteTool := &ResourceDeleteTool{
-		baseToolWithDynamic: base,
+		baseTool: base,
 	}
 
 	// Infer tool

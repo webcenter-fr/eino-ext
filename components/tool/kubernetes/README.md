@@ -1,16 +1,20 @@
 # Kubernetes Tools
 
 eino tools for interacting with Kubernetes clusters via controller-runtime and
-typed/dynamic clients.
+dynamic clients.
 
 ## Design
 
-- **Multi-cluster** — configured via a `Configs` map (`map[string]*rest.Config`)
-  of named clusters, matching the argocd tool pattern.
-- **Generic list/describe** — uses Go generics and reflection for type-agnostic
-  list and describe tools over typed K8s objects.
-- **Dynamic CRUD** — create, apply, patch, and delete tools use the dynamic
-  client for generic resource operations.
+- **Consolidated** — reduced from ~57 separate tool schemas to 9. Uses a
+  `kind` parameter resolved via a cached RESTMapper that supports kubectl
+  shortnames and CRDs.
+- **Multi-cluster** — configured via a `Configs` map (`map[string]*ClusterConfig`)
+  of named clusters.
+- **Curated output** — a formatter registry provides type-specific list output
+  for 24 resource types. Unknown types fall back to a generic name/namespace/status
+  formatter.
+- **Dynamic CRUD** — create, apply, patch, and delete tools use the dynamic client
+  with kind-based resolution.
 - **Safety** — write tools enforce a dry-run/confirmed gate internally. Pod exec
   has a destructive command blocklist. Factory functions for combined safety
   middleware configuration are provided.
@@ -20,57 +24,40 @@ typed/dynamic clients.
 ```go
 import (
     "k8s.io/client-go/rest"
-    "k8s.io/apimachinery/pkg/runtime"
 
     "github.com/webcenter-fr/eino-ext/components/tool/kubernetes"
 )
 
 configs := kubernetes.Configs{
-    "prod": &rest.Config{Host: "https://prod.example.com", ...},
-    "staging": &rest.Config{Host: "https://staging.example.com", ...},
+    "prod": &kubernetes.ClusterConfig{
+        Config: &rest.Config{Host: "https://prod.example.com", ...},
+    },
 }
-scheme := runtime.NewScheme()
-// register types on scheme...
 ```
 
 ## Available Tools
 
 | Category | Tool Name | Description |
 |---|---|---|
-| Read | `kubernetes_pod_list` | List pods with labels selector and filter |
-| Read | `kubernetes_pod_describe` | Describe pod details |
-| Read | `kubernetes_deployment_list` | List deployments |
-| Read | `kubernetes_deployment_describe` | Describe deployment details |
-| Read | `kubernetes_statefulset_list` | List statefulsets |
-| Read | `kubernetes_statefulset_describe` | Describe statefulset details |
-| Read | `kubernetes_daemonset_list` | List daemonsets |
-| Read | `kubernetes_daemonset_describe` | Describe daemonset details |
-| Read | `kubernetes_configmap_list` | List configmaps |
-| Read | `kubernetes_configmap_describe` | Describe configmap details |
-| Read | `kubernetes_secret_list` | List secrets (values redacted) |
-| Read | `kubernetes_secret_describe` | Describe secret details (values redacted) |
-| Read | `kubernetes_service_list` | List services |
-| Read | `kubernetes_service_describe` | Describe service details |
-| Read | `kubernetes_ingress_list` | List ingresses |
-| Read | `kubernetes_ingress_describe` | Describe ingress details |
-| Read | `kubernetes_pvc_list` | List persistent volume claims |
-| Read | `kubernetes_pvc_describe` | Describe PVC details |
-| Read | `kubernetes_node_list` | List nodes |
-| Read | `kubernetes_node_describe` | Describe node details |
-| Read | `kubernetes_namespace_list` | List namespaces |
-| Read | `kubernetes_namespace_describe` | Describe namespace details |
-| Read | `kubernetes_event_list` | List events |
-| Read | `kubernetes_serviceaccount_list` | List service accounts |
-| Read | `kubernetes_storageclass_list` | List storage classes |
-| Read | `kubernetes_crd_list` | List custom resource definitions |
+| Read | `kubernetes_list` | List any K8s resource by kind/shortname + GVR fallback, with label selector, filter, and pagination |
+| Read | `kubernetes_describe` | Describe any K8s resource by kind/shortname + name, with field exclusion |
+| Read | `kubernetes_cluster_list` | List configured clusters |
 | Read | `kubernetes_pod_log` | Get pod logs (invokable + streamable) |
 | Write | `kubernetes_pod_exec` | Exec commands in pods (invokable + streamable) |
 | Write | `kubernetes_resource_create` | Create resources via dynamic client |
 | Write | `kubernetes_resource_apply` | Server-side apply via dynamic client |
-| Write | `kubernetes_resource_patch` | Patch resources (strategic/merge/json) |
+| Write | `kubernetes_resource_patch` | Patch resources with type selection |
 | Write | `kubernetes_resource_delete` | Delete resources with cascade options |
 
-Additional tools for Kafka, OLM, OpenShift, and Spark are available.
+The `kind` parameter accepts:
+
+- A Kubernetes Kind e.g. `Pod`, `Deployment`, `ConfigMap`
+- A kubectl shortname e.g. `po`, `deploy`, `svc`
+- A `resource.group` form e.g. `deployments.apps`
+
+Resolution uses a cached RESTMapper (backed by discovery cache) that resets
+on cache misses to pick up newly installed CRDs. All operations are wrapped
+in `kretry` for transient API server errors.
 
 ## Factory Functions
 
@@ -92,4 +79,5 @@ writeNames := kubernetes.WriteToolNames()
 
 Pod exec has a destructive command blocklist covering `rm`, `kill`, `dd`,
 `mkfs`, `chroot`, `iptables`, and similar commands. Write tools require a
-dry-run step before execution.
+dry-run step before execution. Blocklisted kinds (ClusterRole, Namespace,
+NetworkPolicy, etc.) cannot be created, applied, patched, or deleted.

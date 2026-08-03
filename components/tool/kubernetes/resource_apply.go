@@ -37,9 +37,7 @@ It returns the applied resource as a JSON object.
 type ResourceApplyParams struct {
 	Cluster      string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace    string `json:"namespace,omitempty" jsonschema:"(optional) The namespace for the resource. Omit for cluster-scoped resources."`
-	ApiGroup     string `json:"apiGroup" validate:"required" jsonschema:"(required) The API group of the resource."`
-	ApiVersion   string `json:"apiVersion" validate:"required" jsonschema:"(required) The API version."`
-	Resource     string `json:"resource" validate:"required" jsonschema:"(required) The resource type in plural lowercase."`
+	Kind         string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
 	Manifest     string `json:"manifest" validate:"required" jsonschema:"(required) The resource manifest as a JSON string. Must include apiVersion, kind, and metadata."`
 	FieldManager string `json:"fieldManager,omitempty" jsonschema:"(optional) The field manager name for server-side apply. Defaults to 'eino-agent'."`
 	Force        bool   `json:"force,omitempty" jsonschema:"(optional) If true, force apply even if another field manager owns conflicting fields."`
@@ -49,7 +47,7 @@ type ResourceApplyParams struct {
 
 // ResourceApplyTool applies (creates or updates) any Kubernetes resource using server-side apply.
 type ResourceApplyTool struct {
-	*baseToolWithDynamic
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -75,6 +73,12 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		return "", err
 	}
 
+	// Resolve kind to GVR via cached mapper.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	if err != nil {
+		return "", err
+	}
+
 	// Parse the manifest JSON into an unstructured object.
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(params.Manifest), &obj.Object); err != nil {
@@ -86,9 +90,14 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		return "", errors.New("manifest must include apiVersion, kind, and metadata.name")
 	}
 
+	// Verify resolved GVK matches manifest GVK.
+	if obj.GetKind() != resolved.GVK.Kind {
+		return "", errors.Errorf("resolved kind %q does not match manifest kind %q", resolved.GVK.Kind, obj.GetKind())
+	}
+
 	// Block apply of security-sensitive resource kinds.
-	if blocklistedKinds[obj.GetKind()] {
-		return "", errors.Errorf("applying resources of kind %q is blocked for security reasons", obj.GetKind())
+	if err := checkBlocklist(resolved.GVK, resolved.GVR, "applying"); err != nil {
+		return "", err
 	}
 
 	// Validate pod spec security for Pod/Job/CronJob kinds.
@@ -107,7 +116,7 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		fieldManager = "eino-agent"
 	}
 
-	gvr := toGVR(params.ApiGroup, params.ApiVersion, params.Resource)
+	gvr := resolved.GVR
 
 	ctx, cancel := withTimeout(ctx, t.getDefaultTimeout(params.Cluster))
 	defer cancel()
@@ -137,7 +146,7 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 				opts,
 			)
 			if applyErr != nil {
-				return "", errors.Wrapf(applyErr, "failed to apply resource %s/%s of type %s.%s/%s (dry-run)", params.Namespace, obj.GetName(), params.Resource, params.ApiGroup, params.ApiVersion)
+				return "", errors.Wrapf(applyErr, "failed to apply resource %s/%s of type %s (dry-run)", params.Namespace, obj.GetName(), resolved.GVK.Kind)
 			}
 			unstructured.RemoveNestedField(applied.Object, "metadata", "managedFields")
 			dryRunResult := map[string]any{
@@ -168,7 +177,7 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		opts,
 	)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to apply resource %s/%s of type %s.%s/%s", params.Namespace, obj.GetName(), params.Resource, params.ApiGroup, params.ApiVersion)
+		return "", errors.Wrapf(err, "failed to apply resource %s/%s of type %s", params.Namespace, obj.GetName(), resolved.GVK.Kind)
 	}
 
 	// Remove managedFields to reduce noise in the output.
@@ -185,13 +194,13 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 // NewResourceApplyTool creates a new instance of the ResourceApplyTool.
 func NewResourceApplyTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 
-	base, err := newBaseToolWithDynamic(ctx, configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
 
 	applyTool := &ResourceApplyTool{
-		baseToolWithDynamic: base,
+		baseTool: base,
 	}
 
 	// Infer tool

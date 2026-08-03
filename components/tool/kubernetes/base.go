@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -19,21 +18,12 @@ const (
 	defaultOperationTimeout = 30 * time.Second
 )
 
-// toGVR builds a schema.GroupVersionResource from its string parts. It
-// centralizes the group/version/resource field naming used by the generic
-// resource tools.
-func toGVR(group, version, resource string) schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    group,
-		Version:  version,
-		Resource: resource,
-	}
-}
-
 // baseTool holds shared client bundles for all Kubernetes tools.
 type baseTool struct {
 	clients               map[string]client.Client
 	clientsets            map[string]*kubernetes.Clientset
+	dynamics              map[string]dynamic.Interface
+	mappers               map[string]*cachedMapper
 	configs               Configs
 	knownClusters         []string
 	disallowedNamespaces  map[string]map[string]bool
@@ -98,21 +88,6 @@ func clusterNotFoundError(cluster string, known []string) error {
 	return toolutil.NotFoundError("Kubernetes cluster", cluster, known)
 }
 
-// baseToolWithDynamic extends baseTool with a dynamic client bundle.
-type baseToolWithDynamic struct {
-	*baseTool
-	dynamics map[string]dynamic.Interface
-}
-
-// dynamicClient returns the dynamic client for the given cluster name.
-func (b *baseToolWithDynamic) dynamicClient(cluster string) (dynamic.Interface, error) {
-	c, ok := b.dynamics[cluster]
-	if !ok {
-		return nil, clusterNotFoundError(cluster, b.knownClusters)
-	}
-	return c, nil
-}
-
 func buildDisallowedNamespaces(configs Configs) map[string]map[string]bool {
 	result := make(map[string]map[string]bool)
 	for clusterName, cc := range configs {
@@ -154,34 +129,58 @@ func (b *baseTool) getDefaultTimeout(cluster string) time.Duration {
 	return parseTimeoutOrDefault(config.DefaultTimeout, defaultOperationTimeout)
 }
 
-// newBaseTool builds the controller-runtime clients for all configured clusters.
-// Only clients are built by default; callers needing clientsets must build them separately.
+// dynamicClient returns the dynamic client for the given cluster name.
+func (b *baseTool) dynamicClient(cluster string) (dynamic.Interface, error) {
+	c, ok := b.dynamics[cluster]
+	if !ok {
+		return nil, clusterNotFoundError(cluster, b.knownClusters)
+	}
+	return c, nil
+}
+
+// resolveKind resolves a resource kind to GVR, GVK, and scope via the
+// per-cluster cached mapper.
+func (b *baseTool) resolveKind(ctx context.Context, cluster, kind string) (resolveResult, error) {
+	mapper, ok := b.mappers[cluster]
+	if !ok {
+		return resolveResult{}, clusterNotFoundError(cluster, b.knownClusters)
+	}
+	resolved, err := mapper.Resolve(ctx, kind)
+	if err != nil {
+		return resolveResult{}, errors.Wrap(err, "failed to resolve kind")
+	}
+	return resolved, nil
+}
+
+// newBaseTool builds the controller-runtime clients, dynamic clients, and mappers for all configured clusters.
 func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 	clients, err := BuildClients(ctx, configs, nil)
 	if err != nil {
 		return nil, err
 	}
+	dynamics, err := BuildClientDynamics(ctx, configs, nil)
+	if err != nil {
+		return nil, err
+	}
+	mappers := make(map[string]*cachedMapper, len(configs))
+	for name, cc := range configs {
+		if cc == nil {
+			continue
+		}
+		m, err := newCachedMapper(cc.Config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create mapper for cluster %s", name)
+		}
+		mappers[name] = m
+	}
 	return &baseTool{
 		clients:              clients,
+		dynamics:             dynamics,
+		mappers:              mappers,
 		configs:              configs,
 		knownClusters:        configs.GetClusterNames(),
 		disallowedNamespaces: buildDisallowedNamespaces(configs),
 	}, nil
 }
 
-// newBaseToolWithDynamic builds both the controller-runtime base tool and the
-// dynamic client bundle used by the generic resource tools.
-func newBaseToolWithDynamic(ctx context.Context, configs Configs) (*baseToolWithDynamic, error) {
-	dynamics, err := BuildClientDynamics(ctx, configs, nil)
-	if err != nil {
-		return nil, err
-	}
-	base, err := newBaseTool(ctx, configs)
-	if err != nil {
-		return nil, err
-	}
-	return &baseToolWithDynamic{
-		baseTool: base,
-		dynamics: dynamics,
-	}, nil
-}
+
