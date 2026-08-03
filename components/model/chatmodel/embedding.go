@@ -69,7 +69,12 @@ func newCopilotEmbedding(ctx context.Context, cfg *EmbeddingConfig) (embedding.E
 		TLSSkipVerify: cfg.TLSSkipVerify,
 	}
 
-	return copilot.NewEmbedder(ctx, copilotCfg, cfg.APIKey, cfg.BaseURL, cfg.Timeout)
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = copilot.ResolveBaseURL("")
+	}
+
+	return copilot.NewEmbedder(ctx, copilotCfg, cfg.APIKey, baseURL, cfg.Timeout)
 }
 
 func newOllamaEmbedding(cfg *EmbeddingConfig) (embedding.Embedder, error) {

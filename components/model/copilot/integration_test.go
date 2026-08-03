@@ -8,10 +8,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
 func requireIntegration(t *testing.T) {
@@ -114,6 +116,166 @@ func getTestTemperatures(family string) []struct {
 
 func float32Ptr(v float32) *float32 { return &v }
 
+// requireGitHubTokenIntegration skips unless a raw GitHub PAT is available
+// to exercise the /copilot_internal/v2/token exchange. The acceptance tests
+// below depend on the exchange response's endpoints.api field, which only
+// exists when a real exchange happens — a pre-obtained CopilotToken skips
+// the exchange entirely (NewCopilotChatModel's CopilotToken branch).
+func requireGitHubTokenIntegration(t *testing.T) {
+	t.Helper()
+	requireIntegration(t)
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		t.Skip("GITHUB_TOKEN (raw PAT) not set — acceptance tests need the exchange path")
+	}
+}
+
+// exchangeForTest performs a real token exchange for the test's GitHub PAT
+// and returns the full response (including endpoints.api), as ground truth.
+func exchangeForTest(t *testing.T) *copilotTokenResponse {
+	t.Helper()
+	resp, err := exchangeGitHubToken(context.Background(), os.Getenv("GITHUB_TOKEN"), "", 30*time.Second)
+	if err != nil {
+		t.Fatalf("exchangeGitHubToken: %v", err)
+	}
+	if resp.Endpoints == nil || resp.Endpoints.API == "" {
+		t.Fatalf("exchange returned no endpoints.api — cannot validate plan-correct host detection; got %+v", resp)
+	}
+	return resp
+}
+
+// TestIntegration_AutoDetectBaseURL proves the 421 fix: when a raw GitHub
+// PAT is used with no explicit BaseURL, NewCopilotChatModel must resolve the
+// plan-correct host from the exchange response's endpoints.api and a real
+// Generate must succeed (not 421).
+func TestIntegration_AutoDetectBaseURL(t *testing.T) {
+	requireGitHubTokenIntegration(t)
+
+	truth := exchangeForTest(t)
+	t.Logf("plan-correct host (endpoints.api): %s", truth.Endpoints.API)
+
+	ctx := context.Background()
+	m, err := NewCopilotChatModel(ctx, &Config{
+		GitHubToken: os.Getenv("GITHUB_TOKEN"),
+		Model:       "gpt-4o",
+	})
+	if err != nil {
+		t.Fatalf("NewCopilotChatModel: %v", err)
+	}
+	if m.cancelRefresh != nil {
+		defer m.cancelRefresh()
+	}
+
+	if m.baseURL != truth.Endpoints.API {
+		t.Fatalf("baseURL not auto-detected: got %q, want endpoints.api %q (hardcoded default is %q)",
+			m.baseURL, truth.Endpoints.API, defaultCopilotBase)
+	}
+	if m.baseURL == defaultCopilotBase && truth.Endpoints.API != defaultCopilotBase {
+		t.Fatalf("regression: model fell back to the individual-only host %q instead of %q",
+			m.baseURL, truth.Endpoints.API)
+	}
+
+	msg, err := m.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Reply with the single word: ok"},
+	}, model.WithMaxTokens(10))
+	if err != nil {
+		t.Fatalf("Generate against auto-detected host failed (expected 200, got: %v)", err)
+	}
+	if msg == nil || msg.Content == "" {
+		t.Fatal("expected non-empty Generate content")
+	}
+	t.Logf("Generate OK on %s: %q", m.baseURL, truncate(msg.Content, 40))
+
+	if truth.Endpoints.API != defaultCopilotBase {
+		_, err := ListModels(context.Background(), truth.Token, defaultCopilotBase, 30*time.Second)
+		if err == nil {
+			t.Fatalf("negative control failed: ListModels against the WRONG host %q unexpectedly succeeded (expected 421); the fix may be masking a real routing problem", defaultCopilotBase)
+		}
+		if !strings.Contains(err.Error(), "421") {
+			t.Errorf("negative control: expected a 421 error against %q, got: %v", defaultCopilotBase, err)
+		} else {
+			t.Logf("negative control confirmed: same token against %q -> 421 (proves the auto-detection is what avoids the 421)", defaultCopilotBase)
+		}
+	} else {
+		t.Logf("individual plan detected (endpoints.api == default %q): 421 negative control not applicable; auto-detection still asserted via field equality", defaultCopilotBase)
+	}
+}
+
+// TestIntegration_ResolveCopilotToken proves ResolveCopilotToken returns a
+// usable (token, plan-correct host) pair against the real API.
+func TestIntegration_ResolveCopilotToken(t *testing.T) {
+	requireGitHubTokenIntegration(t)
+	ctx := context.Background()
+
+	truth := exchangeForTest(t)
+
+	resolved, err := ResolveCopilotToken(ctx, os.Getenv("GITHUB_TOKEN"), "", "", 30*time.Second)
+	if err != nil {
+		t.Fatalf("ResolveCopilotToken: %v", err)
+	}
+	if resolved.Token == "" {
+		t.Fatal("resolved.Token is empty")
+	}
+	if resolved.BaseURL != truth.Endpoints.API {
+		t.Fatalf("resolved.BaseURL = %q, want endpoints.api %q", resolved.BaseURL, truth.Endpoints.API)
+	}
+	if resolved.ExpiresAt <= time.Now().Unix() {
+		t.Errorf("resolved.ExpiresAt %d not in the future", resolved.ExpiresAt)
+	}
+
+	models, err := ListModels(ctx, resolved.Token, resolved.BaseURL, 30*time.Second)
+	if err != nil {
+		t.Fatalf("ListModels with resolved pair failed (expected 200): %v", err)
+	}
+	if len(models) < 20 {
+		t.Errorf("expected ≥20 models from resolved pair, got %d", len(models))
+	}
+	t.Logf("ResolveCopilotToken -> %s, %d models", resolved.BaseURL, len(models))
+
+	const override = "https://copilot-override.example.invalid"
+	resolved2, err := ResolveCopilotToken(ctx, os.Getenv("GITHUB_TOKEN"), "", override, 30*time.Second)
+	if err != nil {
+		t.Fatalf("ResolveCopilotToken with override: %v", err)
+	}
+	if resolved2.BaseURL != override {
+		t.Fatalf("override lost: resolved2.BaseURL = %q, want explicit %q", resolved2.BaseURL, override)
+	}
+}
+
+// TestIntegration_Check_GitHubToken proves copilot.Check uses the
+// plan-correct host (from endpoints.api) when BaseURL is unset, so the
+// /models probe reports OK instead of error/421 for non-individual plans.
+func TestIntegration_Check_GitHubToken(t *testing.T) {
+	requireGitHubTokenIntegration(t)
+	ctx := context.Background()
+
+	results := Check(ctx, &Config{GitHubToken: os.Getenv("GITHUB_TOKEN")})
+	for _, r := range results {
+		t.Logf("check: %s = %s (%s)", r.Component, r.Status, r.Message)
+	}
+
+	var exchange, models *checkup.Result
+	for i := range results {
+		switch results[i].Component {
+		case "copilot_token_exchange":
+			exchange = &results[i]
+		case "copilot_models":
+			models = &results[i]
+		}
+	}
+	if exchange == nil || models == nil {
+		t.Fatalf("expected copilot_token_exchange and copilot_models results, got %+v", results)
+	}
+	if exchange.Status != checkup.StatusOK {
+		t.Errorf("copilot_token_exchange = %s, want OK", exchange.Status)
+	}
+	if models.Status == checkup.StatusError {
+		t.Errorf("copilot_models = error (expected OK): %s — checkup is likely still using the wrong host", models.Error)
+	}
+	if models.Status != checkup.StatusOK {
+		t.Errorf("copilot_models = %s, want OK", models.Status)
+	}
+}
+
 
 // TestIntegration_ListModels verifies that ListModels returns ≥20 models
 // including gpt-5-mini and at least one Claude model, proving the
@@ -129,12 +291,18 @@ func TestIntegration_ListModels(t *testing.T) {
 	if tok := os.Getenv("GITHUB_COPILOT_TOKEN"); tok != "" {
 		token = tok
 	} else {
-		tok2 := os.Getenv("GITHUB_TOKEN")
-		resp, err := exchangeGitHubToken(context.Background(), tok2, "", 30 * time.Second)
+		resp, err := exchangeGitHubToken(context.Background(), os.Getenv("GITHUB_TOKEN"), "", 30*time.Second)
 		if err != nil {
 			t.Fatalf("exchangeGitHubToken: %v", err)
 		}
 		token = resp.Token
+		if baseURL == "" {
+			if resp.Endpoints != nil && resp.Endpoints.API != "" {
+				baseURL = resp.Endpoints.API
+			} else {
+				baseURL = ResolveBaseURL("")
+			}
+		}
 	}
 
 	models, err := ListModels(context.Background(), token, baseURL, 30 * time.Second)

@@ -127,20 +127,29 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 	}
 
 	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = ResolveBaseURL(cfg.EnterpriseURL)
-	}
+
 	lockedToken := &copilotLockedToken{}
 	var cancelRefresh context.CancelFunc
 
 	if cfg.CopilotToken != "" {
 		lockedToken.set(cfg.CopilotToken)
+		if baseURL == "" {
+			baseURL = ResolveBaseURL(cfg.EnterpriseURL)
+		}
 	} else {
 		tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
 		if err != nil {
 			return nil, errors.Wrap(err, "copilot: initial token exchange failed")
 		}
 		lockedToken.set(tokenResp.Token)
+
+		if baseURL == "" {
+			if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
+				baseURL = tokenResp.Endpoints.API
+			} else {
+				baseURL = ResolveBaseURL(cfg.EnterpriseURL)
+			}
+		}
 
 		cancelRefresh = startTokenRefresh(ctx, cfg, tokenResp, func(newToken string) {
 			lockedToken.set(newToken)

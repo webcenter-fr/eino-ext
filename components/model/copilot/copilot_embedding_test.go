@@ -47,14 +47,23 @@ func TestNewEmbedder(t *testing.T) {
 	})
 
 	t.Run("default baseURL", func(t *testing.T) {
-		e, err := NewEmbedder(ctx, &EmbedderConfig{
+		_, err := NewEmbedder(ctx, &EmbedderConfig{
 			Model: "text-embedding-3-small",
 		}, "test-token", "", 10*time.Second)
+		if err == nil {
+			t.Fatal("NewEmbedder(empty baseURL): expected error after step 6, got nil")
+		}
+	})
+
+	t.Run("explicit defaultCopilotBase", func(t *testing.T) {
+		e, err := NewEmbedder(ctx, &EmbedderConfig{
+			Model: "text-embedding-3-small",
+		}, "test-token", defaultCopilotBase, 10*time.Second)
 		if err != nil {
-			t.Fatalf("NewEmbedder(default baseURL): unexpected error: %v", err)
+			t.Fatalf("NewEmbedder(explicit baseURL): unexpected error: %v", err)
 		}
 		if e.baseURL != defaultCopilotBase {
-			t.Errorf("expected default baseURL %q, got %q", defaultCopilotBase, e.baseURL)
+			t.Errorf("expected baseURL %q, got %q", defaultCopilotBase, e.baseURL)
 		}
 	})
 

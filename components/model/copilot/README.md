@@ -1,11 +1,55 @@
 # copilot — GitHub Copilot chat model provider
 
 `copilot` provides a `model.ToolCallingChatModel` backed by the GitHub Copilot
-API (`https://api.individual.githubcopilot.com`). It implements `model.ToolCallingChatModel`
-and `model.ChatModel`.
+API. It implements `model.ToolCallingChatModel` and `model.ChatModel`.
 
 This package makes direct HTTP calls using `net/http` — it does not depend on
 any OpenAI SDK or ACL library.
+
+## Plan-correct API host resolution
+
+The Copilot API base URL depends on the Copilot plan tier tied to the GitHub
+token:
+
+| Plan | API host (from `endpoints.api` in exchange response) |
+|------|------------------------------------------------------|
+| Individual | `https://api.individual.githubcopilot.com` |
+| Business | `https://api.business.githubcopilot.com` |
+| Enterprise | `https://api.enterprise.githubcopilot.com` (or custom slug) |
+
+When using `GitHubToken` with no `BaseURL`, `NewCopilotChatModel` now
+**auto-detects** the plan-correct host from the token exchange response's
+`endpoints.api` field. The hardcoded `ResolveBaseURL` default
+(`api.individual.githubcopilot.com`) is only a fallback and only works for
+**individual**-plan tokens; business/enterprise-plan tokens always hit 421
+against it.
+
+Precedence for `GitHubToken`:
+1. Explicit `cfg.BaseURL` (always wins).
+2. `endpoints.api` from the exchange response (auto-detected, plan-correct).
+3. `ResolveBaseURL(cfg.EnterpriseURL)` fallback.
+
+For `CopilotToken` (pre-obtained bearer token): no exchange happens, so
+auto-detection is unavailable. Callers MUST set `cfg.BaseURL` explicitly for
+business/enterprise-plan tokens, or the individual-only default is used.
+
+## ResolveCopilotToken (one-off token exchange helper)
+
+`ResolveCopilotToken` exchanges a raw GitHub token and returns the
+plan-correct `BaseURL` without constructing a full `CopilotModel` — useful for
+pre-flight `ListModels` checks and other one-off API calls:
+
+```go
+resolved, err := copilot.ResolveCopilotToken(ctx, githubToken, enterpriseURL, "", 15*time.Second)
+if err != nil {
+    log.Fatalf("token exchange failed: %v", err)
+}
+models, err := copilot.ListModels(ctx, resolved.Token, resolved.BaseURL, 30*time.Second)
+```
+
+Pass a non-empty `baseURL` (4th argument) to override: the explicit value
+always wins over `endpoints.api`. See the function doc comment for the full
+precedence rules.
 
 ## Auth modes
 
@@ -131,6 +175,9 @@ m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{
     CopilotToken:  token,
     EnterpriseURL: "github.mycompany.com",
 })
+// With EnterpriseURL set, the auto-detected endpoints.api takes
+// precedence over the ResolveBaseURL(enterpriseURL) fallback. An
+// explicit BaseURL still wins.
 ```
 
 ### Via chatmodel factory
@@ -248,6 +295,19 @@ Tests cover:
 - Streaming for reasoning and standard models
 - Endpoint routing (gpt-5.4-nano → /responses, gpt-4.1 → /chat/completions)
 - Disabled model handling (skipped until enablement lands)
+- Auto-detect base URL acceptance tests (require `GITHUB_TOKEN`)
+
+### Acceptance tests (real API, requires raw GitHub PAT)
+
+```bash
+COPILOT_INTEGRATION=1 GITHUB_TOKEN=ghp_... \
+  go test -tags=integration -run 'TestIntegration_AutoDetectBaseURL|TestIntegration_ResolveCopilotToken|TestIntegration_Check_GitHubToken' \
+  ./components/model/copilot/...
+```
+
+These prove the plan-correct host auto-detection against the real Copilot API.
+Do not set `COPILOT_API_URL` or `GITHUB_COPILOT_TOKEN` — they override
+auto-detection and mask the bug.
 
 ## Connectivity checkup
 
@@ -262,6 +322,56 @@ It verifies:
 - Token exchange (when using `GitHubToken`)
 - `/models` endpoint reachability with full catalog
 - Model availability (distinguishes "no models" as `"limited"` vs "error")
+
+When using `GitHubToken` without `BaseURL`, `Check` auto-detects the
+plan-correct host from `endpoints.api` (same precedence as `NewCopilotChatModel`).
+
+## Embeddings
+
+`NewEmbedder` requires an explicit `baseURL`. It does not auto-detect the
+plan-correct host from a token exchange — the library caller is responsible
+for obtaining the correct host via `ResolveCopilotToken` (when using a raw
+GitHub PAT) or by using `ResolveBaseURL("")` when on the individual plan:
+
+```go
+// Individual plan
+e, _ := copilot.NewEmbedder(ctx, cfg, token, copilot.ResolveBaseURL(""), timeout)
+
+// Business/enterprise plan with raw GitHub PAT
+resolved, _ := copilot.ResolveCopilotToken(ctx, ghToken, "", "", timeout)
+e, _ := copilot.NewEmbedder(ctx, cfg, resolved.Token, resolved.BaseURL, timeout)
+```
+
+Passing an empty `baseURL` now returns an error (pre-0.x versions silently
+fell back to the individual-only host, producing 421 for non-individual plans).
+
+## Troubleshooting
+
+### `421 Misdirected Request` on any Copilot endpoint
+
+This error means the wrong plan-specific API host is being used. Common causes:
+
+- Using `CopilotToken` (pre-obtained bearer token) without setting `BaseURL`
+  explicitly for a business/enterprise plan — no exchange happens, so
+  auto-detection is unavailable.
+- Using the library's default from a version before the `endpoints.api`
+  auto-detection fix.
+- A proxy/gateway in front of the Copilot API that rewrites the host header.
+
+Diagnose: run a manual token exchange and check the `endpoints.api` field:
+
+```bash
+curl https://api.github.com/copilot_internal/v2/token \
+  -H "Authorization: token <ghp_...>" \
+  -H "User-Agent: copilot/1.0.70 (client/github/cli linux v24.16.0) term/unknown" \
+  -H "Accept: application/json" | jq .endpoints.api
+```
+
+If the returned host differs from `api.individual.githubcopilot.com`, you
+must either:
+- Switch to `GitHubToken` (raw PAT) so `NewCopilotChatModel` auto-detects the
+  plan-correct host from the exchange response; or
+- Set `BaseURL` explicitly to the value from `endpoints.api`.
 
 ## Model discovery
 

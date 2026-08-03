@@ -59,7 +59,7 @@ func NewEmbedder(ctx context.Context, cfg *EmbedderConfig, copilotToken, baseURL
 	}
 
 	if baseURL == "" {
-		baseURL = ResolveBaseURL("")
+		return nil, errors.New("copilot: baseURL must not be empty; pass the plan-correct host from ResolveCopilotToken, or set it explicitly for individual-plan tokens via ResolveBaseURL(\"\")")
 	}
 
 	if timeout <= 0 {

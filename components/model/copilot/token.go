@@ -36,9 +36,17 @@ const (
 )
 
 type copilotTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresAt int64  `json:"expires_at"`
-	RefreshIn int    `json:"refresh_in"`
+	Token     string                `json:"token"`
+	ExpiresAt int64                 `json:"expires_at"`
+	RefreshIn int                   `json:"refresh_in"`
+	Endpoints *copilotTokenEndpoints `json:"endpoints,omitempty"`
+}
+
+type copilotTokenEndpoints struct {
+	API           string `json:"api,omitempty"`
+	OriginTracker string `json:"origin-tracker,omitempty"`
+	Proxy         string `json:"proxy,omitempty"`
+	Telemetry     string `json:"telemetry,omitempty"`
 }
 
 func exchangeGitHubToken(ctx context.Context, githubToken, enterpriseURL string, timeout time.Duration) (*copilotTokenResponse, error) {
@@ -157,14 +165,64 @@ func startTokenRefresh(
 }
 
 // ResolveBaseURL returns the Copilot API base URL for the given enterprise URL.
-// When enterpriseURL is empty, it returns the default public Copilot API base
-// (https://api.githubcopilot.com). When enterpriseURL is set, it returns
-// https://copilot-api.{enterpriseURL}.
+// When enterpriseURL is empty, it returns the default individual-plan Copilot API
+// base (https://api.individual.githubcopilot.com). When enterpriseURL is set, it
+// returns https://copilot-api.{enterpriseURL}.
+//
+// Note: this default only works for individual-plan Copilot subscriptions. For
+// business/enterprise plans, prefer the exchange response's endpoints.api field
+// (see ResolveCopilotToken and NewCopilotChatModel).
 func ResolveBaseURL(enterpriseURL string) string {
 	if enterpriseURL != "" {
 		return fmt.Sprintf("https://copilot-api.%s", enterpriseURL)
 	}
 	return defaultCopilotBase
+}
+
+// ResolvedToken is the result of exchanging a GitHub token for a Copilot
+// bearer token, including the plan-correct API base URL to use for all
+// subsequent Copilot API calls (models, chat/completions, responses).
+type ResolvedToken struct {
+	Token     string
+	BaseURL   string
+	ExpiresAt int64
+}
+
+// ResolveCopilotToken exchanges a raw GitHub token for a short-lived Copilot
+// bearer token and the API base URL matching the token's actual Copilot plan
+// (individual/business/enterprise), so callers that only need a one-off API
+// call (e.g. a pre-flight ListModels check) don't have to guess the host or
+// construct a full CopilotModel.
+//
+// Precedence of the returned BaseURL (mirrors NewCopilotChatModel):
+//  1. explicit baseURL, when non-empty (caller override — e.g. a proxy/gateway);
+//  2. endpoints.api from the token exchange response (plan-correct host);
+//  3. ResolveBaseURL(enterpriseURL) fallback.
+//
+// When githubToken is empty the function returns an error: it does not read
+// environment variables. Callers wanting env-var discovery should populate
+// githubToken from os.Getenv("GITHUB_TOKEN") first, as NewCopilotChatModel does.
+func ResolveCopilotToken(ctx context.Context, githubToken, enterpriseURL, baseURL string, timeout time.Duration) (*ResolvedToken, error) {
+	if githubToken == "" {
+		return nil, errors.New("copilot: githubToken must not be empty")
+	}
+	tokenResp, err := exchangeGitHubToken(ctx, githubToken, enterpriseURL, timeout)
+	if err != nil {
+		return nil, errors.Wrap(err, "copilot: token exchange failed")
+	}
+	resolved := baseURL
+	if resolved == "" {
+		if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
+			resolved = tokenResp.Endpoints.API
+		} else {
+			resolved = ResolveBaseURL(enterpriseURL)
+		}
+	}
+	return &ResolvedToken{
+		Token:     tokenResp.Token,
+		BaseURL:   resolved,
+		ExpiresAt: tokenResp.ExpiresAt,
+	}, nil
 }
 
 func cryptoRandIntn(n int) int {

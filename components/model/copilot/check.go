@@ -33,21 +33,41 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 		timeout = defaultTimeout
 	}
 
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = ResolveBaseURL(cfg.EnterpriseURL)
-	}
-
 	var results checkup.Results
+	var resolvedBase string
+	var resolvedToken string
 
 	if cfg.CopilotToken != "" {
 		results = append(results, probeTokenExchangeSkipped())
+		resolvedBase = cfg.BaseURL
+		if resolvedBase == "" {
+			resolvedBase = ResolveBaseURL(cfg.EnterpriseURL)
+		}
 	} else {
-		results = append(results, probeTokenExchange(ctx, cfg.GitHubToken, cfg.EnterpriseURL, timeout))
+		resolved, err := ResolveCopilotToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.BaseURL, timeout)
+		if err != nil {
+			results = append(results, checkup.Result{
+				Component: "copilot_token_exchange",
+				Status:    checkup.StatusError,
+				Error:     err.Error(),
+			})
+			results = append(results, checkup.Result{
+				Component: "copilot_models",
+				Status:    checkup.StatusError,
+				Error:     "dependency failed: token exchange required for /models probe",
+			})
+			return results
+		}
+		results = append(results, checkup.Result{
+			Component: "copilot_token_exchange",
+			Status:    checkup.StatusOK,
+			Message:   fmt.Sprintf("token obtained, expires at %d", resolved.ExpiresAt),
+		})
+		resolvedToken = resolved.Token
+		resolvedBase = resolved.BaseURL
 	}
 
-	results = append(results, probeModels(ctx, baseURL, cfg, timeout))
-
+	results = append(results, probeModels(ctx, resolvedBase, resolvedToken, cfg))
 	return results
 }
 
@@ -59,34 +79,16 @@ func probeTokenExchangeSkipped() checkup.Result {
 	}
 }
 
-func probeTokenExchange(ctx context.Context, gitHubToken, enterpriseURL string, timeout time.Duration) checkup.Result {
-	resp, err := exchangeGitHubToken(ctx, gitHubToken, enterpriseURL, timeout)
-	if err != nil {
-		return checkup.Result{
-			Component: "copilot_token_exchange",
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to exchange GitHub token").Error(),
-		}
-	}
-	return checkup.Result{
-		Component: "copilot_token_exchange",
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("token obtained, expires at %d", resp.ExpiresAt),
-	}
-}
-
-func probeModels(ctx context.Context, baseURL string, cfg *Config, timeout time.Duration) checkup.Result {
-	token := cfg.CopilotToken
+func probeModels(ctx context.Context, baseURL, token string, cfg *Config) checkup.Result {
 	if token == "" {
-		resp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, timeout)
-		if err != nil {
-			return checkup.Result{
-				Component: "copilot_models",
-				Status:    checkup.StatusError,
-				Error:     "dependency failed: token exchange required for /models probe",
-			}
+		token = cfg.CopilotToken
+	}
+	if token == "" {
+		return checkup.Result{
+			Component: "copilot_models",
+			Status:    checkup.StatusError,
+			Error:     "dependency failed: no token available for /models probe",
 		}
-		token = resp.Token
 	}
 
 	models, err := ListModels(ctx, token, baseURL, copilotCheckTimeout)

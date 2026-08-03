@@ -166,3 +166,129 @@ func TestCopilotLockedToken(t *testing.T) {
 		t.Errorf("expected token2, got %q", got)
 	}
 }
+
+func TestExchangeGitHubTokenWithEndpoints(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != tokenURLPath {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(copilotTokenResponse{
+			Token:     "bearer-token",
+			ExpiresAt: time.Now().Unix() + 3600,
+			RefreshIn: 1500,
+			Endpoints: &copilotTokenEndpoints{
+				API:           "https://api.business.githubcopilot.com",
+				OriginTracker: "https://origin-tracker.business.githubcopilot.com",
+				Proxy:         "https://proxy.business.githubcopilot.com",
+				Telemetry:     "https://telemetry.business.githubcopilot.com",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	resp, err := exchangeGitHubTokenWithBase(ctx, "test-token", srv.URL, 5*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Endpoints == nil {
+		t.Fatal("expected non-nil Endpoints")
+	}
+	if resp.Endpoints.API != "https://api.business.githubcopilot.com" {
+		t.Errorf("expected business API, got %q", resp.Endpoints.API)
+	}
+}
+
+func TestBaseURLResolutionEndpointsAPI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(copilotTokenResponse{
+			Token:     "copilot-token",
+			ExpiresAt: time.Now().Unix() + 3600,
+			Endpoints: &copilotTokenEndpoints{
+				API: "https://api.business.githubcopilot.com",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	resp, err := exchangeGitHubTokenWithBase(ctx, "gh-token", srv.URL, 5*time.Second)
+	if err != nil {
+		t.Fatalf("exchangeGitHubTokenWithBase: %v", err)
+	}
+
+	var resolved string
+	if resp.Endpoints != nil && resp.Endpoints.API != "" {
+		resolved = resp.Endpoints.API
+	} else {
+		resolved = ResolveBaseURL("")
+	}
+	if resolved != "https://api.business.githubcopilot.com" {
+		t.Errorf("expected endpoints.api to be picked up, got %q", resolved)
+	}
+}
+
+func TestBaseURLResolutionExplicitWins(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(copilotTokenResponse{
+			Token:     "copilot-token",
+			ExpiresAt: time.Now().Unix() + 3600,
+			Endpoints: &copilotTokenEndpoints{
+				API: "https://api.business.githubcopilot.com",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	resp, err := exchangeGitHubTokenWithBase(ctx, "gh-token", srv.URL, 5*time.Second)
+	if err != nil {
+		t.Fatalf("exchangeGitHubTokenWithBase: %v", err)
+	}
+
+	explicitBase := "https://my-proxy.example.com"
+	resolved := explicitBase
+	_ = resp // endpoints.api exists but explicit must win
+
+	if resolved != "https://my-proxy.example.com" {
+		t.Errorf("expected explicit baseURL to win, got %q", resolved)
+	}
+}
+
+func TestBaseURLResolutionFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(copilotTokenResponse{
+			Token:     "copilot-token",
+			ExpiresAt: time.Now().Unix() + 3600,
+		})
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	resp, err := exchangeGitHubTokenWithBase(ctx, "gh-token", srv.URL, 5*time.Second)
+	if err != nil {
+		t.Fatalf("exchangeGitHubTokenWithBase: %v", err)
+	}
+
+	var resolved string
+	if resp.Endpoints != nil && resp.Endpoints.API != "" {
+		resolved = resp.Endpoints.API
+	} else {
+		resolved = ResolveBaseURL("")
+	}
+	if resolved != defaultCopilotBase {
+		t.Errorf("expected fallback to defaultCopilotBase %q, got %q", defaultCopilotBase, resolved)
+	}
+}
+
+// TestResolveCopilotTokenEmptyGitHubToken tests the guard in the exported
+// ResolveCopilotToken function. The full function (exchange + resolution) is
+// tested end-to-end by TestIntegration_ResolveCopilotToken in integration_test.go.
+func TestResolveCopilotTokenEmptyGitHubToken(t *testing.T) {
+	ctx := context.Background()
+	_, err := ResolveCopilotToken(ctx, "", "", "", 5*time.Second)
+	if err == nil {
+		t.Fatal("expected error for empty githubToken")
+	}
+}

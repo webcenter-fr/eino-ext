@@ -120,3 +120,30 @@ func TestCheckResultStatuses(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeModelsWithToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(copilotModelsResponse{
+			Data: []copilotModelData{
+				{
+					ID:                 "gpt-4o",
+					ModelPickerEnabled: true,
+					Policy:             copilotModelPolicy{State: "enabled"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	result := probeModels(context.Background(), srv.URL, "test-token", &Config{})
+	if result.Status != checkup.StatusOK {
+		t.Errorf("expected OK, got %s: %s", result.Status, result.Error)
+	}
+}
+
+func TestProbeModelsNoToken(t *testing.T) {
+	result := probeModels(context.Background(), "http://localhost", "", &Config{})
+	if result.Status != checkup.StatusError {
+		t.Errorf("expected error for no token, got %s", result.Status)
+	}
+}

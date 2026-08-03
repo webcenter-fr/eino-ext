@@ -141,6 +141,8 @@ func listModelsWithClient(ctx context.Context, copilotToken, baseURL string, cli
 	req.Header.Set("User-Agent", userAgentHeader)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Copilot-Integration-Id", integrationID)
+	req.Header.Set("Editor-Version", editorVersion)
+	req.Header.Set("X-GitHub-Api-Version", copilotAPIVersion)
 
 	resp, err := client.Do(req)
 	if err != nil {
