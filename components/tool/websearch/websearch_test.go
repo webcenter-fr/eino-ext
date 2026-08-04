@@ -43,6 +43,23 @@ func (s *WebSearchTestSuite) TestSearxngSearch() {
 	assert.Equal(t, "https://example.com/page3", results[2].URL)
 }
 
+func (s *WebSearchTestSuite) TestSearxngSearchWithAuth() {
+	t := s.T()
+
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer my-secret-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleSearxngJSON))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	cfg.SearxngSecretKey = "my-secret-key"
+	results, err := search(context.Background(), "test query", cfg)
+	assert.NoError(t, err)
+	assert.Len(t, results, 3)
+	assert.Equal(t, "Example Page 1", results[0].Title)
+}
+
 func (s *WebSearchTestSuite) TestSearxngSearchEmptyResult() {
 	t := s.T()
 

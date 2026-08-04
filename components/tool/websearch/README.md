@@ -66,8 +66,8 @@ search:
     - json
 
 server:
-  # Generate a random secret key:
-  #   openssl rand -hex 32
+  # Shared secret for API authentication. Must match SearxngSecretKey
+  # in the Go config. Generate with: openssl rand -hex 32
   secret_key: "CHANGE_ME_GENERATE_RANDOM_KEY"
   bind_address: "0.0.0.0"
   # Rate limiter disabled so the JSON API can handle burst queries.
@@ -125,6 +125,7 @@ tools, err := websearch.NewAllTools(ctx, &cfg)
 | Field | Default | Description |
 |---|---|---|
 | `SearxngURL` | (required) | Base URL of a SearXNG instance (e.g. `https://searxng.example.com`) |
+| `SearxngSecretKey` | (optional) | Shared secret matching `server.secret_key` in settings.yml; sent as `Authorization: Bearer <key>` |
 | `Timeout` | 30s | HTTP request timeout |
 | `MaxRetry` | 3 | Max retry attempts on transient errors |
 | `UserAgent` | Chrome 143 | User-Agent header (used by web_fetch) |

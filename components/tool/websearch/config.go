@@ -43,6 +43,12 @@ type Config struct {
 	// The value must be a valid absolute URL (e.g.
 	// "https://searxng.example.com").
 	SearxngURL string `validate:"omitempty,url" jsonschema:"description=Base URL of a SearXNG instance for web search, e.g. https://searxng.example.com"`
+	// SearxngSecretKey is an optional shared secret used to authenticate
+	// with the SearXNG instance. When set, it is sent as a Bearer token in
+	// the Authorization header. Must match server.secret_key in the SearXNG
+	// settings.yml. Leave empty if the instance does not require
+	// authentication.
+	SearxngSecretKey string `json:"-" jsonschema:"description=Optional shared secret for SearXNG authentication, sent as Bearer token"`
 	// HTTPClient is an optional custom HTTP client. If nil, a default client
 	// with the configured Timeout and SSRF-safe transport is used.
 	// Useful for testing with custom transports (e.g. httptest.Server).

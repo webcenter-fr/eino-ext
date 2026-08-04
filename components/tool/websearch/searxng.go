@@ -39,6 +39,9 @@ func searxngSearch(ctx context.Context, query string, cfg Config, client *http.C
 		return nil, errors.Wrap(err, "failed to create search request")
 	}
 	req.Header.Set("Accept", "application/json")
+	if cfg.SearxngSecretKey != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.SearxngSecretKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
