@@ -1,51 +1,34 @@
 package websearch
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-const sampleDDGHTML = `
-<!DOCTYPE html>
-<html>
-<body>
-<div class="results">
-<div class="result__body">
-<h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https://example.com/page1">Example Page 1</a></h2>
-<a class="result__snippet">This is the first example result description.</a>
-</div>
-<div class="result__body">
-<h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https://example.com/page2">Example Page 2</a></h2>
-<a class="result__snippet">This is the second example result description.</a>
-</div>
-<div class="result__body">
-<h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https://example.com/page3">Example Page 3</a></h2>
-<a class="result__snippet">This is the third example result description.</a>
-</div>
-</div>
-</body>
-</html>
-`
+const sampleSearxngJSON = `{
+	"results": [
+		{"title": "Example Page 1", "url": "https://example.com/page1", "content": "This is the first example result description."},
+		{"title": "Example Page 2", "url": "https://example.com/page2", "content": "This is the second example result description."},
+		{"title": "Example Page 3", "url": "https://example.com/page3", "content": "This is the third example result description."}
+	]
+}`
 
-const sampleDDGLiteHTML = `
-<!DOCTYPE html>
-<html>
-<body>
-<table>
-<tr class="result-snippet"><td><a class="result-link" href="https://example.com/lite1">Lite Result 1</a> - Description for lite result 1</td></tr>
-<tr class="result-snippet"><td><a class="result-link" href="https://example.com/lite2">Lite Result 2</a> - Description for lite result 2</td></tr>
-</table>
-</body>
-</html>
-`
-
-func (s *WebSearchTestSuite) TestParseDDGHTML() {
+func (s *WebSearchTestSuite) TestSearxngSearch() {
 	t := s.T()
-	results, err := parseDDGHTML(bytes.NewReader([]byte(sampleDDGHTML)), DefaultMaxBodySize)
+
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "test query", r.URL.Query().Get("q"))
+		assert.Equal(t, "json", r.URL.Query().Get("format"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleSearxngJSON))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	results, err := search(context.Background(), "test query", cfg)
 	assert.NoError(t, err)
 	assert.Len(t, results, 3)
 
@@ -55,69 +38,66 @@ func (s *WebSearchTestSuite) TestParseDDGHTML() {
 
 	assert.Equal(t, "Example Page 2", results[1].Title)
 	assert.Equal(t, "https://example.com/page2", results[1].URL)
-	assert.Equal(t, "This is the second example result description.", results[1].Description)
 
 	assert.Equal(t, "Example Page 3", results[2].Title)
 	assert.Equal(t, "https://example.com/page3", results[2].URL)
-	assert.Equal(t, "This is the third example result description.", results[2].Description)
 }
 
-func (s *WebSearchTestSuite) TestParseDDGLite() {
+func (s *WebSearchTestSuite) TestSearxngSearchEmptyResult() {
 	t := s.T()
-	results, err := parseDDGHTML(bytes.NewReader([]byte(sampleDDGLiteHTML)), DefaultMaxBodySize)
-	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, len(results), 2)
+
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	cfg.MaxRetry = 0
+	_, err := search(context.Background(), "test query", cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "search returned no results")
 }
 
-func (s *WebSearchTestSuite) TestParseEmpty() {
+func (s *WebSearchTestSuite) TestSearxngSearchRetryError() {
 	t := s.T()
-	results, err := parseDDGHTML(bytes.NewReader([]byte("<html><body></body></html>")), DefaultMaxBodySize)
+
+	callCount := 0
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount <= 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleSearxngJSON))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	results, err := search(context.Background(), "test query", cfg)
 	assert.NoError(t, err)
-	assert.Empty(t, results)
+	assert.Len(t, results, 3)
+	assert.GreaterOrEqual(t, callCount, 3)
 }
 
-func (s *WebSearchTestSuite) TestParseInvalidHTML() {
+func (s *WebSearchTestSuite) TestSearxngSearchMissingURL() {
 	t := s.T()
-	results, err := parseDDGHTML(bytes.NewReader([]byte("not html at all")), DefaultMaxBodySize)
-	assert.NoError(t, err)
-	assert.Empty(t, results)
-}
 
-func (s *WebSearchTestSuite) TestExtractDDGURL() {
-	tests := []struct {
-		name     string
-		raw      string
-		expected string
-	}{
-		{
-			name:     "standard DDG redirect",
-			raw:      "//duckduckgo.com/l/?uddg=https://example.com/page",
-			expected: "https://example.com/page",
-		},
-		{
-			name:     "plain URL without redirect",
-			raw:      "https://example.com/plain",
-			expected: "https://example.com/plain",
-		},
-		{
-			name:     "empty string",
-			raw:      "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			result := extractDDGURL(tt.raw)
-			assert.Equal(s.T(), tt.expected, result)
-		})
-	}
+	cfg := DefaultConfig()
+	cfg.SearxngURL = ""
+	_, err := search(context.Background(), "test query", cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "SearxngURL is required")
 }
 
 func (s *WebSearchTestSuite) TestWebSearchToolInvoke() {
 	t := s.T()
 
-	cfg := DefaultConfig()
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleSearxngJSON))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
 	tool, err := NewWebSearchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
@@ -125,6 +105,14 @@ func (s *WebSearchTestSuite) TestWebSearchToolInvoke() {
 	assert.NoError(t, err)
 	assert.Equal(t, "web_search", info.Name)
 	assert.NotEmpty(t, info.Desc)
+
+	result, err := tool.InvokableRun(context.Background(), `{"query":"test query","numResults":2}`)
+	assert.NoError(t, err)
+
+	var results []SearchResult
+	err = json.Unmarshal([]byte(result), &results)
+	assert.NoError(t, err)
+	assert.Len(t, results, 2)
 }
 
 func (s *WebSearchTestSuite) TestWebSearchNumResultsClamping() {
@@ -146,7 +134,13 @@ func (s *WebSearchTestSuite) TestWebSearchNumResultsClamping() {
 
 func (s *WebSearchTestSuite) TestNewAllTools() {
 	t := s.T()
-	cfg := DefaultConfig()
+
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(sampleSearxngJSON))
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
 	tools, err := NewAllTools(context.Background(), &cfg)
 	assert.NoError(t, err)
 	assert.Len(t, tools, 2)
@@ -162,14 +156,13 @@ func (s *WebSearchTestSuite) TestNewAllTools() {
 
 func (s *WebSearchTestSuite) TestConfigDefaults() {
 	t := s.T()
-	cfg := Config{}
-	cfg = cfg.applyDefaults(DefaultConfig())
-
+	cfg := DefaultConfig()
 	assert.Equal(t, DefaultTimeout, cfg.Timeout)
 	assert.Equal(t, DefaultMaxRetry, cfg.MaxRetry)
 	assert.Equal(t, DefaultUserAgent, cfg.UserAgent)
 	assert.Equal(t, int64(DefaultMaxBodySize), cfg.MaxBodySize)
 	assert.Equal(t, "markdown", cfg.DefaultFormat)
+	assert.Empty(t, cfg.SearxngURL)
 }
 
 func (s *WebSearchTestSuite) TestConfigPartialDefaults() {
@@ -189,24 +182,34 @@ func (s *WebSearchTestSuite) TestConfigPartialDefaults() {
 func (s *WebSearchTestSuite) TestConfigMutation() {
 	t := s.T()
 	cfg := Config{
-		Timeout:   5 * time.Second,
-		MaxRetry:  1,
-		UserAgent: "test-agent/1.0",
+		Timeout:    5 * time.Second,
+		MaxRetry:   1,
+		UserAgent:  "test-agent/1.0",
+		SearxngURL: "https://search.example.com",
 	}
-	orig := cfg // save copy
+	orig := cfg
 
 	_, err := NewWebSearchTool(context.Background(), &cfg)
 	assert.NoError(t, err)
 
-	// The caller's config should NOT be mutated.
 	assert.Equal(t, orig.Timeout, cfg.Timeout)
 	assert.Equal(t, orig.MaxRetry, cfg.MaxRetry)
 	assert.Equal(t, orig.UserAgent, cfg.UserAgent)
 	assert.Equal(t, orig.DefaultFormat, cfg.DefaultFormat)
+	assert.Equal(t, orig.SearxngURL, cfg.SearxngURL)
+}
+
+func (s *WebSearchTestSuite) TestProxyForURL() {
+	t := s.T()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	assert.NoError(t, err)
+
+	proxyURL := proxyForURL(req)
+	assert.Nil(t, proxyURL, "expected no proxy in test environment")
 }
 
 func (s *WebSearchTestSuite) TestSSRFSafeDialer() {
-
 	tests := []struct {
 		name    string
 		addr    string
@@ -255,20 +258,4 @@ func (s *WebSearchTestSuite) TestSSRFSafeDialer() {
 			}
 		})
 	}
-}
-
-func (s *WebSearchTestSuite) TestProxyForURL() {
-	t := s.T()
-
-	// proxyForURL delegates to http.ProxyFromEnvironment which has a
-	// sync.Once cache. Env var changes after the first call are ignored,
-	// so we only test the default (no proxy) case. Proxy-configured
-	// behavior is covered by integration tests and the proxy-aware
-	// dialer logic in getHTTPClient.
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://lite.duckduckgo.com", nil)
-	assert.NoError(t, err)
-
-	proxyURL := proxyForURL(req)
-	assert.Nil(t, proxyURL, "expected no proxy in test environment")
 }

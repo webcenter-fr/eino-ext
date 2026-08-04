@@ -1,6 +1,5 @@
-// Package websearch provides eino tools for DuckDuckGo web search and URL
-// fetching with anti-bot mitigations (cookie jar, browser headers, session
-// warm-up), HTML-to-Markdown conversion, and SSRF protection.
+// Package websearch provides eino tools for SearXNG web search and URL
+// fetching with HTML-to-Markdown conversion and SSRF protection.
 package websearch
 
 import (
@@ -23,7 +22,7 @@ type WebSearchParams struct {
 	NumResults int    `json:"numResults,omitempty" validate:"omitempty,min=1,max=20" jsonschema:"(optional, default 10, max 20) Number of results to return."`
 }
 
-// WebSearchTool is an invokable tool that performs web searches via DuckDuckGo.
+// WebSearchTool is an invokable tool that performs web searches via SearXNG.
 type WebSearchTool struct {
 	cfg Config
 	tool.InvokableTool

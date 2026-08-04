@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"time"
 )
@@ -34,6 +33,16 @@ type Config struct {
 	// DefaultFormat is the output format used when not specified in the request.
 	// Must be one of: markdown, text, html. Defaults to markdown.
 	DefaultFormat string `validate:"omitempty,oneof=markdown text html" jsonschema:"(optional, default markdown) Output format used when not specified in the request: markdown, text, or html."`
+	// SearxngURL is the base URL of a SearXNG instance to use for
+	// web_search. When set, queries are sent to SearXNG (which aggregates
+	// results from Google, Bing, Brave, etc.) using a clean JSON API with
+	// no tokens needed. When empty, web_search will return an error asking
+	// the user to configure it. Set up a SearXNG instance following the
+	// docs at https://docs.searxng.org.
+	//
+	// The value must be a valid absolute URL (e.g.
+	// "https://searxng.example.com").
+	SearxngURL string `validate:"omitempty,url" jsonschema:"description=Base URL of a SearXNG instance for web search, e.g. https://searxng.example.com"`
 	// HTTPClient is an optional custom HTTP client. If nil, a default client
 	// with the configured Timeout and SSRF-safe transport is used.
 	// Useful for testing with custom transports (e.g. httptest.Server).
@@ -100,22 +109,15 @@ func getHTTPClient(cfg *Config) *http.Client {
 	// Go's transport calls DialContext for the connection TO the proxy —
 	// the proxy's own address may be a private IP (e.g. squid.squid.svc
 	// → 10.43.192.93). SSRF protection for the actual target is handled
-	// upstream: webfetch uses the pre-flight checkSSRF, and search only
-	// calls hardcoded DuckDuckGo URLs.
-	//
-	// We probe with an actual DDG URL so that NO_PROXY rules (e.g.
-	// *.duckduckgo.com) are correctly resolved by ProxyFromEnvironment.
-	probeReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ddgLiteURL, nil)
-	if !cfg.SkipSSRFCheck && proxyForURL(probeReq) == nil {
+	// upstream: webfetch uses the pre-flight checkSSRF.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	if !cfg.SkipSSRFCheck && proxyForURL(req) == nil {
 		transport.DialContext = ssrfSafeDialer
 	}
-
-	jar, _ := cookiejar.New(nil)
 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   cfg.Timeout,
-		Jar:       jar,
 	}
 }
 

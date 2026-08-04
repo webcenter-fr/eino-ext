@@ -1,25 +1,22 @@
 # Web Search & Web Fetch Tools
 
-eino tools for DuckDuckGo web search and URL fetching with HTML-to-Markdown
+eino tools for SearXNG web search and URL fetching with HTML-to-Markdown
 conversion and SSRF protection.
 
 ## Available Tools
 
 | Tool Name | Description |
 |---|---|
-| `web_search` | Search the web via DuckDuckGo HTML/Lite backends |
+| `web_search` | Search the web via a SearXNG instance (self-hosted metasearch engine) |
 | `web_fetch` | Fetch a URL and return content as Markdown, text, or HTML |
 
 ## Design
 
-- **Dual backend** — `web_search` tries DuckDuckGo HTML first, falls back to
-  DDG Lite on failure.
-- **Anti-bot mitigation** — `web_search` uses cookie jar persistence, browser-like
-  headers (Accept, Accept-Language, etc.), and session warm-up to reduce DuckDuckGo
-  HTTP 202 anti-bot challenge responses.
-- **Retry** — Both tools retry on transient errors (202, 403, 429) with
-  exponential backoff up to `MaxRetry` attempts. On retry, the session is
-  refreshed to reduce further 202 probability.
+- **SearXNG backend** — `web_search` queries a SearXNG instance which aggregates
+  results from Google, Bing, Brave, Wikipedia, and other engines. SearXNG provides
+  a clean JSON API with no tokens or rate limits.
+- **Retry** — Retries on transient errors (429, 503) with exponential backoff up
+  to `MaxRetry` attempts.
 - **SSRF protection** — The HTTP transport blocks connections to private IP
   ranges (loopback, link-local, private, 169.254.0.0/16). Can be disabled with
   `SkipSSRFCheck` for testing.
@@ -30,26 +27,107 @@ conversion and SSRF protection.
 - **Body size limits** — Response bodies are capped at `MaxBodySize` (default
   5MB).
 
+## Prerequisites
+
+### SearXNG Instance
+
+`web_search` requires a SearXNG instance. The recommended way to run it is with
+Docker Compose.
+
+Create a `searxng` directory with the following files:
+
+**`docker-compose.yml`**
+
+```yaml
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+```
+
+**`searxng/settings.yml`**
+
+```yaml
+# Read the documentation before extending the defaults:
+# https://docs.searxng.org/admin/settings/
+
+use_default_settings: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  # Generate a random secret key:
+  #   openssl rand -hex 32
+  secret_key: "CHANGE_ME_GENERATE_RANDOM_KEY"
+  bind_address: "0.0.0.0"
+  # Rate limiter disabled so the JSON API can handle burst queries.
+  # Re-enable if the instance is exposed to the internet.
+  limiter: false
+  image_proxy: true
+
+ui:
+  static_use_hash: true
+
+# Disable Redis for single-instance setups. Enable for multi-worker deployments.
+redis:
+  url: false
+```
+
+**Key settings:**
+
+| Setting | Value | Purpose |
+|---|---|---|
+| `search.formats` | `[html, json]` | Enables the `/search?format=json` endpoint used by `web_search` |
+| `server.limiter` | `false` | Disables rate limiting so programmatic queries are not throttled |
+| `redis.url` | `false` | Single-instance mode; set to a Redis URL for multi-worker deployments |
+| `server.secret_key` | random hex | Required; generate with `openssl rand -hex 32` |
+
+**Start the instance:**
+
+```bash
+docker compose up -d
+```
+
+**Verify it works:**
+
+```bash
+curl "http://localhost:8080/search?q=test&format=json"
+```
+
+See [SearXNG docs](https://docs.searxng.org) for production hardening, scaling,
+and engine configuration.
+
 ## Configuration
 
 ```go
 import "github.com/webcenter-fr/eino-ext/components/tool/websearch"
 
 cfg := websearch.DefaultConfig()
+cfg.SearxngURL = "http://localhost:8080" // Required for web_search
 cfg.Timeout = 60 * time.Second
-cfg.UserAgent = "my-agent/1.0"
 
 // Both tools at once
-tools, err := websearch.NewAllTools(&cfg)
+tools, err := websearch.NewAllTools(ctx, &cfg)
 ```
 
 ### Config options
 
 | Field | Default | Description |
 |---|---|---|
+| `SearxngURL` | (required) | Base URL of a SearXNG instance (e.g. `https://searxng.example.com`) |
 | `Timeout` | 30s | HTTP request timeout |
 | `MaxRetry` | 3 | Max retry attempts on transient errors |
-| `UserAgent` | Chrome 143 | User-Agent header |
+| `UserAgent` | Chrome 143 | User-Agent header (used by web_fetch) |
 | `MaxBodySize` | 5MB | Max response body size in bytes |
 | `SkipSSRFCheck` | false | Disable SSRF protection (testing only) |
 | `HTTPClient` | nil | Custom HTTP client (e.g. for `httptest`) |
@@ -57,7 +135,7 @@ tools, err := websearch.NewAllTools(&cfg)
 ## Usage
 
 ```go
-tools, err := websearch.NewAllTools(&cfg)
+tools, err := websearch.NewAllTools(ctx, &cfg)
 if err != nil {
     return err
 }
@@ -70,8 +148,8 @@ if err != nil {
 ### Individual tools
 
 ```go
-searchTool, err := websearch.NewWebSearchTool(&cfg)
-fetchTool, err := websearch.NewWebFetchTool(&cfg)
+searchTool, err := websearch.NewWebSearchTool(ctx, &cfg)
+fetchTool, err := websearch.NewWebFetchTool(ctx, &cfg)
 ```
 
 ## Tool parameters
