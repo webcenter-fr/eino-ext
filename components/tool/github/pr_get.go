@@ -130,7 +130,7 @@ func NewPRGetTool(ctx context.Context, configs Configs) (*PRGetTool, error) {
 
 func newPRGetTool(ctx context.Context, base *baseTool) (*PRGetTool, error) {
 	getTool := &PRGetTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_get", fmt.Sprintf("%s\n%s", prGetDescription, describeOutputGuidance), getTool.Invoke)
+	t, err := utils.InferTool("github_pr_get", fmt.Sprintf("%s\n%s", prGetDescription, describeOutputGuidance), getTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

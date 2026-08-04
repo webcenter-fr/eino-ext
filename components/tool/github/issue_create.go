@@ -81,7 +81,7 @@ func NewIssueCreateTool(ctx context.Context, configs Configs) (*IssueCreateTool,
 
 func newIssueCreateTool(ctx context.Context, base *baseTool) (*IssueCreateTool, error) {
 	createTool := &IssueCreateTool{baseTool: base}
-	t, err := utils.InferTool("github_issue_create", issueCreateDescription, createTool.Invoke)
+	t, err := utils.InferTool("github_issue_create", issueCreateDescription, createTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

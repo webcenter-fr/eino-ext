@@ -115,7 +115,7 @@ func NewRepoSearchTool(ctx context.Context, configs Configs) (*RepoSearchTool, e
 
 func newRepoSearchTool(ctx context.Context, base *baseTool) (*RepoSearchTool, error) {
 	searchTool := &RepoSearchTool{baseTool: base}
-	t, err := utils.InferTool("github_repo_search", fmt.Sprintf("%s\n%s", repoSearchDescription, listOutputGuidance), searchTool.Invoke)
+	t, err := utils.InferTool("github_repo_search", fmt.Sprintf("%s\n%s", repoSearchDescription, listOutputGuidance), searchTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

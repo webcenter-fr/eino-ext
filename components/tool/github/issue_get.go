@@ -121,7 +121,7 @@ func NewIssueGetTool(ctx context.Context, configs Configs) (*IssueGetTool, error
 
 func newIssueGetTool(ctx context.Context, base *baseTool) (*IssueGetTool, error) {
 	getTool := &IssueGetTool{baseTool: base}
-	t, err := utils.InferTool("github_issue_get", fmt.Sprintf("%s\n%s", issueGetDescription, describeOutputGuidance), getTool.Invoke)
+	t, err := utils.InferTool("github_issue_get", fmt.Sprintf("%s\n%s", issueGetDescription, describeOutputGuidance), getTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

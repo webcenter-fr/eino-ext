@@ -118,7 +118,7 @@ func NewOrgRepoListTool(ctx context.Context, configs Configs) (*OrgRepoListTool,
 
 func newOrgRepoListTool(ctx context.Context, base *baseTool) (*OrgRepoListTool, error) {
 	listTool := &OrgRepoListTool{baseTool: base}
-	t, err := utils.InferTool("github_org_repo_list", fmt.Sprintf("%s\n%s", orgRepoListDescription, listOutputGuidance), listTool.Invoke)
+	t, err := utils.InferTool("github_org_repo_list", fmt.Sprintf("%s\n%s", orgRepoListDescription, listOutputGuidance), listTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

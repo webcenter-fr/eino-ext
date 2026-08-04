@@ -77,7 +77,7 @@ func NewPRRequestReviewersTool(ctx context.Context, configs Configs) (*PRRequest
 
 func newPRRequestReviewersTool(ctx context.Context, base *baseTool) (*PRRequestReviewersTool, error) {
 	reviewersTool := &PRRequestReviewersTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_request_reviewers", prRequestReviewersDescription, reviewersTool.Invoke)
+	t, err := utils.InferTool("github_pr_request_reviewers", prRequestReviewersDescription, reviewersTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

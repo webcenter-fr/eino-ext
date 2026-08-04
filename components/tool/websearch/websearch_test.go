@@ -3,6 +3,7 @@ package websearch
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -202,4 +203,72 @@ func (s *WebSearchTestSuite) TestConfigMutation() {
 	assert.Equal(t, orig.MaxRetry, cfg.MaxRetry)
 	assert.Equal(t, orig.UserAgent, cfg.UserAgent)
 	assert.Equal(t, orig.DefaultFormat, cfg.DefaultFormat)
+}
+
+func (s *WebSearchTestSuite) TestSSRFSafeDialer() {
+
+	tests := []struct {
+		name    string
+		addr    string
+		wantErr bool
+	}{
+		{
+			name:    "loopback IPv4",
+			addr:    "127.0.0.1:80",
+			wantErr: true,
+		},
+		{
+			name:    "loopback IPv6",
+			addr:    "[::1]:80",
+			wantErr: true,
+		},
+		{
+			name:    "private 10.x",
+			addr:    "10.0.0.1:8080",
+			wantErr: true,
+		},
+		{
+			name:    "private 192.168.x",
+			addr:    "192.168.1.1:443",
+			wantErr: true,
+		},
+		{
+			name:    "private 172.16.x",
+			addr:    "172.16.0.1:80",
+			wantErr: true,
+		},
+		{
+			name:    "link-local IPv4",
+			addr:    "169.254.1.1:80",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			_, err := ssrfSafeDialer(context.Background(), "tcp", tt.addr)
+			if tt.wantErr {
+				assert.Error(s.T(), err)
+				assert.Contains(s.T(), err.Error(), "blocked access to private IP address")
+			} else {
+				assert.NoError(s.T(), err)
+			}
+		})
+	}
+}
+
+func (s *WebSearchTestSuite) TestProxyForURL() {
+	t := s.T()
+
+	// proxyForURL delegates to http.ProxyFromEnvironment which has a
+	// sync.Once cache. Env var changes after the first call are ignored,
+	// so we only test the default (no proxy) case. Proxy-configured
+	// behavior is covered by integration tests and the proxy-aware
+	// dialer logic in getHTTPClient.
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://lite.duckduckgo.com", nil)
+	assert.NoError(t, err)
+
+	proxyURL := proxyForURL(req)
+	assert.Nil(t, proxyURL, "expected no proxy in test environment")
 }

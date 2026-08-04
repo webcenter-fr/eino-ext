@@ -72,7 +72,7 @@ func NewPRCommentTool(ctx context.Context, configs Configs) (*PRCommentTool, err
 
 func newPRCommentTool(ctx context.Context, base *baseTool) (*PRCommentTool, error) {
 	commentTool := &PRCommentTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_comment", prCommentDescription, commentTool.Invoke)
+	t, err := utils.InferTool("github_pr_comment", prCommentDescription, commentTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

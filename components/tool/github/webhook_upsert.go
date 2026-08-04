@@ -163,7 +163,7 @@ func NewWebhookUpsertTool(ctx context.Context, configs Configs) (*WebhookUpsertT
 
 func newWebhookUpsertTool(ctx context.Context, base *baseTool) (*WebhookUpsertTool, error) {
 	webhookTool := &WebhookUpsertTool{baseTool: base}
-	t, err := utils.InferTool("github_webhook_upsert", webhookUpsertDescription, webhookTool.Invoke)
+	t, err := utils.InferTool("github_webhook_upsert", webhookUpsertDescription, webhookTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

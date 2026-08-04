@@ -80,7 +80,7 @@ func NewPRCreateTool(ctx context.Context, configs Configs) (*PRCreateTool, error
 
 func newPRCreateTool(ctx context.Context, base *baseTool) (*PRCreateTool, error) {
 	createTool := &PRCreateTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_create", prCreateDescription, createTool.Invoke)
+	t, err := utils.InferTool("github_pr_create", prCreateDescription, createTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

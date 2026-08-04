@@ -112,7 +112,7 @@ func NewRepoCloneTool(ctx context.Context, configs Configs) (*RepoCloneTool, err
 
 func newRepoCloneTool(ctx context.Context, base *baseTool) (*RepoCloneTool, error) {
 	cloneTool := &RepoCloneTool{baseTool: base}
-	t, err := utils.InferTool("github_repo_clone", repoCloneDescription, cloneTool.Invoke)
+	t, err := utils.InferTool("github_repo_clone", repoCloneDescription, cloneTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

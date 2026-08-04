@@ -119,7 +119,7 @@ func NewRepoSettingsUpdateTool(ctx context.Context, configs Configs) (*RepoSetti
 
 func newRepoSettingsUpdateTool(ctx context.Context, base *baseTool) (*RepoSettingsUpdateTool, error) {
 	settingsTool := &RepoSettingsUpdateTool{baseTool: base}
-	t, err := utils.InferTool("github_repo_settings_update", repoSettingsUpdateDescription, settingsTool.Invoke)
+	t, err := utils.InferTool("github_repo_settings_update", repoSettingsUpdateDescription, settingsTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

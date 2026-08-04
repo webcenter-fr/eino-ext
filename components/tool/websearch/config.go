@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"time"
 )
 
@@ -93,25 +94,20 @@ func getHTTPClient(cfg *Config) *http.Client {
 		Proxy: http.ProxyFromEnvironment,
 	}
 
-	// Only add the SSRF-safe dialer when protection is enabled.
-	if !cfg.SkipSSRFCheck {
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				host = addr
-			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
-			}
-			for _, ip := range ips {
-				if isPrivateIP(ip.IP) {
-					return nil, fmt.Errorf("blocked access to private IP address: %s (host: %s)", ip.IP, host)
-				}
-			}
-			var d net.Dialer
-			return d.DialContext(ctx, network, net.JoinHostPort(host, port))
-		}
+	// Only add the SSRF-safe dialer when protection is enabled AND the
+	// environment does NOT route requests through an HTTP proxy. When a
+	// proxy is configured (e.g. HTTPS_PROXY=http://squid.squid.svc:8080),
+	// Go's transport calls DialContext for the connection TO the proxy —
+	// the proxy's own address may be a private IP (e.g. squid.squid.svc
+	// → 10.43.192.93). SSRF protection for the actual target is handled
+	// upstream: webfetch uses the pre-flight checkSSRF, and search only
+	// calls hardcoded DuckDuckGo URLs.
+	//
+	// We probe with an actual DDG URL so that NO_PROXY rules (e.g.
+	// *.duckduckgo.com) are correctly resolved by ProxyFromEnvironment.
+	probeReq, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ddgLiteURL, nil)
+	if !cfg.SkipSSRFCheck && proxyForURL(probeReq) == nil {
+		transport.DialContext = ssrfSafeDialer
 	}
 
 	jar, _ := cookiejar.New(nil)
@@ -121,4 +117,31 @@ func getHTTPClient(cfg *Config) *http.Client {
 		Timeout:   cfg.Timeout,
 		Jar:       jar,
 	}
+}
+
+// proxyForURL returns the proxy URL that would be used for the given request,
+// or nil if no proxy is configured. Delegates to http.ProxyFromEnvironment.
+func proxyForURL(req *http.Request) *url.URL {
+	u, _ := http.ProxyFromEnvironment(req)
+	return u
+}
+
+// ssrfSafeDialer is a DialContext function that resolves the target hostname
+// and blocks connections to private/routed IP addresses.
+func ssrfSafeDialer(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
+	}
+	for _, ip := range ips {
+		if isPrivateIP(ip.IP) {
+			return nil, fmt.Errorf("blocked access to private IP address: %s (host: %s)", ip.IP, host)
+		}
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, network, net.JoinHostPort(host, port))
 }

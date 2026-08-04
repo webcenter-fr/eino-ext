@@ -92,7 +92,7 @@ func NewReleaseCreateTool(ctx context.Context, configs Configs) (*ReleaseCreateT
 
 func newReleaseCreateTool(ctx context.Context, base *baseTool) (*ReleaseCreateTool, error) {
 	releaseTool := &ReleaseCreateTool{baseTool: base}
-	t, err := utils.InferTool("github_release_create", releaseCreateDescription, releaseTool.Invoke)
+	t, err := utils.InferTool("github_release_create", releaseCreateDescription, releaseTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

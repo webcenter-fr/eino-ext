@@ -83,7 +83,7 @@ func NewPRSuggestChangeTool(ctx context.Context, configs Configs) (*PRSuggestCha
 
 func newPRSuggestChangeTool(ctx context.Context, base *baseTool) (*PRSuggestChangeTool, error) {
 	suggestTool := &PRSuggestChangeTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_suggest_change", prSuggestChangeDescription, suggestTool.Invoke)
+	t, err := utils.InferTool("github_pr_suggest_change", prSuggestChangeDescription, suggestTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

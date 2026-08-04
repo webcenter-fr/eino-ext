@@ -138,7 +138,7 @@ func NewPRListTool(ctx context.Context, configs Configs) (*PRListTool, error) {
 
 func newPRListTool(ctx context.Context, base *baseTool) (*PRListTool, error) {
 	listTool := &PRListTool{baseTool: base}
-	t, err := utils.InferTool("github_pr_list", fmt.Sprintf("%s\n%s", prListDescription, listOutputGuidance), listTool.Invoke)
+	t, err := utils.InferTool("github_pr_list", fmt.Sprintf("%s\n%s", prListDescription, listOutputGuidance), listTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

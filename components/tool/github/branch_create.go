@@ -146,7 +146,7 @@ func NewBranchCreateTool(ctx context.Context, configs Configs) (*BranchCreateToo
 
 func newBranchCreateTool(ctx context.Context, base *baseTool) (*BranchCreateTool, error) {
 	branchTool := &BranchCreateTool{baseTool: base}
-	t, err := utils.InferTool("github_branch_create", branchCreateDescription, branchTool.Invoke)
+	t, err := utils.InferTool("github_branch_create", branchCreateDescription, branchTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

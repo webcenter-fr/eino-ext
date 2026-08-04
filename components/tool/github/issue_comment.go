@@ -72,7 +72,7 @@ func NewIssueCommentTool(ctx context.Context, configs Configs) (*IssueCommentToo
 
 func newIssueCommentTool(ctx context.Context, base *baseTool) (*IssueCommentTool, error) {
 	commentTool := &IssueCommentTool{baseTool: base}
-	t, err := utils.InferTool("github_issue_comment", issueCommentDescription, commentTool.Invoke)
+	t, err := utils.InferTool("github_issue_comment", issueCommentDescription, commentTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

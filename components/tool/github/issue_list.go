@@ -128,7 +128,7 @@ func NewIssueListTool(ctx context.Context, configs Configs) (*IssueListTool, err
 
 func newIssueListTool(ctx context.Context, base *baseTool) (*IssueListTool, error) {
 	listTool := &IssueListTool{baseTool: base}
-	t, err := utils.InferTool("github_issue_list", fmt.Sprintf("%s\n%s", issueListDescription, listOutputGuidance), listTool.Invoke)
+	t, err := utils.InferTool("github_issue_list", fmt.Sprintf("%s\n%s", issueListDescription, listOutputGuidance), listTool.Invoke, utils.WithSchemaModifier(base.instanceSchemaModifier()))
 	if err != nil {
 		return nil, err
 	}

@@ -4,12 +4,16 @@ import (
 	"context"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/google/go-github/v71/github"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+
+	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 // systemDirs contains paths that must not be used as clone directories.
@@ -120,6 +124,20 @@ func validateParams(v any) error {
 // instanceNotFoundError returns an error indicating the requested instance is unknown.
 func instanceNotFoundError(instance string, known []string) error {
 	return toolutil.NotFoundError("GitHub instance", instance, known)
+}
+
+// instanceSchemaModifier returns a utils.SchemaModifierFn that sets the enum
+// constraint on the "instance" JSON schema property to the known instance names.
+func (b *baseTool) instanceSchemaModifier() utils.SchemaModifierFn {
+	instances := make([]any, len(b.knownInstances))
+	for i, v := range b.knownInstances {
+		instances[i] = v
+	}
+	return func(jsonTagName string, t reflect.Type, tag reflect.StructTag, schema *jsonschema.Schema) {
+		if jsonTagName == "instance" {
+			schema.Enum = instances
+		}
+	}
 }
 
 // gitHost extracts the host portion from a GHES BaseURL, falling back to github.com.
