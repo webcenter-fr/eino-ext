@@ -191,7 +191,15 @@ func newHTTPClient(timeout time.Duration, skipVerify bool) *http.Client {
 
 func (m *CopilotModel) GetType() string { return copilotGetType }
 
-func (m *CopilotModel) IsCallbacksEnabled() bool { return true }
+// IsCallbacksEnabled implements components.Checker. CopilotModel does not
+// self-instrument eino callbacks (Generate/Stream call the Copilot HTTP API
+// directly with no callbacks.OnStart/OnEnd/OnEndWithStreamOutput calls), so
+// this must be false: it tells eino's compose/adk graph layer to wrap this
+// model with its own callback injection instead of trusting a
+// self-instrumentation that never happens. Returning true here silently
+// drops every ComponentOfChatModel activity/callback event for every
+// Copilot call.
+func (m *CopilotModel) IsCallbacksEnabled() bool { return false }
 
 func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	n := *m // safe: mutex fields are pointers (shared across copies), rest are values or safe-to-copy pointers

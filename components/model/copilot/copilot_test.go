@@ -97,8 +97,12 @@ func TestCopilotModelIsCallbacksEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !m.IsCallbacksEnabled() {
-		t.Error("expected IsCallbacksEnabled to return true")
+	// CopilotModel does not self-instrument eino callbacks (Generate/Stream hit
+	// the HTTP API directly), so it must report false here — true would make
+	// eino's compose/adk layer skip its own instrumentation, silently dropping
+	// every ChatModel-scoped callback/activity event.
+	if m.IsCallbacksEnabled() {
+		t.Error("expected IsCallbacksEnabled to return false")
 	}
 }
 
