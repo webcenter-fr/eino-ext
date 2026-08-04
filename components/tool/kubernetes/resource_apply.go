@@ -19,6 +19,7 @@ const resourceApplyDescription = `
 ** General Purpose **
 It applies (creates or updates) any Kubernetes resource using server-side apply.
 Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
+The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
 
 ** Server-Side Apply **
 Server-side apply tracks field ownership, allowing multiple controllers to manage
@@ -37,7 +38,7 @@ It returns the applied resource as a JSON object.
 type ResourceApplyParams struct {
 	Cluster      string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace    string `json:"namespace,omitempty" jsonschema:"(optional) The namespace for the resource. Omit for cluster-scoped resources."`
-	Kind         string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Kind         string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
 	Manifest     string `json:"manifest" validate:"required" jsonschema:"(required) The resource manifest as a JSON string. Must include apiVersion, kind, and metadata."`
 	FieldManager string `json:"fieldManager,omitempty" jsonschema:"(optional) The field manager name for server-side apply. Defaults to 'eino-agent'."`
 	Force        bool   `json:"force,omitempty" jsonschema:"(optional) If true, force apply even if another field manager owns conflicting fields."`

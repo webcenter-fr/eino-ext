@@ -44,6 +44,7 @@ const resourceCreateDescription = `
 ** General Purpose **
 It creates any Kubernetes resource from a JSON manifest using the dynamic client.
 Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
+The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
 
 ** Safety **
 Always use dryRun=true first to validate the resource before creating.
@@ -57,7 +58,7 @@ It returns the created resource as a JSON object.
 type ResourceCreateParams struct {
 	Cluster   string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace string `json:"namespace,omitempty" jsonschema:"(optional) The namespace for the resource. Omit for cluster-scoped resources."`
-	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
 	Manifest  string `json:"manifest" validate:"required" jsonschema:"(required) The full resource manifest as a JSON string. Must include apiVersion, kind, and metadata."`
 	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without creating. Show the result to the user and ask for confirmation."`
 	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`

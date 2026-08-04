@@ -27,7 +27,7 @@ type ListParamsPaginate struct {
 
 type ListParams struct {
 	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Kind           string              `json:"kind" validate:"required" jsonschema:"(required) A Kubernetes resource Kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Uses server-side discovery so CRDs are supported automatically."`
+	Kind           string              `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred. Uses server-side discovery so CRDs are supported automatically."`
 	Namespace      string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces. Ignored for cluster-scoped kinds."`
 	LabelsSelector string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
 	Filter         string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
@@ -36,7 +36,7 @@ type ListParams struct {
 
 const listDescription = `
 ** General Purpose **
-It lists any Kubernetes resource by kind, kubectl shortname, or resource.group form. Supports core types, CRDs, label selectors, regex filtering, and pagination.
+It lists any Kubernetes resource. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types, CRDs, label selectors, regex filtering, and pagination.
 
 ** Output **
 Returns a JSON array of objects with curated fields specific to each resource type. For types without dedicated formatters, returns name, namespace, and status.

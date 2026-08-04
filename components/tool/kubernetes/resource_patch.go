@@ -19,6 +19,7 @@ const resourcePatchDescription = `
 ** General Purpose **
 It patches any Kubernetes resource using strategic merge, JSON merge, or JSON patch.
 Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
+The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
 
 ** Patch Types **
 - 'strategic': Strategic merge patch (default for most Kubernetes resources). Only specify the fields you want to change.
@@ -37,7 +38,7 @@ It returns the patched resource as a JSON object.
 type ResourcePatchParams struct {
 	Cluster   string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
-	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
 	Name      string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
 	PatchType string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
 	Patch     string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`

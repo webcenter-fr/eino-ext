@@ -46,6 +46,7 @@ const resourceDeleteDescription = `
 ** General Purpose **
 It deletes any Kubernetes resource by GVR and name.
 Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
+The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
 
 ** Deletion Propagation **
 - 'background' (default): Delete the resource and its dependents in the background.
@@ -64,7 +65,7 @@ On success, returns a confirmation message. On dry-run, returns the resource tha
 type ResourceDeleteParams struct {
 	Cluster            string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Namespace          string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
-	Kind               string `json:"kind" validate:"required" jsonschema:"(required) The resource Kind (e.g. 'Deployment', 'ConfigMap'), a kubectl shortname ('deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Kind               string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
 	Name               string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to delete."`
 	Cascade            string `json:"cascade,omitempty" validate:"omitempty,oneof=background foreground orphan" jsonschema:"(optional) Deletion propagation: 'background' (default, delete dependents in background), 'foreground' (wait for dependents), 'orphan' (leave dependents)."`
 	GracePeriodSeconds *int64 `json:"gracePeriodSeconds,omitempty" jsonschema:"(optional) Grace period in seconds before the resource is deleted. Use 0 for immediate deletion."`

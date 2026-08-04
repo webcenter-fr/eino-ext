@@ -15,7 +15,7 @@ import (
 
 type DescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Kind                string   `json:"kind" validate:"required" jsonschema:"(required) A Kubernetes resource Kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps')."`
+	Kind                string   `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
 	Namespace           string   `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Ignored for cluster-scoped kinds."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
@@ -49,7 +49,7 @@ func (o *describeOutput) applyFieldExclusions(excludeFields []string) error {
 
 const describeDescription = `
 ** General Purpose **
-It describes any Kubernetes resource by kind, kubectl shortname, or resource.group form. Supports core types and CRDs.
+It describes any Kubernetes resource. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types and CRDs.
 
 ** Output **
 Returns a JSON object with metadata, spec, status, and data fields.
