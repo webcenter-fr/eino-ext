@@ -37,6 +37,7 @@ type PRListParams struct {
 	Head     string `json:"head,omitempty" jsonschema:"(optional) Filter by head user/org and branch (format: user:ref-name)."`
 	Base     string `json:"base,omitempty" jsonschema:"(optional) Filter by base branch name."`
 	PerPage  int    `json:"perPage,omitempty" jsonschema:"(optional) Results per page. Defaults to 30, max 100."`
+	MaxPages int    `json:"maxPages,omitempty" jsonschema:"(optional) Maximum number of pages to fetch. Defaults to 0, which loops over all pages."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each PR JSON output."`
 }
 
@@ -95,7 +96,7 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 	prs, err := paginateList(func(page int) ([]*github.PullRequest, *github.Response, error) {
 		opts.Page = page
 		return c.PullRequests.List(ctx, params.Owner, params.Repo, opts)
-	}, defaultMaxPages)
+	}, params.MaxPages)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to list pull requests")
 	}

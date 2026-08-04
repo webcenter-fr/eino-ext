@@ -31,6 +31,44 @@ func (s *GitHubToolTestSuite) TestOrgRepoList() {
 	s.Error(err)
 }
 
+// TestOrgRepoListFilterAcrossPages verifies that pagination traverses every
+// page before applying the filter: "repo2" only exists on page 2, so a filter
+// matching it must return exactly one result. This guards against regressions
+// where pagination is capped before all pages are fetched.
+func (s *GitHubToolTestSuite) TestOrgRepoListFilterAcrossPages() {
+	ctx := context.Background()
+
+	tool, err := NewOrgRepoListTool(ctx, s.configs())
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "org": "testorg", "perPage": 100, "filter": "repo2"}`)
+	s.NoError(err)
+
+	var outputs []OrgRepoListOutput
+	err = json.Unmarshal([]byte(result), &outputs)
+	s.NoError(err)
+	s.Len(outputs, 1)
+	s.Equal("repo2", outputs[0].Name)
+}
+
+// TestOrgRepoListMaxPagesLimit verifies that maxPages limits pagination, so
+// "repo2" on page 2 is not fetched when maxPages=1.
+func (s *GitHubToolTestSuite) TestOrgRepoListMaxPagesLimit() {
+	ctx := context.Background()
+
+	tool, err := NewOrgRepoListTool(ctx, s.configs())
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "org": "testorg", "perPage": 100, "maxPages": 1}`)
+	s.NoError(err)
+
+	var outputs []OrgRepoListOutput
+	err = json.Unmarshal([]byte(result), &outputs)
+	s.NoError(err)
+	s.Len(outputs, 1)
+	s.Equal("repo1", outputs[0].Name)
+}
+
 func (s *GitHubToolTestSuite) TestRepoClonedDryRun() {
 	ctx := context.Background()
 

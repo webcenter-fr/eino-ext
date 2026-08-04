@@ -65,19 +65,32 @@ func sanitizeSegment(s string) string {
 	return s
 }
 
-const defaultMaxPages = 5
+// defaultMaxPages is the fallback page cap used when a caller does not specify
+// one. It is intentionally high so that list tools traverse the full result
+// set by default rather than silently truncating large organizations.
+const defaultMaxPages = 1000
 
-// paginateList iterates through paginated GitHub API results up to maxPages
-// pages, accumulating all items into a single slice. The fetch callback is
-// called for each page; it must set opts.Page to the supplied page number
-// before making the API call.
+// paginateList iterates through paginated GitHub API results, accumulating all
+// items into a single slice. The fetch callback is called for each page; it
+// must set opts.Page to the supplied page number before making the API call.
+//
+// maxPages bounds the number of fetched pages to prevent runaway loops:
+//   - maxPages > 0: fetch at most maxPages pages;
+//   - maxPages == 0: use the default safety cap (1000 pages, effectively all pages);
+//   - maxPages < 0: fetch every page until the API reports no next page (no cap).
+//
+// Iteration also stops as soon as the API response reports no next page
+// (resp.NextPage == 0), so passing a high cap does not cause extra requests.
 func paginateList[T any](
 	fetch func(page int) ([]T, *ghlib.Response, error),
 	maxPages int,
 ) ([]T, error) {
+	if maxPages == 0 {
+		maxPages = defaultMaxPages
+	}
 	var allItems []T
 	page := 1
-	for pagesFetched := 0; pagesFetched < maxPages; pagesFetched++ {
+	for pagesFetched := 0; maxPages < 0 || pagesFetched < maxPages; pagesFetched++ {
 		items, resp, err := fetch(page)
 		if err != nil {
 			return nil, errors.Wrapf(err, "paginateList fetch page %d", page)
