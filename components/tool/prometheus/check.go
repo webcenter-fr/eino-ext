@@ -47,6 +47,7 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 func clientErrorResults(instance string, err error) checkup.Results {
 	errStr := err.Error()
 	return checkup.Results{
+		{Component: "prometheus_instance_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_alert_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_alert_describe", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_metric_query", Instance: instance, Status: checkup.StatusError, Error: errStr},
@@ -56,6 +57,8 @@ func clientErrorResults(instance string, err error) checkup.Results {
 
 func probeInstance(ctx context.Context, client promapi.API, instance string) checkup.Results {
 	var results checkup.Results
+
+	results = append(results, probeInstanceList(instance))
 
 	ar, alerts, err := probeAlertList(ctx, client, instance)
 	results = append(results, ar)
@@ -91,6 +94,14 @@ func probeInstance(ctx context.Context, client promapi.API, instance string) che
 	results = append(results, probeMetricRange(ctx, client, instance))
 
 	return results
+}
+
+func probeInstanceList(instance string) checkup.Result {
+	return checkup.Result{
+		Component: "prometheus_instance_list",
+		Instance:  instance,
+		Status:    checkup.StatusOK,
+	}
 }
 
 func probeAlertList(ctx context.Context, client promapi.API, instance string) (checkup.Result, []promapi.Alert, error) {

@@ -36,6 +36,7 @@ configs := prometheus.Configs{
 
 | Tool Name | Description |
 |---|---|
+| `prometheus_instance_list` | List all configured Prometheus instances |
 | `prometheus_metric_query` | Execute an instant PromQL query |
 | `prometheus_metric_range` | Execute a range PromQL query over a time window |
 | `prometheus_alert_list` | List current alerts with lightweight output and pagination |

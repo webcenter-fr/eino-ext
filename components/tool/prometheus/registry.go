@@ -11,6 +11,7 @@ import (
 type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 
 var readOnlyConstructors = []toolConstructor{
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewInstanceListTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewMetricQueryTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewMetricRangeTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertListTool(ctx, c) },
@@ -69,3 +70,7 @@ func NewAllToolsWithSafety(ctx context.Context, configs Configs, safetyCfg *safe
 	}
 	return tools, mw, nil
 }
+
+var (
+	_ tool.InvokableTool = (*InstanceListTool)(nil)
+)
