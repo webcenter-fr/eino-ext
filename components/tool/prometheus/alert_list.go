@@ -29,7 +29,7 @@ It returns a JSON array of objects, where each object represents an alert with t
 
 type AlertListParams struct {
 	Instance string             `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
-	Filter   string             `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each alert JSON. Keep only alerts that match. Invalid regex returns an error."`
+	Filter   string             `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each alert JSON. Keep only alerts that match. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 	State    string             `json:"state,omitempty" validate:"omitempty,oneof=firing pending inactive" jsonschema:"(optional) Filter by alert state: 'firing', 'pending', or 'inactive'."`
 	Paginate *AlertListPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }

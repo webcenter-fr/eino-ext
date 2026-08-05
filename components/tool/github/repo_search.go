@@ -33,7 +33,7 @@ type RepoSearchParams struct {
 	Query    string `json:"query" validate:"required" jsonschema:"(required) Search query (GitHub search syntax)."`
 	PerPage  int    `json:"perPage,omitempty" jsonschema:"(optional) Results per page. Defaults to 30, max 100."`
 	MaxPages int    `json:"maxPages,omitempty" jsonschema:"(optional) Maximum number of pages to fetch. Defaults to 0, which loops over all pages."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each repository JSON output."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each repository JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
 type RepoSearchOutput struct {

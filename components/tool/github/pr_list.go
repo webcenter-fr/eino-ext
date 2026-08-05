@@ -38,7 +38,7 @@ type PRListParams struct {
 	Base     string `json:"base,omitempty" jsonschema:"(optional) Filter by base branch name."`
 	PerPage  int    `json:"perPage,omitempty" jsonschema:"(optional) Results per page. Defaults to 30, max 100."`
 	MaxPages int    `json:"maxPages,omitempty" jsonschema:"(optional) Maximum number of pages to fetch. Defaults to 0, which loops over all pages."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each PR JSON output."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each PR JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
 type PRListOutput struct {

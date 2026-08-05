@@ -36,7 +36,7 @@ type MetricRangeParams struct {
 	Start      string `json:"start" validate:"required" jsonschema:"(required) The start time in RFC3339 format (e.g. 2024-01-01T00:00:00Z)."`
 	End        string `json:"end" validate:"required" jsonschema:"(required) The end time in RFC3339 format (e.g. 2024-01-01T01:00:00Z)."`
 	Step       string `json:"step" validate:"required" jsonschema:"(required) The query resolution step width as a duration string (e.g. '15s', '1m', '1h')."`
-	Filter     string `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each result JSON. Keep only results that match. Invalid regex returns an error."`
+	Filter     string `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each result JSON. Keep only results that match. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 	MaxSamples int    `json:"maxSamples,omitempty" validate:"omitempty,min=1,max=10000" jsonschema:"(optional) Maximum number of samples per time series. Defaults to 100."`
 }
 

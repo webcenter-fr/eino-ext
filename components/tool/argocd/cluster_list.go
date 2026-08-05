@@ -24,7 +24,7 @@ It returns a JSON array of objects, where each object represents a cluster with 
 
 type ClusterListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each cluster JSON."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each cluster JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
 type ClusterListOutput struct {

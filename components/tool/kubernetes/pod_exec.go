@@ -45,7 +45,7 @@ type PodExecParams struct {
 	Name          string   `json:"name" validate:"required" jsonschema:"(required) The pod name."`
 	Container     string   `json:"container,omitempty" validate:"omitempty" jsonschema:"(optional) The container name. If not specified, the command will be executed in the first container."`
 	Command       []string `json:"command" validate:"required,min=1" jsonschema:"(required) The command to execute as an array of strings. Example: [\"ls\", \"-la\", \"/app\"]."`
-	FilterPattern string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. Only matching lines are returned. Example: 'error|panic'. Invalid regex returns an error."`
+	FilterPattern string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. Only matching lines are returned. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'error|panic'. Invalid regex returns an error."`
 	DryRun        bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the command without executing it. Show the result to the user and ask for confirmation."`
 	Confirmed     bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the command. Set this after ensuring the command is safe and read-only."`
 }
