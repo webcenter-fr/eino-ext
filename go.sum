@@ -106,6 +106,8 @@ github.com/disaster37/k8s-objectmatcher v1.8.8 h1:W6BN4Rkx2NCWOZaWGGEHjE3xaN6ur6
 github.com/disaster37/k8s-objectmatcher v1.8.8/go.mod h1:2nRtPBxwgkwCBjerqlRF4oV9pqAVC1bxtl6Y4/iAt3U=
 github.com/disaster37/opensearch/v4 v4.0.0-7 h1:OzefzQkY166+E6RQA0+qwVG++LK+Q6/FvL/TQ6hN1vY=
 github.com/disaster37/opensearch/v4 v4.0.0-7/go.mod h1:DEdvp+3xHQFCF5F6ckreRiDtorTplF7fSiI3FoXnBrY=
+github.com/disaster37/opensearch/v4 v4.0.0-7.0.20260805161610-f4179193fef2 h1:zN9BzgiHkjUD++HSxs+tspGgfQ7KJ9fgAHQZb2pB8AY=
+github.com/disaster37/opensearch/v4 v4.0.0-7.0.20260805161610-f4179193fef2/go.mod h1:DEdvp+3xHQFCF5F6ckreRiDtorTplF7fSiI3FoXnBrY=
 github.com/disaster37/operator-sdk-extra/v2 v2.0.10 h1:FZv5YTW3QWkOBkSuJ3Wh6vb1W09Eb2mUAViEKCRfFIo=
 github.com/disaster37/operator-sdk-extra/v2 v2.0.10/go.mod h1:GPxPKtui34jK/QHqLJGYIIlhmWLT0UOFzVuI9a0L+mk=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

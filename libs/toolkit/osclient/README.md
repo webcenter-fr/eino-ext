@@ -26,6 +26,9 @@ func New(cfg Config, timeout time.Duration) (opensearchv4.Client, error)
   the shared `validate`+`jsonschema` tags.
 - `New` — builds an OpenSearch v4 client. A zero `timeout` leaves the client
   default in place.
+- Logging — the full HTTP request/response dump is only enabled at `trace`
+  log level; at `debug` level or lower only the request/response summary
+  lines are logged, the HTTP response itself is not.
 
 ## Usage
 
