@@ -13,7 +13,7 @@ func Compile(pattern string) (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid regex filter %q (Go RE2 syntax)", pattern)
+		return nil, errors.Wrapf(err, "invalid regex filter %q (Go RE2 syntax: lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), and backreferences are NOT supported)", pattern)
 	}
 	return re, nil
 }

@@ -25,7 +25,7 @@ It returns a JSON array of alert objects with all labels and annotations for mat
 
 type AlertDescribeParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
-	Filter   string `json:"filter" validate:"required" jsonschema:"(required) A Go RE2 regex applied on alert label JSON. Only matching alerts are returned. Example: 'HighCPU|HighMemory'."`
+	Filter   string `json:"filter" validate:"required" jsonschema:"(required) A Go RE2 regex applied on alert label JSON. Only matching alerts are returned. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'HighCPU|HighMemory'."`
 	State    string `json:"state,omitempty" validate:"omitempty,oneof=firing pending inactive" jsonschema:"(optional) Filter by alert state: 'firing', 'pending', or 'inactive'."`
 }
 

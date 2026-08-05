@@ -32,7 +32,7 @@ type ShellParams struct {
 	Profile          string   `json:"profile,omitempty" validate:"omitempty" jsonschema:"(optional) Profile name to override default container image"`
 	DryRun           bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the command without executing"`
 	Confirmed        bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute"`
-	FilterPattern    string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line"`
+	FilterPattern    string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'error|panic'. Invalid regex returns an error."`
 	Timeout          string   `json:"timeout,omitempty" validate:"omitempty" jsonschema:"(optional) Timeout duration string (e.g. '30s', '5m')"`
 	AllowLocalNetwork *bool   `json:"allowLocalNetwork,omitempty" jsonschema:"(optional) Override to allow local network access for this call"`
 }

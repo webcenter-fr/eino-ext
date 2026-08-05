@@ -30,7 +30,7 @@ type ApplicationListParams struct {
 	Project      string `json:"project,omitempty" jsonschema:"(optional) Filter by project name."`
 	Selector     string `json:"selector,omitempty" jsonschema:"(optional) Label selector (e.g. 'app=nginx,env=prod')."`
 	AppNamespace string `json:"appNamespace,omitempty" jsonschema:"(optional) Application namespace filter."`
-	Filter       string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each application JSON output."`
+	Filter       string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each application JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
 type ApplicationListOutput struct {
