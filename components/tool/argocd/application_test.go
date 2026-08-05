@@ -195,7 +195,14 @@ func (t *ToolTestSuite) TestInstanceList() {
 	_, err = listTool.Info(ctx)
 	assert.NoError(t.T(), err)
 
-	listResult, err := listTool.InvokableRun(ctx, `{}`)
+	// Empty string arguments — this was the bug: sonic requires valid JSON.
+	listResult, err := listTool.InvokableRun(ctx, "")
+	assert.NoError(t.T(), err)
+	assert.NotEmpty(t.T(), listResult)
+	assert.Contains(t.T(), listResult, "test")
+
+	// Empty JSON object arguments — also valid for a no-param tool.
+	listResult, err = listTool.InvokableRun(ctx, "{}")
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), listResult)
 	assert.Contains(t.T(), listResult, "test")

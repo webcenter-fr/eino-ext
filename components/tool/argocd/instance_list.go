@@ -7,6 +7,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 )
 
 const instanceListDescription = `
@@ -38,7 +40,8 @@ func NewInstanceListTool(ctx context.Context, configs Configs) (*InstanceListToo
 		knownInstances: configs.GetInstanceNames(),
 	}
 
-	invokable, err := utils.InferTool("argocd_instance_list", instanceListDescription, instanceListTool.Invoke)
+	invokable, err := utils.InferTool("argocd_instance_list", instanceListDescription, instanceListTool.Invoke,
+		utils.WithUnmarshalArguments(toolutil.EmptyJSONUnmarshaler[*InstanceListParams]()))
 	if err != nil {
 		return nil, err
 	}

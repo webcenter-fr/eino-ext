@@ -7,6 +7,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 )
 
 const clusterListDescription = `
@@ -44,7 +46,8 @@ func NewClusterListTool(ctx context.Context, configs Configs) (*ClusterListTool,
 	}
 
 	// Wire the non-streaming (invokable) path.
-	invokable, err := utils.InferTool("kubernetes_cluster_list", clusterListDescription, clusterListTool.Invoke)
+	invokable, err := utils.InferTool("kubernetes_cluster_list", clusterListDescription, clusterListTool.Invoke,
+		utils.WithUnmarshalArguments(toolutil.EmptyJSONUnmarshaler[*ClusterListParams]()))
 	if err != nil {
 		return nil, err
 	}
