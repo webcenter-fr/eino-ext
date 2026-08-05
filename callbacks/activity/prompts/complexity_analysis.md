@@ -57,5 +57,5 @@ Guidelines:
   accordingly.
 - Do not invent savings. If in doubt about whether a human would spend real
   time, lean toward 0.
-- Respond with valid JSON only, no prose, with exactly these keys:
+- Respond with valid JSON only, no prose and no markdown code fences, with exactly these keys:
   complexity_ratio, human_time_saved_seconds, money_saved_usd.

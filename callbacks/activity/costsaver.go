@@ -14,6 +14,8 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/sirupsen/logrus"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 )
 
 const maxTextLength = 2000
@@ -199,7 +201,7 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, summary *SessionSummar
 	resp, err := a.config.Model.Generate(timeoutCtx, []*schema.Message{
 		{
 			Role:    schema.System,
-			Content: "You are a helpful assistant that analyzes AI agent sessions and estimates cost savings. Respond with valid JSON only.",
+			Content: "You are a helpful assistant that analyzes AI agent sessions and estimates cost savings. Respond with valid JSON only, without markdown code fences.",
 		},
 		{
 			Role:    schema.User,
@@ -215,6 +217,14 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, summary *SessionSummar
 	}
 
 	content := resp.Content
+	// LLMs sometimes wrap JSON in ```json``` fences or surround it with prose
+	// despite the prompt; extract the first balanced JSON block before parsing.
+	// When no block is found, fall back to the original content so the unmarshal
+	// error stays informative (e.g. "invalid character 'X' ...") and the wrapped
+	// "failed to parse" message is preserved.
+	if extracted := strutil.ExtractJSONBlock(content); extracted != "" {
+		content = extracted
+	}
 
 	var analysis ComplexityAnalysis
 	if err := json.Unmarshal([]byte(content), &analysis); err != nil {
