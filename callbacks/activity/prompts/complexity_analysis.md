@@ -3,6 +3,10 @@ replaced, then express that as cost savings. Savings are NOT guaranteed: many
 sessions did nothing a human would have spent meaningful time on, and for those
 you MUST return zeros.
 
+The summary below covers the ENTIRE session so far (every turn, cumulative).
+Estimate the TOTAL human time saved across everything in the summary, not just
+the most recent turn.
+
 Session Summary:
 - Duration (AI wall-clock): {{.Duration}}
 - Total tokens: {{.TotalTokens}}
@@ -29,8 +33,9 @@ Step 2 — Estimate human time.
 If the task is TRIVIAL, set human_time_saved_seconds = 0 and skip the rest
 (savings are zero by definition).
 If the task is REAL, estimate how many seconds a competent human would take to
-do the SAME task manually (opening tools, running the queries, reading
-results, writing the output). Call this `human_time`.
+do ALL the work in this summary manually (cumulative across every turn so far:
+opening tools, running the queries, reading results, writing the output). Call
+this `human_time`.
 
 Step 3 — Compute savings.
 - complexity_ratio (0.0-1.0): how much of a fully automated, complex task this

@@ -58,7 +58,7 @@ type SessionSummary struct {
 
 // ComplexityAnalysis represents the result of complexity analysis.
 type ComplexityAnalysis struct {
-	ComplexityRatio      float64 `json:"complexity_ratio"`
+	ComplexityRatio       float64 `json:"complexity_ratio"`
 	HumanTimeSavedSeconds float64 `json:"human_time_saved_seconds"`
 	MoneySavedUSD         float64 `json:"money_saved_usd"`
 }
@@ -313,20 +313,20 @@ func (a *FallbackComplexityAnalyzer) Analyze(_ context.Context, summary *Session
 		complexityRatio *= complexityFailurePenalty
 	}
 
-	humanTimeSaved := time.Duration(complexityRatio * float64(a.baseTaskTime))
-	moneySaved := (complexityRatio * float64(a.baseTaskTime.Seconds())) * a.humanHourlyRate / 3600.0
+	humanTimeSeconds := complexityRatio * a.baseTaskTime.Seconds()
+	moneySaved := humanTimeSeconds * a.humanHourlyRate / 3600.0
 
 	return &ComplexityAnalysis{
 		ComplexityRatio:       complexityRatio,
-		HumanTimeSavedSeconds: humanTimeSaved.Seconds(),
+		HumanTimeSavedSeconds: humanTimeSeconds,
 		MoneySavedUSD:         moneySaved,
 	}, nil
 }
 
 // CompositeComplexityAnalyzer tries LLM analysis and falls back to simple formula.
 type CompositeComplexityAnalyzer struct {
-	llm       *ComplexityAnalyzer
-	fallback  *FallbackComplexityAnalyzer
+	llm      *ComplexityAnalyzer
+	fallback *FallbackComplexityAnalyzer
 }
 
 // NewCompositeComplexityAnalyzer creates a new CompositeComplexityAnalyzer.

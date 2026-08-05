@@ -54,7 +54,7 @@ type PrometheusRecorder struct {
 
 // Config for NewTracker. Validate+jsonschema tags; defaults applied in New.
 type Config struct {
-	Bus             activity.Bus                      `json:"-"`
+	Bus             activity.Bus                       `json:"-"`
 	Resolve         modelsdev.NameResolver             `json:"-"`
 	CatalogHolder   *atomic.Pointer[modelsdev.Catalog] `json:"-"`
 	PricingProvider string                             `json:"pricingProvider" validate:"required"`
@@ -68,17 +68,17 @@ type Config struct {
 // Tracker is the central facade that ties the activity handler, catalog pricer,
 // Prometheus metrics, cost-saver, and per-session aggregation together.
 type Tracker struct {
-	bus            activity.Bus
-	pricer         modelsdev.CatalogPricer
-	catalogHolder  *atomic.Pointer[modelsdev.Catalog]
-	handler        *activity.Handler
-	reg            prometheus.Registerer
-	recorder       Recorder
-	terminalTypes  []activity.Type
-	savings        activity.ComplexityAnalyzerConfig
-	summarizer     *activity.SessionSummarizer
-	analyzer       *activity.CompositeComplexityAnalyzer
-	tracker        *snapshotTracker
+	bus           activity.Bus
+	pricer        modelsdev.CatalogPricer
+	catalogHolder *atomic.Pointer[modelsdev.Catalog]
+	handler       *activity.Handler
+	reg           prometheus.Registerer
+	recorder      Recorder
+	terminalTypes []activity.Type
+	savings       activity.ComplexityAnalyzerConfig
+	summarizer    *activity.SessionSummarizer
+	analyzer      *activity.CompositeComplexityAnalyzer
+	tracker       *snapshotTracker
 }
 
 // NewTracker applies defaults (TokenCounter=counter.DefaultTokenCounter, a new
@@ -213,6 +213,8 @@ func (t *Tracker) Watch(ctx context.Context, sessionID string) {
 					t.handleSessionEnded(ctx, sessionID, e.Agent, *data)
 				}
 			case activity.ToolCalled:
+				t.tracker.markRealTask(sessionID, e.Agent)
+			case *activity.ToolCalled:
 				t.tracker.markRealTask(sessionID, e.Agent)
 			case activity.CompactionEnded:
 				t.tracker.bumpCompaction(sessionID)
