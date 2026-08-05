@@ -110,3 +110,8 @@ bus.Publish(ctx, activity.Event{
   (typically from the MemoryAgent's `EndSession()` method). The cost saver
   subscriber in `Watch` receives this event and runs the analysis. Session
   summary is built retrospectively from the bus ring buffer via `Replay()`.
+- The cost saver only analyzes sessions that called at least one tool. A
+  no-tool session (greetings, chitchat, single-turn factual answers) is
+  treated as trivial: the analyzer is not invoked, `cost_saver_runs_total` is
+  not incremented, and the savings gauges remain unset/zero. The fallback
+  formula also returns all zeros for no-tool sessions.

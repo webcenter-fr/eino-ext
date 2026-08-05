@@ -203,11 +203,15 @@ func (t *Tracker) Watch(ctx context.Context, sessionID string) {
 				model := currentModel[e.Agent]
 				t.handleStepEnded(sessionID, e.Agent, model, data)
 			case activity.SessionEnded:
-				seenSessionEnded = true
-				t.handleSessionEnded(ctx, sessionID, e.Agent, data)
+				if !seenSessionEnded {
+					seenSessionEnded = true
+					t.handleSessionEnded(ctx, sessionID, e.Agent, data)
+				}
 			case *activity.SessionEnded:
-				seenSessionEnded = true
-				t.handleSessionEnded(ctx, sessionID, e.Agent, *data)
+				if !seenSessionEnded {
+					seenSessionEnded = true
+					t.handleSessionEnded(ctx, sessionID, e.Agent, *data)
+				}
 			case activity.ToolCalled:
 				t.tracker.markRealTask(sessionID, e.Agent)
 			case activity.CompactionEnded:

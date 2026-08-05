@@ -171,7 +171,11 @@ func (c *Collector) Observe(model, agent string, se activity.StepEnded) {
 // not correlate step.started/step.ended pairs by id.
 //
 // When cost saver is enabled, Watch also handles session.ended events to
-// analyze session complexity and record cost saver metrics.
+// analyze session complexity and record cost saver metrics. Cost saver
+// analysis only runs for sessions that called at least one tool; no-tool
+// sessions are skipped, matching the costtrack facade's isReal guard, so
+// trivial sessions neither invoke the analyzer nor increment
+// cost_saver_runs_total.
 func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID string) {
 	if c == nil {
 		return
@@ -180,6 +184,7 @@ func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID strin
 	defer unsub()
 
 	currentModel := make(map[string]string) // agent -> most recently started model
+	toolCalled := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -193,12 +198,16 @@ func (c *Collector) Watch(ctx context.Context, bus activity.Bus, sessionID strin
 				currentModel[e.Agent] = data.Model
 			case activity.StepEnded:
 				c.Observe(currentModel[e.Agent], e.Agent, data)
+			case activity.ToolCalled:
+				toolCalled = true
+			case *activity.ToolCalled:
+				toolCalled = true
 			case activity.SessionEnded:
-				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil {
+				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil && toolCalled {
 					go c.handleSessionEnded(ctx, sessionID, e.Agent, data)
 				}
 			case *activity.SessionEnded:
-				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil {
+				if c.costSaver != nil && c.summarizer != nil && c.analyzer != nil && toolCalled {
 					go c.handleSessionEnded(ctx, sessionID, e.Agent, *data)
 				}
 			}

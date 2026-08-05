@@ -80,8 +80,15 @@ Dual-export (Prometheus + OTel) is supported via `MultiRecorder` in
 | `agent_task_cost_usd` | (histogram) | Distribution of per-task costs. |
 | `llm_compactions_total` | `agent` | Total context compactions. |
 | `llm_realtime_cost_usd` | `session_id`, `agent` | Live running cost gauge. |
-| `human_savings_usd_total` | `agent` | Estimated human savings from automation. |
+| `human_savings_usd_total` | `agent` | Estimated human savings from automation. Only incremented for sessions that used at least one tool (a "real" task); trivial no-tool sessions yield zero savings. |
 | `cost_saver_runs_total` | `agent` | Cost saver analysis run count. |
+
+## Cost saver
+
+`human_savings_usd_total` and `cost_saver_runs_total` are only incremented for
+sessions that called at least one tool — the facade's `isReal` guard. Trivial
+no-tool sessions (greetings, chitchat) produce zero savings and do not run the
+analyzer. This matches the standalone `metrics.WithCostSaver` path.
 
 ## Reasoning-token pricing divergence
 

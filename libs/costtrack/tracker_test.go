@@ -2,6 +2,7 @@ package costtrack
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -343,6 +344,109 @@ func (fr *fakeRecorder) RecordAnalysis(sessionID, agent string, a *activity.Comp
 func (fr *fakeRecorder) RecordFallback(reason string) {}
 
 func (fr *fakeRecorder) SetRealtimeCost(sessionID, agent string, cost float64) {}
+
+func TestTracker_NoToolSession_NoHumanSavings(t *testing.T) {
+	bus, err := activity.NewBus(activity.Config{})
+	if err != nil {
+		t.Fatalf("NewBus: %v", err)
+	}
+	t.Cleanup(func() { bus.Close() })
+
+	holder := new(atomic.Pointer[modelsdev.Catalog])
+	holder.Store(&modelsdev.Catalog{})
+
+	reg := prometheus.NewRegistry()
+	tracker, err := NewTracker(context.Background(), &Config{
+		Bus:             bus,
+		PricingProvider: "anthropic",
+		Resolve:         func(gw string) (string, string, bool) { return "", "", false },
+		CatalogHolder:   holder,
+		Registry:        reg,
+		Savings: activity.ComplexityAnalyzerConfig{
+			HumanHourlyRate: 50.0,
+			BaseTaskTime:    5 * time.Minute,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewTracker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go tracker.Watch(ctx, "s1")
+	time.Sleep(50 * time.Millisecond)
+
+	// No-tool session: one LLM turn, then a terminal event (answer.ended)
+	// triggers the facade's synthetic session.ended.
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.TypeStepStarted, Data: activity.StepStarted{Model: "claude-opus-4-5"}})
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.TypeStepEnded, Data: activity.StepEnded{Tokens: activity.Tokens{Input: 100, Output: 50}}})
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.Type("answer.ended")})
+
+	// human_savings_usd_total must stay 0; fail fast if it ever increments.
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := gatherMetric(t, reg, "human_savings_usd_total", map[string]string{"agent": "coder"}); got > 0 {
+			t.Fatalf("human_savings_usd_total incremented for a no-tool session: %v", got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := gatherMetric(t, reg, "cost_saver_runs_total", map[string]string{"agent": "coder"}); got != 0 {
+		t.Errorf("cost_saver_runs_total = %v, want 0 for no-tool session", got)
+	}
+}
+
+func TestTracker_ToolSession_RecordsHumanSavings(t *testing.T) {
+	bus, err := activity.NewBus(activity.Config{})
+	if err != nil {
+		t.Fatalf("NewBus: %v", err)
+	}
+	t.Cleanup(func() { bus.Close() })
+
+	holder := new(atomic.Pointer[modelsdev.Catalog])
+	holder.Store(&modelsdev.Catalog{})
+
+	reg := prometheus.NewRegistry()
+	tracker, err := NewTracker(context.Background(), &Config{
+		Bus:             bus,
+		PricingProvider: "anthropic",
+		Resolve:         func(gw string) (string, string, bool) { return "", "", false },
+		CatalogHolder:   holder,
+		Registry:        reg,
+		Savings: activity.ComplexityAnalyzerConfig{
+			HumanHourlyRate: 50.0,
+			BaseTaskTime:    5 * time.Minute,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewTracker: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go tracker.Watch(ctx, "s1")
+	time.Sleep(50 * time.Millisecond)
+
+	// Real session: one tool call, 1000 tokens => fallback ratio 0.3,
+	// moneySaved = 1.25.
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.TypeStepStarted, Data: activity.StepStarted{Model: "claude-opus-4-5"}})
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.TypeToolCalled, Data: activity.ToolCalled{Tool: "opensearch-health"}})
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.TypeStepEnded, Data: activity.StepEnded{Tokens: activity.Tokens{Input: 500, Output: 500}}})
+	bus.Publish(ctx, activity.Event{SessionID: "s1", Agent: "coder", Type: activity.Type("answer.ended")})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := gatherMetric(t, reg, "human_savings_usd_total", map[string]string{"agent": "coder"}); got > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := gatherMetric(t, reg, "human_savings_usd_total", map[string]string{"agent": "coder"}); math.Abs(got-1.25) > 1e-9 {
+		t.Errorf("human_savings_usd_total = %v, want 1.25 for tool session", got)
+	}
+	if got := gatherMetric(t, reg, "cost_saver_runs_total", map[string]string{"agent": "coder"}); got != 1 {
+		t.Errorf("cost_saver_runs_total = %v, want 1 for tool session", got)
+	}
+}
 
 func TestPrometheusRecorder_HumanSavings(t *testing.T) {
 	bus, err := activity.NewBus(activity.Config{})

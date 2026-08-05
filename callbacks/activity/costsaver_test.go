@@ -249,14 +249,60 @@ func TestComplexityAnalyzer_InvalidValues(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid")
 }
 
+func TestComplexityAnalyzer_TrivialZerosPassValidation(t *testing.T) {
+	summary := &SessionSummary{
+		Steps:       1,
+		ToolsCalled: []string{},
+		TotalTokens: 20,
+		TextOutput:  "Hello!",
+	}
+	mockResponse := `{"complexity_ratio": 0, "human_time_saved_seconds": 0, "money_saved_usd": 0}`
+	analyzer := NewComplexityAnalyzer(ComplexityAnalyzerConfig{
+		Model:           &mockModel{response: &schema.Message{Content: mockResponse}},
+		HumanHourlyRate: 50.0,
+		BaseTaskTime:    5 * time.Minute,
+		Timeout:         30 * time.Second,
+	})
+
+	analysis, err := analyzer.Analyze(context.Background(), summary)
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, analysis.ComplexityRatio)
+	assert.Equal(t, 0.0, analysis.HumanTimeSavedSeconds)
+	assert.Equal(t, 0.0, analysis.MoneySavedUSD)
+}
+
 func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 	analyzer := NewFallbackComplexityAnalyzer(50.0, 5*time.Minute)
 
 	tests := []struct {
-		name     string
-		summary  *SessionSummary
-		expected float64
+		name          string
+		summary       *SessionSummary
+		expectedRatio float64
+		expectSaved   bool // true => HumanTimeSavedSeconds and MoneySavedUSD must be > 0
 	}{
+		{
+			name: "trivial hello-like session (no tools, single step, low tokens)",
+			summary: &SessionSummary{
+				SessionID:   "test-session",
+				Steps:       1,
+				ToolsCalled: []string{},
+				TotalTokens: 50,
+				TextOutput:  "Hello! How can I help?",
+			},
+			expectedRatio: 0,
+			expectSaved:   false,
+		},
+		{
+			name: "single-step with one tool, no tokens (real one-shot automation)",
+			summary: &SessionSummary{
+				SessionID:   "test-session",
+				Steps:       1,
+				ToolsCalled: []string{"opensearch-health"},
+				TotalTokens: 0,
+			},
+			expectedRatio: 0.2, // 0 + 0.2 + 0
+			expectSaved:   true,
+		},
 		{
 			name: "simple session",
 			summary: &SessionSummary{
@@ -265,7 +311,8 @@ func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 				ToolsCalled: []string{"tool1"},
 				Steps:       1,
 			},
-			expected: 0.4,
+			expectedRatio: 0.3, // 0.1 + 0.2 + 0 (was 0.4)
+			expectSaved:   true,
 		},
 		{
 			name: "complex session",
@@ -275,7 +322,8 @@ func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 				ToolsCalled: []string{"tool1", "tool2", "tool3"},
 				Steps:       5,
 			},
-			expected: 1.0,
+			expectedRatio: 1.0, // 0.5 + 0.6 + 0.4 -> 1.5 -> 1.0
+			expectSaved:   true,
 		},
 		{
 			name: "session with failures",
@@ -286,7 +334,28 @@ func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 				Steps:       3,
 				HadFailures: true,
 			},
-			expected: 0.8,
+			expectedRatio: 0.8, // (0.5+0.4+0.2 -> 1.1 -> 1.0) * 0.8
+			expectSaved:   true,
+		},
+		{
+			name: "failures-only no tools (trivial, no automation)",
+			summary: &SessionSummary{
+				SessionID:   "test-session",
+				Steps:       2,
+				ToolsCalled: []string{},
+				HadFailures: true,
+			},
+			expectedRatio: 0,
+			expectSaved:   false,
+		},
+		{
+			name: "empty summary (no events)",
+			summary: &SessionSummary{
+				SessionID:   "test-session",
+				ToolsCalled: []string{},
+			},
+			expectedRatio: 0,
+			expectSaved:   false,
 		},
 	}
 
@@ -294,9 +363,16 @@ func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			analysis, err := analyzer.Analyze(context.Background(), tt.summary)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, analysis.ComplexityRatio)
-			assert.True(t, analysis.HumanTimeSavedSeconds >= 0)
-			assert.True(t, analysis.MoneySavedUSD >= 0)
+			assert.InDelta(t, tt.expectedRatio, analysis.ComplexityRatio, 1e-9)
+			if tt.expectSaved {
+				assert.True(t, analysis.HumanTimeSavedSeconds > 0,
+					"expected HumanTimeSavedSeconds > 0 for %s", tt.name)
+				assert.True(t, analysis.MoneySavedUSD > 0,
+					"expected MoneySavedUSD > 0 for %s", tt.name)
+			} else {
+				assert.Equal(t, 0.0, analysis.HumanTimeSavedSeconds)
+				assert.Equal(t, 0.0, analysis.MoneySavedUSD)
+			}
 		})
 	}
 }

@@ -18,6 +18,24 @@ import (
 
 const maxTextLength = 2000
 
+const (
+	// complexityTokenDivisor is the token count at which the token factor
+	// saturates to 1.0.
+	complexityTokenDivisor = 10000.0
+	// complexityToolWeight is the per-tool contribution to the tool factor.
+	complexityToolWeight = 0.2
+	// complexityStepWeight is the per-step contribution (beyond the first
+	// complexityFreeSteps) to the step factor.
+	complexityStepWeight = 0.1
+	// complexityFreeSteps is the number of initial steps that contribute
+	// nothing, so a single LLM turn — present in every session, including
+	// trivial ones like "hello" — does not by itself imply savings.
+	complexityFreeSteps = 1
+	// complexityFailurePenalty scales complexityRatio down when the session
+	// had failures (retries reduce net human-time savings).
+	complexityFailurePenalty = 0.8
+)
+
 // complexityAnalysisPrompt is the Markdown template for analyzing AI agent session
 // complexity and estimating human time saved and money saved in USD.
 //
@@ -258,14 +276,41 @@ func NewFallbackComplexityAnalyzer(humanHourlyRate float64, baseTaskTime time.Du
 }
 
 // Analyze analyzes the session summary using a simple formula.
+//
+// A session that called no tools did not replace any human tool-use work, so it
+// is treated as trivial: complexityRatio, human-time-saved, and money-saved
+// are all zero. This is the zero floor that prevents greetings, chitchat, and
+// single-turn factual answers from producing spurious savings.
+//
+// For sessions that did call tools, the complexity ratio is the sum of:
+//   - tokensFactor: min(1, TotalTokens / complexityTokenDivisor)
+//   - toolFactor:   min(1, len(ToolsCalled) * complexityToolWeight)
+//   - stepFactor:   min(1, max(0, Steps - complexityFreeSteps) * complexityStepWeight)
+//
+// The first complexityFreeSteps steps are free because every session has at
+// least one LLM turn that exists regardless of whether real work was done.
+// HadFailures scales the result down by complexityFailurePenalty.
 func (a *FallbackComplexityAnalyzer) Analyze(_ context.Context, summary *SessionSummary) (*ComplexityAnalysis, error) {
-	tokensFactor := math.Min(1.0, float64(summary.TotalTokens)/10000.0)
-	toolFactor := math.Min(1.0, float64(len(summary.ToolsCalled))*0.2)
-	stepFactor := math.Min(1.0, float64(summary.Steps)*0.1)
+	// Trivial-task floor: no tools means no automation, no human time saved.
+	if len(summary.ToolsCalled) == 0 {
+		return &ComplexityAnalysis{
+			ComplexityRatio:       0,
+			HumanTimeSavedSeconds: 0,
+			MoneySavedUSD:         0,
+		}, nil
+	}
+
+	tokensFactor := math.Min(1.0, float64(summary.TotalTokens)/complexityTokenDivisor)
+	toolFactor := math.Min(1.0, float64(len(summary.ToolsCalled))*complexityToolWeight)
+	extraSteps := summary.Steps - complexityFreeSteps
+	if extraSteps < 0 {
+		extraSteps = 0
+	}
+	stepFactor := math.Min(1.0, float64(extraSteps)*complexityStepWeight)
 	complexityRatio := math.Min(1.0, tokensFactor+toolFactor+stepFactor)
 
 	if summary.HadFailures {
-		complexityRatio *= 0.8
+		complexityRatio *= complexityFailurePenalty
 	}
 
 	humanTimeSaved := time.Duration(complexityRatio * float64(a.baseTaskTime))
