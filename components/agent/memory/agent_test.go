@@ -249,6 +249,154 @@ func TestMemoryAgent_Run(t *testing.T) {
 	assert.True(t, event.Action.Exit)
 }
 
+// TestConcatAssistantContent_MultiTurnToolCalls reproduces the error
+// "cannot concat ToolCalls with different tool id" reported when an agent
+// run produces multiple assistant turns that each carry a tool call at the
+// same Index but with different IDs. schema.ConcatMessages (which we used
+// previously) groups tool calls by Index and rejects differing IDs, so it
+// cannot merge distinct assistant turns. concatAssistantContent only joins
+// text and is the correct helper here.
+func TestConcatAssistantContent_MultiTurnToolCalls(t *testing.T) {
+	idx0 := 0
+	turn1 := schema.AssistantMessage("thinking about step 1", []schema.ToolCall{
+		{Index: &idx0, ID: "toolu_01FRMyxYeZ2QwVcb4i7y48z3", Type: "function",
+			Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"a"}`}},
+	})
+	turn2 := schema.AssistantMessage("now step 2", []schema.ToolCall{
+		{Index: &idx0, ID: "toolu_01GjXXNi4egB6ibEmzGBWEdL", Type: "function",
+			Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"b"}`}},
+	})
+	turn3 := schema.AssistantMessage("final answer", nil)
+
+	msgs := []*schema.Message{turn1, turn2, turn3}
+
+	// Sanity check: the previous approach cannot merge these messages.
+	_, err := schema.ConcatMessages(msgs)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot concat ToolCalls with different tool id")
+
+	// The new helper joins the textual content of each turn without
+	// attempting to fuse tool calls.
+	got := concatAssistantContent(msgs)
+	assert.Equal(t, "thinking about step 1now step 2final answer", got)
+}
+
+func TestConcatAssistantContent_SkipsEmptyAndNil(t *testing.T) {
+	msgs := []*schema.Message{
+		nil,
+		schema.AssistantMessage("", nil),
+		schema.AssistantMessage("hello", nil),
+		schema.AssistantMessage("", nil),
+		schema.AssistantMessage("world", nil),
+	}
+	assert.Equal(t, "helloworld", concatAssistantContent(msgs))
+}
+
+func TestConcatAssistantContent_Empty(t *testing.T) {
+	assert.Equal(t, "", concatAssistantContent(nil))
+	assert.Equal(t, "", concatAssistantContent([]*schema.Message{}))
+}
+
+// TestMonitorRun_MultiTurnToolCalls verifies that monitorRun correctly
+// forwards events from a multi-turn tool-calling agent run without the
+// "cannot concat ToolCalls with different tool id" error that occurred
+// when schema.ConcatMessages was (mis)used to merge distinct assistant
+// turns. Each turn carries a tool call at index 0 with a different ID,
+// and all events must reach the output iterator in order.
+func TestMonitorRun_MultiTurnToolCalls(t *testing.T) {
+	ctx := context.Background()
+
+	idx0 := 0
+	toolCall1 := schema.ToolCall{Index: &idx0, ID: "call-aaa", Type: "function",
+		Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"a"}`}}
+	toolCall2 := schema.ToolCall{Index: &idx0, ID: "call-bbb", Type: "function",
+		Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"b"}`}}
+
+	turns := []*adk.AgentEvent{
+		// Turn 1: assistant emits a tool call.
+		adk.EventFromMessage(
+			schema.AssistantMessage("turn 1", []schema.ToolCall{toolCall1}),
+			nil, schema.Assistant, ""),
+		// Tool result (role=Tool) – forwarded but not collected for extraction.
+		adk.EventFromMessage(
+			schema.ToolMessage("result 1", "call-aaa"),
+			nil, schema.Tool, ""),
+		// Turn 2: assistant emits another tool call at same index, different ID.
+		adk.EventFromMessage(
+			schema.AssistantMessage("turn 2", []schema.ToolCall{toolCall2}),
+			nil, schema.Assistant, ""),
+		// Tool result.
+		adk.EventFromMessage(
+			schema.ToolMessage("result 2", "call-bbb"),
+			nil, schema.Tool, ""),
+		// Turn 3: final assistant answer (no tool calls).
+		adk.EventFromMessage(
+			schema.AssistantMessage("final answer", nil),
+			nil, schema.Assistant, ""),
+		// Exit.
+		{Action: adk.NewExitAction()},
+	}
+
+	inner := &sequenceAgent{events: turns}
+
+	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: inner})
+	require.NoError(t, err)
+
+	iter := agent.Run(ctx, &adk.AgentInput{
+		Messages: []*schema.Message{schema.UserMessage("hello")},
+	})
+
+	var received []*adk.AgentEvent
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		received = append(received, ev)
+	}
+
+	// All events forwarded, none dropped.
+	require.Len(t, received, len(turns))
+
+	for i, ev := range received {
+		require.NotNil(t, ev, "event[%d] is nil", i)
+		assert.Nilf(t, ev.Err, "event[%d] has error: %v", i, ev.Err)
+	}
+
+	// Confirm assistant messages arrived with their original content intact.
+	var assistantTexts []string
+	for _, ev := range received {
+		mo := ev.Output
+		if mo == nil || mo.MessageOutput == nil || mo.MessageOutput.Role != schema.Assistant {
+			continue
+		}
+		if mo.MessageOutput.Message != nil {
+			assistantTexts = append(assistantTexts, mo.MessageOutput.Message.Content)
+		}
+	}
+	assert.Equal(t, []string{"turn 1", "turn 2", "final answer"}, assistantTexts)
+
+	assert.True(t, received[len(received)-1].Action.Exit)
+}
+
+// sequenceAgent replays a pre-defined list of events in order.
+type sequenceAgent struct {
+	events []*adk.AgentEvent
+}
+
+func (s *sequenceAgent) Name(_ context.Context) string        { return "seq" }
+func (s *sequenceAgent) Description(_ context.Context) string { return "seq" }
+func (s *sequenceAgent) Run(ctx context.Context, _ *adk.AgentInput, _ ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+	go func() {
+		defer gen.Close()
+		for _, e := range s.events {
+			gen.Send(e)
+		}
+	}()
+	return iter
+}
+
 func TestMemoryAgent_EnrichInput_NoStore(t *testing.T) {
 	ctx := context.Background()
 	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})

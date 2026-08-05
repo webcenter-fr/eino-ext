@@ -279,15 +279,37 @@ func (a *MemoryAgent) monitorRun(
 		return
 	}
 
-	concatenated, err := schema.ConcatMessages(assistantMsgs)
-	if err != nil {
-		logrus.WithError(err).Warn("failed to concatenate assistant messages for extraction")
-		return
-	}
+	// Join the textual content of each completed assistant message. We
+	// intentionally do NOT use schema.ConcatMessages here: that function is
+	// meant to merge streaming chunks of a SINGLE message, and it flattens
+	// all ToolCalls into one slice grouped by Index. In a multi-turn agent
+	// run, distinct assistant turns each carry their own tool call at the
+	// same Index (0) but with different IDs, which makes ConcatMessages
+	// fail with "cannot concat ToolCalls with different tool id". The
+	// memory extractor only needs the concatenated assistant text, so we
+	// join Content fields directly. Per-turn streaming chunks were already
+	// merged inside collectStream.
+	assistantContent := concatAssistantContent(assistantMsgs)
 
-	if concatenated.Content != "" && a.autoExtract && a.extractor != nil {
-		a.autoLearnInternal(ctx, userQuery, concatenated.Content, userID, sessionID)
+	if assistantContent != "" && a.autoExtract && a.extractor != nil {
+		a.autoLearnInternal(ctx, userQuery, assistantContent, userID, sessionID)
 	}
+}
+
+// concatAssistantContent joins the Content fields of the given assistant
+// messages in order. Nil/empty-content messages are skipped (they contribute
+// nothing). Unlike schema.ConcatMessages, this does not attempt to fuse
+// ToolCalls or other per-message metadata; it is a plain text concatenation
+// that is safe across distinct assistant turns from a multi-step agent run.
+func concatAssistantContent(msgs []*schema.Message) string {
+	var sb strings.Builder
+	for _, m := range msgs {
+		if m == nil || m.Content == "" {
+			continue
+		}
+		sb.WriteString(m.Content)
+	}
+	return sb.String()
 }
 
 func (a *MemoryAgent) collectStream(stream *schema.StreamReader[*schema.Message]) (*schema.Message, error) {
