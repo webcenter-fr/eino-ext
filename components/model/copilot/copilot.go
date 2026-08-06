@@ -152,7 +152,8 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 	} else {
 		kind := DetectTokenKind(cfg.GitHubToken)
 
-		if kind == TokenKindCopilotOAuth {
+		switch kind {
+		case TokenKindCopilotOAuth:
 			// gho_ token passed as GitHubToken — treat as CopilotToken
 			// (direct-bearer, no exchange, no refresh).
 			logger.Infof("copilot: gho_ token passed as GitHubToken; treating as CopilotToken (direct-bearer, no exchange)")
@@ -162,7 +163,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 			if baseURL == "" {
 				baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 			}
-		} else if kind == TokenKindFineGrainedPAT {
+		case TokenKindFineGrainedPAT:
 			res, err := resolveDirectBearer(ctx, cfg.GitHubToken, cfg.EnterpriseURL, baseURL, cfg.Timeout, logger)
 			if err != nil {
 				return nil, errors.Wrap(err, "copilot: PAT validation failed")
@@ -172,7 +173,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 			// No refresh goroutine in direct-bearer mode (PAT is long-lived).
 			cancelRefresh = nil
 			logger.Infof("copilot: direct-bearer mode (fine-grained PAT, login=%s) resolved base URL %s (plan=%s)", res.login, baseURL, DetectPlan(baseURL))
-		} else {
+		default:
 			// Classic PAT (ghp_...) or unknown prefix → exchange path.
 			tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
 			if err != nil {
@@ -194,7 +195,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 				lockedToken.set(newToken)
 			})
 		}
-	}
+		}
 
 	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)
 
