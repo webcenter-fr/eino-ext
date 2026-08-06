@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 )
 
+// DefaultCommandBlocklist contains regex patterns for commands blocked by default.
 var DefaultCommandBlocklist = []string{
 	`\brm\b`,
 	`\brmdir\b`,
@@ -63,6 +64,7 @@ var DefaultCommandBlocklist = []string{
 	`\bopenssl\s+enc\b`,
 }
 
+// CompileBlocklist compiles a list of regex patterns for command blocking.
 func CompileBlocklist(patterns []string) ([]*regexp.Regexp, error) {
 	result := make([]*regexp.Regexp, 0, len(patterns))
 	for _, p := range patterns {
@@ -75,6 +77,7 @@ func CompileBlocklist(patterns []string) ([]*regexp.Regexp, error) {
 	return result, nil
 }
 
+// CheckBlocklist checks if a command matches any pattern in the compiled blocklist.
 func CheckBlocklist(compiled []*regexp.Regexp, command []string) error {
 	cmdStr := strings.Join(command, " ")
 	for _, re := range compiled {

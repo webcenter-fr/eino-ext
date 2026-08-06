@@ -23,13 +23,21 @@ import (
 )
 
 var _ model.ToolCallingChatModel = (*CopilotModel)(nil)
+
+// CopilotModel also satisfies the deprecated ChatModel interface for
+// backward compatibility with older eino consumers.
+//
+//nolint:staticcheck
 var _ model.ChatModel = (*CopilotModel)(nil)
 
 const copilotGetType = "GitHubCopilot"
 
+// ReasoningEffort controls the reasoning effort level for supported Copilot models.
 type ReasoningEffort string
 
+//nolint:revive // ReasoningEffort* consts share this block comment
 const (
+	// ReasoningEffortNone disables reasoning.
 	ReasoningEffortNone    ReasoningEffort = "none"
 	ReasoningEffortMinimal ReasoningEffort = "minimal"
 	ReasoningEffortLow     ReasoningEffort = "low"
@@ -39,8 +47,9 @@ const (
 	ReasoningEffortMax     ReasoningEffort = "max"
 )
 
+// Config holds the configuration for a [CopilotModel].
 type Config struct {
-	GitHubToken          string          `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
+	GitHubToken          string          `validate:"omitempty" jsonschema:"description=Fine-grained GitHub PAT (github_pat_...) with Copilot Requests account permission (Read)"`
 	CopilotToken         string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
 	EnterpriseURL        string          `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
 	BaseURL              string          `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
@@ -61,6 +70,9 @@ type Config struct {
 	Store            *bool    `validate:"omitempty" jsonschema:"description=Store the conversation for later use"`
 }
 
+// CopilotModel implements the eino chat model interface for GitHub Copilot.
+//
+//nolint:revive // CopilotModel is the established public name.
 type CopilotModel struct {
 	lockedToken   *copilotLockedToken
 	baseURL       string
@@ -82,6 +94,7 @@ type CopilotModel struct {
 	toolChoice *schema.ToolChoice
 }
 
+// NewCopilotChatModel creates a new Copilot chat model from the given config.
 func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error) {
 	if cfg == nil {
 		return nil, errors.New("copilot: config must not be nil")
@@ -137,24 +150,52 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 			baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 		}
 	} else {
-		tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
-		if err != nil {
-			return nil, errors.Wrap(err, "copilot: initial token exchange failed")
-		}
-		lockedToken.set(tokenResp.Token)
+		kind := DetectTokenKind(cfg.GitHubToken)
 
-		if baseURL == "" {
-			if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
-				baseURL = tokenResp.Endpoints.API
-			} else {
+		switch kind {
+		case TokenKindCopilotOAuth:
+			// gho_ token passed as GitHubToken — treat as CopilotToken
+			// (direct-bearer, no exchange, no refresh).
+			logger.Infof("copilot: gho_ token passed as GitHubToken; treating as CopilotToken (direct-bearer, no exchange)")
+			// No refresh goroutine (token is long-lived OAuth token).
+			cancelRefresh = nil
+			lockedToken.set(cfg.GitHubToken)
+			if baseURL == "" {
 				baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 			}
-		}
+		case TokenKindFineGrainedPAT:
+			res, err := resolveDirectBearer(ctx, cfg.GitHubToken, cfg.EnterpriseURL, baseURL, cfg.Timeout, logger)
+			if err != nil {
+				return nil, errors.Wrap(err, "copilot: PAT validation failed")
+			}
+			lockedToken.set(res.token)
+			baseURL = res.baseURL
+			// No refresh goroutine in direct-bearer mode (PAT is long-lived).
+			cancelRefresh = nil
+			logger.Infof("copilot: direct-bearer mode (fine-grained PAT, login=%s) resolved base URL %s (plan=%s)", res.login, baseURL, DetectPlan(baseURL))
+		default:
+			// Classic PAT (ghp_...) or unknown prefix → exchange path.
+			tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
+			if err != nil {
+				return nil, errors.Wrap(err, "copilot: initial token exchange failed")
+			}
+			lockedToken.set(tokenResp.Token)
 
-		cancelRefresh = startTokenRefresh(ctx, cfg, tokenResp, func(newToken string) {
-			lockedToken.set(newToken)
-		})
-	}
+			if baseURL == "" {
+				if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
+					baseURL = tokenResp.Endpoints.API
+				} else {
+					baseURL = ResolveBaseURL(cfg.EnterpriseURL)
+				}
+			}
+
+			logger.Infof("copilot: resolved base URL %s (plan=%s)", baseURL, DetectPlan(baseURL))
+
+			cancelRefresh = startTokenRefresh(ctx, cfg, tokenResp, func(newToken string) {
+				lockedToken.set(newToken)
+			})
+		}
+		}
 
 	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)
 
@@ -189,6 +230,7 @@ func newHTTPClient(timeout time.Duration, skipVerify bool) *http.Client {
 	return c
 }
 
+// GetType returns the component type identifier.
 func (m *CopilotModel) GetType() string { return copilotGetType }
 
 // IsCallbacksEnabled implements components.Checker. CopilotModel does not
@@ -201,6 +243,7 @@ func (m *CopilotModel) GetType() string { return copilotGetType }
 // Copilot call.
 func (m *CopilotModel) IsCallbacksEnabled() bool { return false }
 
+// WithTools returns a copy of the model with the given tools configured.
 func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	n := *m // safe: mutex fields are pointers (shared across copies), rest are values or safe-to-copy pointers
 	n.tools = tools
@@ -211,6 +254,7 @@ func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCha
 	return &n, nil
 }
 
+// BindTools configures the tools available for the next call.
 func (m *CopilotModel) BindTools(tools []*schema.ToolInfo) error {
 	m.tools = tools
 	if len(tools) > 0 {

@@ -19,11 +19,12 @@ import (
 var shellDescription string
 
 var (
-	_ tool.InvokableTool  = (*ShellTool)(nil)
-	_ tool.StreamableTool = (*ShellTool)(nil)
+	_ tool.InvokableTool  = (*Tool)(nil)
+	_ tool.StreamableTool = (*Tool)(nil)
 )
 
-func NewShellTool(ctx context.Context, cfg *Config) (*ShellTool, error) {
+// NewShellTool creates a new Tool from the given configuration.
+func NewShellTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
@@ -53,7 +54,7 @@ func NewShellTool(ctx context.Context, cfg *Config) (*ShellTool, error) {
 		return nil, errors.Wrap(err, "failed to create Dagger client")
 	}
 
-	st := &ShellTool{
+	st := &Tool{
 		client:    client,
 		cfg:       cfg,
 		blocklist: bl,
@@ -63,14 +64,14 @@ func NewShellTool(ctx context.Context, cfg *Config) (*ShellTool, error) {
 
 	invokable, err := utils.InferTool("shell_exec", shellDescription, st.Invoke)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, errors.Wrap(err, "failed to create invokable tool")
 	}
 	st.invokable = invokable
 
 	streamable, err := utils.InferStreamTool("shell_exec", shellDescription, st.InvokeAsStream)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, errors.Wrap(err, "failed to create streamable tool")
 	}
 	st.streamable = streamable
@@ -78,7 +79,8 @@ func NewShellTool(ctx context.Context, cfg *Config) (*ShellTool, error) {
 	return st, nil
 }
 
-func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*ShellTool, error) {
+// NewShellToolsForProfiles creates Tools for each configured profile.
+func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*Tool, error) {
 	if cfg == nil {
 		return nil, errors.New("config is nil")
 	}
@@ -89,7 +91,7 @@ func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*She
 		return nil, errors.Wrap(err, "failed to resolve profiles")
 	}
 
-	tools := make(map[string]*ShellTool)
+	tools := make(map[string]*Tool)
 	for _, p := range profiles {
 		profileCfg := *cfg
 		profileCfg.BaseImage = p.BaseImage
@@ -103,10 +105,12 @@ func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*She
 	return tools, nil
 }
 
+// WriteToolNames returns the tool names of all shell write tools.
 func WriteToolNames() []string {
 	return []string{"shell_exec"}
 }
 
+// NewAllToolsWithSafety creates all shell tools with a pre-configured safety middleware.
 func NewAllToolsWithSafety(ctx context.Context, cfg *Config, safetyCfg *safetymw.Config) ([]tool.InvokableTool, *safetymw.Middleware, error) {
 	shellTool, err := NewShellTool(ctx, cfg)
 	if err != nil {

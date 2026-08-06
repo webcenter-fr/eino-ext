@@ -36,6 +36,7 @@ var summarizeSystemPrompt string
 //go:embed prompts/summarize_user.md
 var summarizeUserTemplate string
 
+// ExtractionResult holds the result of a memory extraction operation.
 type ExtractionResult struct {
 	Content    string  `json:"content"`
 	Category   string  `json:"category"`
@@ -43,15 +44,19 @@ type ExtractionResult struct {
 	Confidence float64 `json:"confidence"`
 }
 
-type MemoryExtractor struct {
+// Extractor extracts structured memories from conversation turns.
+type Extractor struct {
 	model model.BaseChatModel
 }
 
-func NewMemoryExtractor(m model.BaseChatModel) *MemoryExtractor {
-	return &MemoryExtractor{model: m}
+// NewExtractor creates a new Extractor backed by the given chat model.
+func NewExtractor(m model.BaseChatModel) *Extractor {
+	return &Extractor{model: m}
 }
 
-func (e *MemoryExtractor) Extract(ctx context.Context, userContent, assistantContent string) ([]ExtractionResult, error) {
+// Extract runs the LLM extraction pipeline on the given user and assistant
+// content and returns structured memory results with confidence scores.
+func (e *Extractor) Extract(ctx context.Context, userContent, assistantContent string) ([]ExtractionResult, error) {
 	if e.model == nil {
 		return nil, nil
 	}
@@ -72,7 +77,9 @@ func (e *MemoryExtractor) Extract(ctx context.Context, userContent, assistantCon
 	return parseExtractionResponse(result.Content)
 }
 
-func (e *MemoryExtractor) Summarize(ctx context.Context, messages []*schema.Message, existingSummary string) (string, error) {
+// Summarize generates a session summary from the given messages, folding in an
+// existing summary if provided.
+func (e *Extractor) Summarize(ctx context.Context, messages []*schema.Message, existingSummary string) (string, error) {
 	if e.model == nil {
 		return "", nil
 	}

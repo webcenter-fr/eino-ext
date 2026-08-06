@@ -170,7 +170,7 @@ func fetch(ctx context.Context, client *http.Client, baseURL string) (map[string
 	if err != nil {
 		return nil, errors.Wrap(err, "modelsdev: fetching catalog")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("modelsdev: unexpected status %d", resp.StatusCode)
 	}

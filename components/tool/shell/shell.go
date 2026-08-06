@@ -19,7 +19,7 @@ import (
 
 const defaultExecTimeout = 5 * time.Minute
 
-func (t *ShellTool) resolveProfile(ctx context.Context, profileName string) (string, string, error) {
+func (t *Tool) resolveProfile(ctx context.Context, profileName string) (string, string, error) {
 	if profileName == "" {
 		detected, err := t.resolver.Resolve(ctx, t.cfg.Workdir)
 		if err != nil {
@@ -40,7 +40,7 @@ func (t *ShellTool) resolveProfile(ctx context.Context, profileName string) (str
 	return profileName, baseImage, nil
 }
 
-func (t *ShellTool) resolveImage(profileName string) (string, error) {
+func (t *Tool) resolveImage(profileName string) (string, error) {
 	if t.cfg.Profiles != nil {
 		if p, ok := t.cfg.Profiles[profileName]; ok {
 			return p.BaseImage, nil
@@ -65,7 +65,7 @@ func (t *ShellTool) resolveImage(profileName string) (string, error) {
 	return "alpine:3.20", nil
 }
 
-func (t *ShellTool) getTimeout(params *ShellParams) time.Duration {
+func (t *Tool) getTimeout(params *Params) time.Duration {
 	if params.Timeout != "" {
 		if d, err := time.ParseDuration(params.Timeout); err == nil {
 			return d
@@ -77,7 +77,7 @@ func (t *ShellTool) getTimeout(params *ShellParams) time.Duration {
 	return defaultExecTimeout
 }
 
-func (t *ShellTool) dryRunPreview(params *ShellParams) string {
+func (t *Tool) dryRunPreview(params *Params) string {
 	profile := params.Profile
 	if profile == "" {
 		profile = "(auto-detect)"
@@ -88,7 +88,8 @@ func (t *ShellTool) dryRunPreview(params *ShellParams) string {
 	)
 }
 
-func (t *ShellTool) Invoke(ctx context.Context, params *ShellParams) (string, error) {
+// Invoke runs the shell command and returns its output.
+func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 	if err := validate.Struct(params); err != nil {
 		return "", err
 	}
@@ -150,7 +151,8 @@ func (t *ShellTool) Invoke(ctx context.Context, params *ShellParams) (string, er
 	return strings.Join(lines, "\n"), nil
 }
 
-func (t *ShellTool) InvokeAsStream(ctx context.Context, params *ShellParams) (*schema.StreamReader[string], error) {
+// InvokeAsStream runs the shell command and returns a stream reader.
+func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.StreamReader[string], error) {
 	if err := validate.Struct(params); err != nil {
 		return nil, err
 	}
@@ -226,14 +228,17 @@ func (t *ShellTool) InvokeAsStream(ctx context.Context, params *ShellParams) (*s
 	return sr, nil
 }
 
-func (t *ShellTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+// Info returns metadata about the shell tool.
+func (t *Tool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	return t.invokable.Info(ctx)
 }
 
-func (t *ShellTool) InvokableRun(ctx context.Context, args string, opts ...tool.Option) (string, error) {
+// InvokableRun implements the eino InvokableTool interface.
+func (t *Tool) InvokableRun(ctx context.Context, args string, opts ...tool.Option) (string, error) {
 	return t.invokable.InvokableRun(ctx, args, opts...)
 }
 
-func (t *ShellTool) StreamableRun(ctx context.Context, args string, opts ...tool.Option) (*schema.StreamReader[string], error) {
+// StreamableRun implements the eino StreamableTool interface.
+func (t *Tool) StreamableRun(ctx context.Context, args string, opts ...tool.Option) (*schema.StreamReader[string], error) {
 	return t.streamable.StreamableRun(ctx, args, opts...)
 }

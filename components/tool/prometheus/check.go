@@ -12,6 +12,7 @@ import (
 
 const promCheckTimeout = 10 * time.Second
 
+// Check performs a health check against configured Prometheus instances.
 func Check(ctx context.Context, configs Configs) checkup.Results {
 	if len(configs) == 0 {
 		return checkup.Results{{

@@ -10,32 +10,32 @@ import (
 func TestShellParamsValidation(t *testing.T) {
 	tests := []struct {
 		name    string
-		params  ShellParams
+		params  Params
 		wantErr bool
 	}{
 		{
 			name:    "empty command fails",
-			params:  ShellParams{Command: []string{}},
+			params:  Params{Command: []string{}},
 			wantErr: true,
 		},
 		{
 			name:    "nil command fails",
-			params:  ShellParams{Command: nil},
+			params:  Params{Command: nil},
 			wantErr: true,
 		},
 		{
 			name:    "valid simple command",
-			params:  ShellParams{Command: []string{"echo", "hello"}},
+			params:  Params{Command: []string{"echo", "hello"}},
 			wantErr: false,
 		},
 		{
 			name:    "valid with profile",
-			params:  ShellParams{Command: []string{"go", "build"}, Profile: "golang"},
+			params:  Params{Command: []string{"go", "build"}, Profile: "golang"},
 			wantErr: false,
 		},
 		{
 			name:    "dry run without confirmed",
-			params:  ShellParams{Command: []string{"make"}, DryRun: true},
+			params:  Params{Command: []string{"make"}, DryRun: true},
 			wantErr: false,
 		},
 	}
@@ -52,8 +52,8 @@ func TestShellParamsValidation(t *testing.T) {
 }
 
 func TestDryRunPreview(t *testing.T) {
-	tool := &ShellTool{}
-	preview := tool.dryRunPreview(&ShellParams{
+	tool := &Tool{}
+	preview := tool.dryRunPreview(&Params{
 		Command: []string{"go", "test", "./..."},
 		Profile: "golang",
 	})
@@ -63,8 +63,8 @@ func TestDryRunPreview(t *testing.T) {
 }
 
 func TestDryRunPreview_AutoDetect(t *testing.T) {
-	tool := &ShellTool{}
-	preview := tool.dryRunPreview(&ShellParams{
+	tool := &Tool{}
+	preview := tool.dryRunPreview(&Params{
 		Command: []string{"ls", "-la"},
 	})
 	assert.Contains(t, preview, `"dryRun": true`)

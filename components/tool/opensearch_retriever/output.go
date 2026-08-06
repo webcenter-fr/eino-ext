@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// HitFormatter formats raw OpenSearch documents into user-facing text.
 type HitFormatter interface {
 	FormatHit(doc *schema.Document) string
 }
@@ -15,6 +16,8 @@ type defaultHitFormatter struct {
 	headerFields []HeaderField
 }
 
+// NewDefaultHitFormatter creates a HitFormatter that renders metadata header
+// fields before the document content.
 func NewDefaultHitFormatter(fields []HeaderField) HitFormatter {
 	return &defaultHitFormatter{headerFields: fields}
 }

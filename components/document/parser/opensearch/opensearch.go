@@ -1,3 +1,5 @@
+// Package opensearch provides a document parser that converts OpenSearch search
+// responses into eino schema.Document values.
 package opensearch
 
 import (
@@ -14,15 +16,20 @@ import (
 )
 
 const (
+	// MetaKeyId is the metadata key for the document identifier.
 	MetaKeyId    = "id"
+	// MetaKeyIndex is the metadata key for the source index name.
 	MetaKeyIndex = "index"
+	// MetaScore is the metadata key for the relevance score.
 	MetaScore    = "score"
+	// MetaVersion is the metadata key for the document version.
 	MetaVersion  = "version"
 
 	// DefaultSourceIDField / DefaultSourceHashField are the metadata keys
 	// under which the source record id and the content hash are written when
 	// Config.SourceIDField / Config.SourceHashField are left empty.
 	DefaultSourceIDField   = "source_id"
+	// DefaultSourceHashField is the default metadata key for the content hash.
 	DefaultSourceHashField = "source_hash"
 )
 

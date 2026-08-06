@@ -1,3 +1,4 @@
+// Package github provides a document loader for GitHub source code repositories.
 package github
 
 import (

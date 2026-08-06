@@ -26,6 +26,7 @@ It returns a JSON array of objects, where each object represents a single time s
 - value: an array of [timestamp, "value"] representing the sample.
 `
 
+// MetricQueryParams defines the parameters for a Prometheus instant query.
 type MetricQueryParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
 	Query    string `json:"query" validate:"required,max=4096" jsonschema:"(required) The PromQL query to execute."`
@@ -34,16 +35,19 @@ type MetricQueryParams struct {
 	Limit    int    `json:"limit,omitempty" validate:"omitempty,min=1,max=50000" jsonschema:"(optional) Maximum number of result series to return. Default is no limit."`
 }
 
+// MetricQueryOutput is the structured output for a metric query.
 type MetricQueryOutput struct {
 	Metric model.Metric `json:"metric"`
 	Value  any          `json:"value"`
 }
 
+// MetricQueryTool is an eino tool for Prometheus instant queries.
 type MetricQueryTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke runs the instant query and returns results as JSON.
 func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -111,6 +115,7 @@ func (t *MetricQueryTool) Invoke(ctx context.Context, params *MetricQueryParams)
 	return marshalOutputs(outputs)
 }
 
+// NewMetricQueryTool creates a new MetricQueryTool.
 func NewMetricQueryTool(ctx context.Context, configs Configs) (*MetricQueryTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

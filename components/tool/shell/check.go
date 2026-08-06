@@ -10,6 +10,7 @@ import (
 
 const checkTimeout = 15 * time.Second
 
+// Check performs a health check against shell configurations.
 func Check(ctx context.Context, cfg *Config) checkup.Results {
 	if cfg == nil {
 		return checkup.Results{{
@@ -43,7 +44,7 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 			Error:     err.Error(),
 		}}
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	version, _ := client.Version(checkCtx)
 

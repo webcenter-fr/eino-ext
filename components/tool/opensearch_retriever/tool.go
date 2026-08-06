@@ -15,6 +15,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
+// Config holds the configuration for an OpenSearch retriever tool.
 type Config struct {
 	URLs          []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
 	Username      string   `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
@@ -38,16 +39,19 @@ type Config struct {
 	HeaderFields []HeaderField `validate:"omitempty" jsonschema:"description=Metadata fields rendered as header lines before content"`
 }
 
+// HeaderField defines a metadata field to render as a header in search results.
 type HeaderField struct {
 	MetaKey string `validate:"required" jsonschema:"description=Key in doc.MetaData"`
 	Label   string `validate:"omitempty" jsonschema:"description=Display label, defaults to MetaKey"`
 }
 
+// Query is the input parameter for the OpenSearch retriever tool.
 type Query struct {
 	Query string `json:"query" validate:"required" jsonschema:"(required) natural-language search query"`
 	Limit int    `json:"limit,omitempty" jsonschema:"max results, defaults to configured DefaultTopK"`
 }
 
+// Tool wraps the OpenSearch retriever as an invokable tool.
 type Tool struct {
 	retriever   retriever.Retriever
 	formatter   HitFormatter
@@ -57,6 +61,7 @@ type Tool struct {
 
 var _ tool.InvokableTool = (*Tool)(nil)
 
+// NewTool creates an OpenSearch retriever tool from the given config.
 func NewTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	if cfg == nil {
 		cfg = &Config{}
@@ -111,6 +116,8 @@ func NewTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	return t, nil
 }
 
+// Invoke executes a natural-language search against the configured OpenSearch
+// index and returns formatted results.
 func (t *Tool) Invoke(ctx context.Context, params *Query) (string, error) {
 	if err := validate.Struct(params); err != nil {
 		return "", err

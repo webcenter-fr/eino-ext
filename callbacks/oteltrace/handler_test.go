@@ -14,6 +14,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 )
@@ -24,7 +25,7 @@ func setupTracer(t *testing.T) (*tracetest.InMemoryExporter, trace.TracerProvide
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSyncer(exp),
 	)
-	t.Cleanup(func() { tp.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 	return exp, tp
 }
 
@@ -322,7 +323,7 @@ func TestHandlerNestedSpans(t *testing.T) {
 
 func TestHandlerNeeded(t *testing.T) {
 	h, err := NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 		SpanKindClient: true,
 	})
 	if err != nil {
@@ -349,7 +350,7 @@ func TestHandlerNeeded(t *testing.T) {
 
 func TestHandlerConfigValidation(t *testing.T) {
 	_, err := NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 		MaxSpanIO:      0,
 		SpanKindClient: true,
 	})
@@ -358,7 +359,7 @@ func TestHandlerConfigValidation(t *testing.T) {
 	}
 
 	_, err = NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 		MaxSpanIO:      -1,
 		SpanKindClient: true,
 	})
@@ -369,7 +370,7 @@ func TestHandlerConfigValidation(t *testing.T) {
 
 func TestHandlerStreamInputNonTool(t *testing.T) {
 	h, err := NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 		SpanKindClient: true,
 	})
 	if err != nil {
@@ -389,7 +390,7 @@ func TestHandlerStreamInputNonTool(t *testing.T) {
 
 func TestHandlerStreamOutputNonChatModel(t *testing.T) {
 	h, err := NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 		SpanKindClient: true,
 	})
 	if err != nil {

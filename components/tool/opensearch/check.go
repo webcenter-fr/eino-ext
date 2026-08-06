@@ -1,3 +1,4 @@
+// Package opensearch provides eino tools for OpenSearch operations.
 package opensearch
 
 import (
@@ -12,6 +13,8 @@ import (
 
 const osCheckTimeout = 10 * time.Second
 
+// Check performs a health check for the OpenSearch tool backend,
+// verifying cluster connectivity and read access.
 func Check(ctx context.Context, cfg *osclient.Config) checkup.Results {
 	if cfg == nil || len(cfg.URLs) == 0 {
 		return checkup.Results{

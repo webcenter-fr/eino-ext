@@ -81,6 +81,7 @@ func acquireSession(ctx context.Context, baseURL, copilotToken string, modelHint
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: session request failed")
 	}
+	//nolint:errcheck // defer close in request path, error is irrelevant
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -123,14 +124,19 @@ func needsSessionToken(modelID string) bool {
 func (m *CopilotModel) startSessionRefresh(ctx context.Context, sresp *sessionResponse, modelHint string) context.CancelFunc {
 	ctx, cancel := context.WithCancel(ctx)
 
-	if sresp == nil || sresp.SessionToken == "" {
+	if sresp == nil || sresp.SessionToken == "" || sresp.ExpiresAt <= 0 {
+		if sresp != nil && sresp.ExpiresAt <= 0 {
+			if m.logger != nil {
+				m.logger.Warn("copilot: session token has no expiry (expires_at <= 0); background refresh will not be started")
+			}
+		}
 		cancel()
 		return cancel
 	}
 
 	go func() {
 		currentExpiresAt := sresp.ExpiresAt
-		currentToken := sresp.SessionToken
+		var currentToken string
 
 		for {
 			sleepSecs := currentExpiresAt - time.Now().Unix() - refreshBufSecs

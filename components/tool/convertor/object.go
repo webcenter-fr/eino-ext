@@ -22,13 +22,17 @@ It returns the converted data in the specified output format.
 `
 
 // ConvertorParams defines the parameters for the Convertor function.
+//
+//nolint:revive // ConvertorParams is the established public name.
 type ConvertorParams struct {
 	Input      string `json:"input" validate:"required" jsonschema:"(required) The input data to convert."`
 	InputType  string `json:"inputType" validate:"required,oneof=yaml json" jsonschema:"(required) The type of the input data. Must be: 'yaml', 'json'."`
 	OutputType string `json:"outputType" validate:"required,oneof=yaml json" jsonschema:"(required) The type of the output data. Must be: 'yaml', 'json'."`
 }
 
-// ConvertorTool is a tool that converts data from one format to another. It implements the InvokableTool interface.
+// ConvertorTool is a tool that converts data from one format to another.
+//
+//nolint:revive // ConvertorTool is the established public name.
 type ConvertorTool struct {
 	tool.InvokableTool
 }

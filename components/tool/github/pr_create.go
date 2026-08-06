@@ -19,6 +19,7 @@ It creates a new pull request in a GitHub repository.
 It returns the created pull request details.
 `
 
+// PRCreateParams defines the parameters for creating a GitHub PR.
 type PRCreateParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -32,11 +33,13 @@ type PRCreateParams struct {
 	Confirmed bool  `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the PR creation. Set this after the user has approved the dry-run result."`
 }
 
+// PRCreateTool is an eino tool for creating GitHub PRs.
 type PRCreateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates a GitHub PR and returns the result.
 func (t *PRCreateTool) Invoke(ctx context.Context, params *PRCreateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -70,6 +73,7 @@ func (t *PRCreateTool) Invoke(ctx context.Context, params *PRCreateParams) (resu
 		pr.GetNumber(), pr.GetTitle(), pr.GetHTMLURL(), pr.GetState(), pr.GetDraft()), nil
 }
 
+// NewPRCreateTool creates a new PRCreateTool.
 func NewPRCreateTool(ctx context.Context, configs Configs) (*PRCreateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

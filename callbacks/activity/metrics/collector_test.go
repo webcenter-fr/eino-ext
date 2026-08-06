@@ -40,7 +40,7 @@ func TestCollector_Watch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	t.Cleanup(func() { bus.Close() })
+	t.Cleanup(func() { _ = bus.Close() })
 
 	reg := prometheus.NewRegistry()
 	c, err := NewCollector(reg)
@@ -113,7 +113,7 @@ func TestCollector_Watch_SessionEndedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	t.Cleanup(func() { bus.Close() })
+	t.Cleanup(func() { _ = bus.Close() })
 
 	reg := prometheus.NewRegistry()
 	c, err := NewCollector(reg)

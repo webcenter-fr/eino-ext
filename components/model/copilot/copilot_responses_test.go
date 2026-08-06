@@ -26,7 +26,7 @@ func TestResponsesNonStreaming(t *testing.T) {
 		}
 
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		resp := responsesResponse{
 			ID:        "resp-1",
@@ -47,7 +47,7 @@ func TestResponsesNonStreaming(t *testing.T) {
 				TotalTokens:  15,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -87,7 +87,7 @@ func TestResponsesStoreOmitted(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		json.NewDecoder(r.Body).Decode(&rawBody)
+		_ = json.NewDecoder(r.Body).Decode(&rawBody)
 
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -103,7 +103,7 @@ func TestResponsesStoreOmitted(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -128,7 +128,7 @@ func TestResponsesWithFunctionCall(t *testing.T) {
 	tokenVal := "test-token"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -143,7 +143,7 @@ func TestResponsesWithFunctionCall(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -175,7 +175,7 @@ func TestResponsesWithReasoning(t *testing.T) {
 	tokenVal := "test-token"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -199,7 +199,7 @@ func TestResponsesWithReasoning(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -270,7 +270,7 @@ func TestResponsesStreamingSSE(t *testing.T) {
 			`data: {"type":"response.output_text.delta","delta":" world"}`,
 			`data: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
 		} {
-			fmt.Fprintf(w, "%s\n\n", line)
+			_, _ = fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))
@@ -358,7 +358,7 @@ func TestResponsesWithModelOverride(t *testing.T) {
 	var gotModel string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotModel = body.Model
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -371,7 +371,7 @@ func TestResponsesWithModelOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -402,7 +402,7 @@ func TestResponsesWithReasoningEffortOverride(t *testing.T) {
 	var gotEffort string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body.Reasoning != nil {
 			gotEffort = body.Reasoning.Effort
 		}
@@ -417,7 +417,7 @@ func TestResponsesWithReasoningEffortOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -449,7 +449,7 @@ func TestResponsesWithMaxTokensOverride(t *testing.T) {
 	var gotMaxTokens *int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotMaxTokens = body.MaxOutputTokens
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -462,7 +462,7 @@ func TestResponsesWithMaxTokensOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -493,7 +493,7 @@ func TestResponsesWithTemperatureOverride(t *testing.T) {
 	var gotTemp *float32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotTemp = body.Temperature
 		resp := responsesResponse{
 			ID:    "resp-1",
@@ -506,7 +506,7 @@ func TestResponsesWithTemperatureOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -535,12 +535,12 @@ func TestResponsesWithToolChoiceFormat(t *testing.T) {
 	tokenVal := "test-token"
 	var rawBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&rawBody)
+		_ = json.NewDecoder(r.Body).Decode(&rawBody)
 		resp := responsesResponse{
 			ID:    "resp-1",
 			Model: "gpt-5",
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -588,7 +588,7 @@ func TestResponsesWithDefaultReasoning(t *testing.T) {
 	var gotReasoningEffort string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotInclude = body.Include
 		if body.Reasoning != nil {
 			gotReasoningEffort = body.Reasoning.Effort
@@ -604,7 +604,7 @@ func TestResponsesWithDefaultReasoning(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -644,7 +644,7 @@ func TestResponsesStreamingWithModelOverride(t *testing.T) {
 	var gotModel string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body responsesRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		gotModel = body.Model
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -653,9 +653,9 @@ func TestResponsesStreamingWithModelOverride(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
 		flusher.Flush()
-		fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()

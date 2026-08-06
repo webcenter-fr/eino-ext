@@ -1,3 +1,4 @@
+// Package opensearch provides an OpenSearch-backed memory store.
 package opensearch
 
 import (
@@ -13,6 +14,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 )
 
+// Check performs a health check for the OpenSearch memory backend,
+// verifying connectivity, index operations, and read/write functionality.
 func Check(ctx context.Context, cfg Config) checkup.Results {
 	var results checkup.Results
 

@@ -22,22 +22,26 @@ It returns a JSON array of objects, where each object represents a cluster with 
 - project: the ArgoCD project the cluster belongs to.
 `
 
+// ClusterListParams defines the parameters for listing ArgoCD clusters.
 type ClusterListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each cluster JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// ClusterListOutput is the structured output for a cluster list.
 type ClusterListOutput struct {
 	Name    string `json:"name"`
 	Server  string `json:"server"`
 	Project string `json:"project"`
 }
 
+// ClusterListTool is an eino tool for listing ArgoCD clusters.
 type ClusterListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching clusters as JSON.
 func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -67,6 +71,7 @@ func (t *ClusterListTool) Invoke(ctx context.Context, params *ClusterListParams)
 	})
 }
 
+// NewClusterListTool creates a new ClusterListTool.
 func NewClusterListTool(ctx context.Context, configs Configs) (*ClusterListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

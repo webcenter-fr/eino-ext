@@ -30,7 +30,7 @@ func TestCheckDirNotWritable(t *testing.T) {
 	if err := os.Mkdir(roDir, 0o555); err != nil {
 		t.Fatalf("failed to create readonly dir: %v", err)
 	}
-	defer os.Chmod(roDir, 0o755)
+	defer func() { _ = os.Chmod(roDir, 0o755) }()
 
 	cfg := FileMemoryConfig{Dir: roDir + "/sub", MaxWindowSize: 10}
 	results := Check(context.Background(), cfg)

@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	// OpenAIIntent is the Copilot intent value for conversation-agent requests.
 	OpenAIIntent = "conversation-agent"
 )
 
@@ -25,6 +26,8 @@ const copilotOpenAIIntent = OpenAIIntent
 // CopilotOptions holds per-call implementation-specific options for the
 // Copilot chat model. Use model.WrapImplSpecificOptFn to pass these at
 // call time.
+//
+//nolint:revive // CopilotOptions is the established public name.
 type CopilotOptions struct {
 	// ReasoningEffort overrides Config.ReasoningEffort for this call.
 	// When empty, the Config default is used.
@@ -276,10 +279,13 @@ func buildUserContentParts(parts []schema.MessageInputPart) []copilotContentPart
 
 // buildUserContentPartsFromDeprecated converts deprecated MultiContent to
 // Copilot array-content format.
+//
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func buildUserContentPartsFromDeprecated(parts []schema.ChatMessagePart) []copilotContentPart {
 	return buildContentParts(parts)
 }
 
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func buildContentParts(parts interface{}) []copilotContentPart {
 	var result []copilotContentPart
 	switch p := parts.(type) {
@@ -309,6 +315,7 @@ func convertMessageInputPart(part schema.MessageInputPart) copilotContentPart {
 	}
 }
 
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func convertChatMessagePart(part schema.ChatMessagePart) copilotContentPart {
 	switch part.Type {
 	case schema.ChatMessagePartTypeText:
@@ -330,6 +337,7 @@ func buildImageURLPart(img *schema.MessageInputImage) *copilotImageURLPart {
 	return &copilotImageURLPart{URL: imageDataToURL(img.URL, img.Base64Data, img.MIMEType)}
 }
 
+//nolint:staticcheck // uses deprecated ChatMessageImageURL for backward compatibility
 func buildImageURLPartFromDeprecated(img *schema.ChatMessageImageURL) *copilotImageURLPart {
 	if img == nil {
 		return nil
@@ -638,7 +646,7 @@ func (m *CopilotModel) sendChatRequestOnce(ctx context.Context, payload []byte, 
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: request failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -676,8 +684,7 @@ func isModelNotAvailableError(err error) bool {
 	return t
 }
 
-// --- Generate ---
-
+// Generate sends chat completion messages and returns a single response message.
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	resolvedModel := m.resolveModel(opts...)
 	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {

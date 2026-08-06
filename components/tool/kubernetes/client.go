@@ -97,10 +97,6 @@ func BuildClientDynamics(ctx context.Context, configs Configs, s *runtime.Scheme
 // NewClientSet creates a new Kubernetes clientset using the provided configuration. It returns the clientset and any error encountered during the creation process.
 func NewClientSet(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c *kubernetes.Clientset, err error) {
 
-	if s == nil {
-		s = scheme.Scheme
-	}
-
 	// clientset
 	c, err = kubernetes.NewForConfig(config)
 	if err != nil {
@@ -112,10 +108,6 @@ func NewClientSet(ctx context.Context, config *rest.Config, s *runtime.Scheme) (
 
 // NewClientDynamic creates a new Kubernetes dynamic client using the provided configuration. It returns the dynamic client and any error encountered during the creation process.
 func NewClientDynamic(ctx context.Context, config *rest.Config, s *runtime.Scheme) (c dynamic.Interface, err error) {
-
-	if s == nil {
-		s = scheme.Scheme
-	}
 
 	// clientset
 	c, err = dynamic.NewForConfig(config)

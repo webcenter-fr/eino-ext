@@ -16,6 +16,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/profile"
 )
 
+// Config holds configuration for shell tool instances and profiles.
 type Config struct {
 	BaseImage      string                     `validate:"omitempty" jsonschema:"description=Default OCI base image when no profile matches"`
 	Profiles       map[string]profile.Profile `validate:"omitempty" jsonschema:"description=Profile overrides keyed by profile name"`
@@ -27,7 +28,8 @@ type Config struct {
 	DefaultTimeout time.Duration              `validate:"omitempty" jsonschema:"description=Default timeout for command execution"`
 }
 
-type ShellParams struct {
+// Params defines the parameters for shell command execution.
+type Params struct {
 	Command          []string `json:"command" validate:"required,min=1" jsonschema:"(required) The command to execute as an array of strings"`
 	Profile          string   `json:"profile,omitempty" validate:"omitempty" jsonschema:"(optional) Profile name to override default container image"`
 	DryRun           bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the command without executing"`
@@ -37,7 +39,8 @@ type ShellParams struct {
 	AllowLocalNetwork *bool   `json:"allowLocalNetwork,omitempty" jsonschema:"(optional) Override to allow local network access for this call"`
 }
 
-type ShellTool struct {
+// Tool is an eino tool for executing shell commands.
+type Tool struct {
 	invokable  tool.InvokableTool
 	streamable tool.StreamableTool
 	client     *dagger.Client

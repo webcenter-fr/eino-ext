@@ -47,6 +47,7 @@ func searxngSearch(ctx context.Context, query string, cfg Config, client *http.C
 	if err != nil {
 		return nil, errors.Wrap(err, "search request failed")
 	}
+	//nolint:errcheck
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests ||

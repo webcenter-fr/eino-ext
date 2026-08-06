@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
+// ClusterConfig holds shared cluster-level settings for OpenSearch retriever tools.
 type ClusterConfig struct {
 	URLs          []string
 	Username      string
@@ -24,6 +25,7 @@ type ClusterConfig struct {
 	Formatter            HitFormatter
 }
 
+// IndexConfig holds per-index settings for a retriever tool.
 type IndexConfig struct {
 	Index        string
 	ToolName     string
@@ -32,6 +34,8 @@ type IndexConfig struct {
 	HeaderFields []HeaderField
 }
 
+// NewAllTools creates retriever tools for all configured indices using a
+// shared cluster connection.
 func NewAllTools(ctx context.Context, cluster ClusterConfig, indices []IndexConfig) ([]tool.InvokableTool, error) {
 	if len(indices) == 0 {
 		return nil, errors.New("at least one index config is required")

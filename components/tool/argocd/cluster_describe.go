@@ -19,22 +19,26 @@ It gets the details of a specific ArgoCD cluster.
 It returns a JSON object representing the ArgoCD cluster. The credentials are not included in the output.
 `
 
+// ClusterDescribeParams defines the parameters for describing an ArgoCD cluster.
 type ClusterDescribeParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The cluster name."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata info" jsonschema:"(optional) Fields to exclude: 'metadata', 'info'."`
 }
 
+// ClusterDescribeOutput is the structured output for a cluster describe.
 type ClusterDescribeOutput struct {
 	Metadata *api.ObjectMeta  `json:"metadata,omitempty"`
 	Info     *api.ClusterInfo `json:"info,omitempty"`
 }
 
+// ClusterDescribeTool is an eino tool for describing ArgoCD clusters.
 type ClusterDescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns cluster details as JSON.
 func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescribeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -72,6 +76,7 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 	return string(data), nil
 }
 
+// NewClusterDescribeTool creates a new ClusterDescribeTool.
 func NewClusterDescribeTool(ctx context.Context, configs Configs) (*ClusterDescribeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

@@ -27,6 +27,7 @@ It returns a JSON array of objects, where each object represents an issue with t
 - htmlURL: the issue URL on GitHub.
 `
 
+// IssueListParams defines the parameters for listing GitHub issues.
 type IssueListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -39,6 +40,7 @@ type IssueListParams struct {
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each issue JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// IssueListOutput is the structured output for an issue list.
 type IssueListOutput struct {
 	Number    int      `json:"number"`
 	Title     string   `json:"title"`
@@ -50,11 +52,13 @@ type IssueListOutput struct {
 	HTMLURL   string   `json:"htmlURL"`
 }
 
+// IssueListTool is an eino tool for listing GitHub issues.
 type IssueListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching issues as JSON.
 func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -119,6 +123,7 @@ func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (re
 	})
 }
 
+// NewIssueListTool creates a new IssueListTool.
 func NewIssueListTool(ctx context.Context, configs Configs) (*IssueListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

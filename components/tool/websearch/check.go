@@ -10,6 +10,8 @@ import (
 
 const wsCheckTimeout = 30 * time.Second
 
+// Check performs a health check for the web search tool by executing a
+// sample search against the configured SearXNG instance.
 func Check(ctx context.Context, cfg *Config) checkup.Results {
 	if cfg == nil {
 		c := DefaultConfig()

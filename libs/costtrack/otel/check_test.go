@@ -13,7 +13,7 @@ import (
 func TestCheck_OK(t *testing.T) {
 	rdr := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
-	defer mp.Shutdown(context.Background())
+	defer func() { _ = mp.Shutdown(context.Background()) }()
 
 	scope, err := otelmetrics.NewScope(context.Background(), &otelmetrics.Config{
 		MeterProvider: mp,

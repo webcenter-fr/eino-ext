@@ -16,6 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Stream sends chat completion messages and returns a stream of responses.
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	resolvedModel := m.resolveModel(opts...)
 	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
@@ -64,6 +65,7 @@ func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ..
 	sr, sw := schema.Pipe[*schema.Message](1)
 
 	go func() {
+		//nolint:errcheck // goroutine close, error is irrelevant
 		defer resp.Body.Close()
 		defer sw.Close()
 

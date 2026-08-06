@@ -19,18 +19,21 @@ It gets the details of a specific ArgoCD repository.
 It returns a JSON object representing the ArgoCD repository.
 `
 
+// RepositoryDescribeParams defines the parameters for describing an ArgoCD repository.
 type RepositoryDescribeParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The repository name."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec connexionState" jsonschema:"(optional) Fields to exclude: 'metadata', 'spec', 'connexionState'."`
 }
 
+// RepositoryDescribeOutput is the structured output for a repository describe.
 type RepositoryDescribeOutput struct {
 	Metadata        *api.ObjectMeta               `json:"metadata,omitempty"`
 	Spec            *RepositoryDescribeOutputSpec `json:"spec,omitempty"`
 	ConnectionState *api.ConnectionState          `json:"connexionState,omitempty"`
 }
 
+// RepositoryDescribeOutputSpec holds the spec portion of a repository describe output.
 type RepositoryDescribeOutputSpec struct {
 	EnableLFS bool   `json:"enableLFS,omitempty"`
 	EnableOCI bool   `json:"enableOCI,omitempty"`
@@ -40,11 +43,13 @@ type RepositoryDescribeOutputSpec struct {
 	Repo      string `json:"repo,omitempty"`
 }
 
+// RepositoryDescribeTool is an eino tool for describing ArgoCD repositories.
 type RepositoryDescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns repository details as JSON.
 func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryDescribeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -91,6 +96,7 @@ func (t *RepositoryDescribeTool) Invoke(ctx context.Context, params *RepositoryD
 	return string(data), nil
 }
 
+// NewRepositoryDescribeTool creates a new RepositoryDescribeTool.
 func NewRepositoryDescribeTool(ctx context.Context, configs Configs) (*RepositoryDescribeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

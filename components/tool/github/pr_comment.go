@@ -19,6 +19,7 @@ It adds a comment to a GitHub pull request.
 It returns the created comment details.
 `
 
+// PRCommentParams defines the parameters for commenting on a GitHub PR.
 type PRCommentParams struct {
 	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -29,11 +30,13 @@ type PRCommentParams struct {
 	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post the comment. Set this after the user has approved the dry-run result."`
 }
 
+// PRCommentTool is an eino tool for commenting on GitHub PRs.
 type PRCommentTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke posts a comment on a GitHub PR.
 func (t *PRCommentTool) Invoke(ctx context.Context, params *PRCommentParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -62,6 +65,7 @@ func (t *PRCommentTool) Invoke(ctx context.Context, params *PRCommentParams) (re
 	return fmt.Sprintf(`{"created": true, "comment": {"id": %d, "htmlURL": %q}}`, comment.GetID(), comment.GetHTMLURL()), nil
 }
 
+// NewPRCommentTool creates a new PRCommentTool.
 func NewPRCommentTool(ctx context.Context, configs Configs) (*PRCommentTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

@@ -1,3 +1,5 @@
+// Package sizecap implements a text splitter that splits documents into chunks
+// of bounded size, honoring separator preferences.
 package sizecap
 
 import (

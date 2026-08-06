@@ -55,7 +55,7 @@ func TestAcceptance_SupervisorSubAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	holder := new(atomic.Pointer[modelsdev.Catalog])
 	c := modelsdev.Load(context.Background(), modelsdev.LoadOptions{

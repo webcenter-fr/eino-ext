@@ -196,8 +196,8 @@ func TestStore_IDGeneration(t *testing.T) {
 }
 
 func TestMatchesFilter_Metadata(t *testing.T) {
-	entry := &memoryagent.MemoryEntry{
-		Content: "test",
+	entry := &memoryagent.Entry{
+		Content:  "test",
 		Metadata: map[string]any{"confidence": "high"},
 	}
 	assert.True(t, matchesFilter(entry, map[string]any{"confidence": "high"}))
@@ -205,7 +205,7 @@ func TestMatchesFilter_Metadata(t *testing.T) {
 }
 
 func TestMatchesFilter_NonStringValue(t *testing.T) {
-	entry := &memoryagent.MemoryEntry{Category: "fact"}
+	entry := &memoryagent.Entry{Category: "fact"}
 	assert.False(t, matchesFilter(entry, map[string]any{"category": 42}))
 }
 

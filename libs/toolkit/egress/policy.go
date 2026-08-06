@@ -15,6 +15,7 @@ import (
 	"emperror.dev/errors"
 )
 
+// Policy defines the egress filtering rules for the HTTP/HTTPS proxy.
 type Policy struct {
 	AllowHosts        []string
 	AllowCIDRs        []string
@@ -71,6 +72,7 @@ func isLoopback(ip net.IP) bool {
 	return ip.IsLoopback()
 }
 
+// Allows checks whether the given host and IP are permitted under the policy.
 func (p *Policy) Allows(host string, ip net.IP) error {
 	if p.DefaultDeny {
 		if p.AllowLocalNetwork && (isRFC1918(ip) || isLinkLocal(ip) || isLoopback(ip)) {

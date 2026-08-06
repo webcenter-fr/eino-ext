@@ -29,6 +29,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/summarizer"
 )
 
+// Summarizer is a type alias for the summarizer.Summarizer interface, enabling
+// pluggable condensation strategies.
 type Summarizer = summarizer.Summarizer
 
 // Config configures a SessionManager.
@@ -60,6 +62,8 @@ type Config struct {
 
 // SessionManager owns the per-session locking and turn lifecycle on top of a
 // memory.Memory store.
+//
+//nolint:revive // SessionManager is the established public name.
 type SessionManager struct {
 	mem          memory.Memory
 	summarizer   Summarizer

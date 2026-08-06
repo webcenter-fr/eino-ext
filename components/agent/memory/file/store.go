@@ -23,17 +23,20 @@ import (
 
 var _ memoryagent.MemoryStore = (*Store)(nil)
 
+// Config holds configuration for the JSONL-backed memory store.
 type Config struct {
 	Dir string `json:"dir" validate:"required" jsonschema:"description=Directory for the memories.jsonl file,default=/tmp/eino/memory-agent"`
 }
 
+// Store is a JSONL-file-backed implementation of MemoryStore.
 type Store struct {
 	mu      sync.RWMutex
 	dir     string
-	entries map[string]*memoryagent.MemoryEntry
+	entries map[string]*memoryagent.Entry
 	order   []string
 }
 
+// NewStore creates a new JSONL-backed Store from the given configuration.
 func NewStore(cfg Config) (*Store, error) {
 	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid file store config")
@@ -46,7 +49,7 @@ func NewStore(cfg Config) (*Store, error) {
 	}
 	s := &Store{
 		dir:     cfg.Dir,
-		entries: make(map[string]*memoryagent.MemoryEntry),
+		entries: make(map[string]*memoryagent.Entry),
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -64,13 +67,13 @@ func (s *Store) load() error {
 	if err != nil {
 		return errors.Wrap(err, "open memories file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(f)
 	line := 0
 	for dec.More() {
 		line++
-		var entry memoryagent.MemoryEntry
+		var entry memoryagent.Entry
 		if err := dec.Decode(&entry); err != nil {
 			logrus.WithError(err).WithField("line", line).Warn("skipping corrupted memory entry")
 			continue
@@ -81,6 +84,7 @@ func (s *Store) load() error {
 	return nil
 }
 
+// Store saves documents to the JSONL file and in-memory index.
 func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.Option) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -90,7 +94,7 @@ func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.O
 	if err != nil {
 		return nil, errors.Wrap(err, "open memories file for append")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	enc := json.NewEncoder(f)
 	now := time.Now()
@@ -118,6 +122,7 @@ func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.O
 	return ids, nil
 }
 
+// Retrieve searches in-memory entries matching the query.
 func (s *Store) Retrieve(_ context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -149,6 +154,7 @@ func (s *Store) Retrieve(_ context.Context, query string, opts ...retriever.Opti
 	return docs, nil
 }
 
+// Delete removes a document from the store by ID.
 func (s *Store) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -161,6 +167,7 @@ func (s *Store) Delete(_ context.Context, id string) error {
 	return s.rewriteLocked()
 }
 
+// DeleteByFilter removes documents matching the given metadata filter.
 func (s *Store) DeleteByFilter(_ context.Context, filter map[string]any) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -181,6 +188,7 @@ func (s *Store) DeleteByFilter(_ context.Context, filter map[string]any) (int, e
 	return deleted, nil
 }
 
+// List returns all documents with pagination support.
 func (s *Store) List(_ context.Context, offset, limit int) ([]*schema.Document, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -204,6 +212,7 @@ func (s *Store) List(_ context.Context, offset, limit int) ([]*schema.Document, 
 	return docs, nil
 }
 
+// Count returns the total number of stored documents.
 func (s *Store) Count(_ context.Context) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -248,7 +257,7 @@ func (s *Store) rewriteLocked() error {
 	return nil
 }
 
-func matchesFilter(entry *memoryagent.MemoryEntry, filter map[string]any) bool {
+func matchesFilter(entry *memoryagent.Entry, filter map[string]any) bool {
 	for k, v := range filter {
 		fv, ok := v.(string)
 		if !ok {

@@ -18,6 +18,7 @@ It gets the details of a specific GitHub issue.
 It returns a JSON object representing the issue with full details.
 `
 
+// IssueGetParams defines the parameters for getting a GitHub issue.
 type IssueGetParams struct {
 	Instance             string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner                string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -26,6 +27,7 @@ type IssueGetParams struct {
 	ExcludeFieldsOutput  []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=body labels assignees milestones" jsonschema:"(optional) Fields to exclude: 'body', 'labels', 'assignees', 'milestones'."`
 }
 
+// IssueGetOutput is the structured output for an issue get.
 type IssueGetOutput struct {
 	Number      int            `json:"number"`
 	Title       string         `json:"title"`
@@ -40,11 +42,13 @@ type IssueGetOutput struct {
 	HTMLURL     string         `json:"htmlURL"`
 }
 
+// IssueGetTool is an eino tool for getting GitHub issues.
 type IssueGetTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke fetches a GitHub issue and returns the result.
 func (t *IssueGetTool) Invoke(ctx context.Context, params *IssueGetParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -111,6 +115,7 @@ func (t *IssueGetTool) Invoke(ctx context.Context, params *IssueGetParams) (resu
 	return string(data), nil
 }
 
+// NewIssueGetTool creates a new IssueGetTool.
 func NewIssueGetTool(ctx context.Context, configs Configs) (*IssueGetTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

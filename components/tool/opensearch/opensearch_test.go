@@ -232,9 +232,6 @@ func TestParseSort(t *testing.T) {
 // TestSearchHitToMap
 // ---------------------------------------------------------------------------
 
-// int64Ptr returns a pointer to the given int64 value.
-func int64Ptr(v int64) *int64 { return &v }
-
 func TestSearchHitToMap(t *testing.T) {
 	t.Parallel()
 

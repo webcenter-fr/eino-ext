@@ -26,6 +26,7 @@ It returns the branch name and commit SHA.
 - Use ` + "`remote=true`" + ` to create a remote branch via the GitHub API.
 `
 
+// BranchCreateParams defines the parameters for creating a branch.
 type BranchCreateParams struct {
 	Instance    string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner       string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -37,11 +38,13 @@ type BranchCreateParams struct {
 	Confirmed   bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the branch creation. Set this after the user has approved the dry-run result."`
 }
 
+// BranchCreateTool is an eino tool for creating branches.
 type BranchCreateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates a branch in a GitHub repository.
 func (t *BranchCreateTool) Invoke(ctx context.Context, params *BranchCreateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -136,6 +139,7 @@ func (t *BranchCreateTool) createLocalBranch(ctx context.Context, params *Branch
 	return fmt.Sprintf(`{"created": true, "branch": %q, "sha": %q, "mode": "local"}`, params.BranchName, hash.String()), nil
 }
 
+// NewBranchCreateTool creates a new BranchCreateTool.
 func NewBranchCreateTool(ctx context.Context, configs Configs) (*BranchCreateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

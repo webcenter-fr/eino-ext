@@ -19,28 +19,32 @@ import (
 //go:embed prompts/dedup_system.md
 var dedupSystemPrompt string
 
+// MaintainerConfig holds configuration for the background memory Maintainer.
 type MaintainerConfig struct {
-	Store                 MemoryStore       `json:"store" jsonschema:"-"`
-	Interval              time.Duration     `json:"interval" jsonschema:"-"`
-	MaxCompactionSimilarity float64         `json:"max_compaction_similarity" jsonschema:"description=Jaccard similarity threshold for merging,default=0.8"`
-	MaxAge                time.Duration     `json:"max_age" jsonschema:"description=Max age before cleanup, 0 disables"`
-	Model                 model.BaseChatModel `json:"-" jsonschema:"-"`
+	Store                   MemoryStore         `json:"store" jsonschema:"-"`
+	Interval                time.Duration       `json:"interval" jsonschema:"-"`
+	MaxCompactionSimilarity float64             `json:"max_compaction_similarity" jsonschema:"description=Jaccard similarity threshold for merging,default=0.8"`
+	MaxAge                  time.Duration       `json:"max_age" jsonschema:"description=Max age before cleanup, 0 disables"`
+	Model                   model.BaseChatModel `json:"-" jsonschema:"-"`
 }
 
-type MemoryMaintainer struct {
+// Maintainer performs periodic memory hygiene: deduplication, summarization,
+// and age-based cleanup of stored entries.
+type Maintainer struct {
 	store    MemoryStore
 	interval time.Duration
 
 	maxCompactionSimilarity float64
-	maxAge                 time.Duration
-	model                  model.BaseChatModel
+	maxAge                  time.Duration
+	model                   model.BaseChatModel
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 	mu     sync.Mutex
 }
 
-func NewMemoryMaintainer(cfg MaintainerConfig) *MemoryMaintainer {
+// NewMaintainer creates a new Maintainer with the given configuration.
+func NewMaintainer(cfg MaintainerConfig) *Maintainer {
 	if cfg.Interval <= 0 {
 		cfg.Interval = time.Hour
 	}
@@ -48,7 +52,7 @@ func NewMemoryMaintainer(cfg MaintainerConfig) *MemoryMaintainer {
 		cfg.MaxCompactionSimilarity = 0.8
 	}
 
-	return &MemoryMaintainer{
+	return &Maintainer{
 		store:                   cfg.Store,
 		interval:                cfg.Interval,
 		maxCompactionSimilarity: cfg.MaxCompactionSimilarity,
@@ -58,17 +62,21 @@ func NewMemoryMaintainer(cfg MaintainerConfig) *MemoryMaintainer {
 	}
 }
 
-func (m *MemoryMaintainer) Start(ctx context.Context) {
+// Start begins the background maintenance loop.
+func (m *Maintainer) Start(ctx context.Context) {
 	m.wg.Add(1)
 	go m.loop(ctx)
 }
 
-func (m *MemoryMaintainer) Stop() {
+// Stop signals the background maintenance loop to shut down and waits for it
+// to finish.
+func (m *Maintainer) Stop() {
 	close(m.stopCh)
 	m.wg.Wait()
 }
 
-func (m *MemoryMaintainer) TriggerFullPass(ctx context.Context) error {
+// TriggerFullPass manually triggers a full compaction and cleanup cycle.
+func (m *Maintainer) TriggerFullPass(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -81,7 +89,7 @@ func (m *MemoryMaintainer) TriggerFullPass(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryMaintainer) loop(ctx context.Context) {
+func (m *Maintainer) loop(ctx context.Context) {
 	defer m.wg.Done()
 
 	ticker := time.NewTicker(m.interval)
@@ -97,7 +105,7 @@ func (m *MemoryMaintainer) loop(ctx context.Context) {
 	}
 }
 
-func (m *MemoryMaintainer) compact(ctx context.Context) error {
+func (m *Maintainer) compact(ctx context.Context) error {
 	docs, err := m.store.List(ctx, 0, 0)
 	if err != nil {
 		return errors.Wrap(err, "list entries for compaction")
@@ -120,7 +128,7 @@ func (m *MemoryMaintainer) compact(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryMaintainer) cleanup(ctx context.Context) error {
+func (m *Maintainer) cleanup(ctx context.Context) error {
 	if m.maxAge <= 0 {
 		return nil
 	}
@@ -147,7 +155,7 @@ func (m *MemoryMaintainer) cleanup(ctx context.Context) error {
 // mergeGroup merges a group of similar documents into a single consolidated entry.
 // It stores the merged document first, then deletes the originals to prevent
 // data loss on Store failure.
-func (m *MemoryMaintainer) mergeGroup(ctx context.Context, docs []*schema.Document) error {
+func (m *Maintainer) mergeGroup(ctx context.Context, docs []*schema.Document) error {
 	if len(docs) < 2 {
 		return nil
 	}

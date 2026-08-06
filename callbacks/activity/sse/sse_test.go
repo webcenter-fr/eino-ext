@@ -27,20 +27,20 @@ func startServer(t *testing.T, bus activity.Bus) string {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	h := server.New(server.WithHostPorts(addr), server.WithExitWaitTime(50*time.Millisecond))
 	h.GET("/events", NewHandler(Config{Bus: bus, HeartbeatInterval: 100 * time.Millisecond}))
 
 	go h.Spin()
-	t.Cleanup(func() { h.Close() })
+	t.Cleanup(func() { _ = h.Close() })
 
 	// wait for the port to accept connections.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		c, err := net.Dial("tcp", addr)
 		if err == nil {
-			c.Close()
+			_ = c.Close()
 			return addr
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -54,7 +54,7 @@ func TestSSEStreamsEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 	addr := startServer(t, bus)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -65,7 +65,7 @@ func TestSSEStreamsEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
 		t.Fatalf("content-type = %q", ct)
@@ -93,7 +93,7 @@ func TestSSEStreamsAgentInData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 	addr := startServer(t, bus)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,7 +104,7 @@ func TestSSEStreamsAgentInData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	sc := bus.(subscriberCounter)
 	deadline := time.Now().Add(2 * time.Second)
@@ -124,7 +124,7 @@ func TestSSEReplayWithLastEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	// publish two events before any subscriber so they are buffered.
 	bus.Publish(context.Background(), activity.Event{SessionID: "s", Type: activity.TypeTextDelta, Data: activity.TextDelta{Delta: "a"}})
@@ -140,7 +140,7 @@ func TestSSEReplayWithLastEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// should replay evt_2 only.
 	id, _, data := readFrame(t, resp.Body)

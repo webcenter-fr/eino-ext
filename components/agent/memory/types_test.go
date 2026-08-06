@@ -27,7 +27,7 @@ func TestNewMemoryContextMessage_AlwaysMarked(t *testing.T) {
 
 func TestEntryToDocumentRoundTrip(t *testing.T) {
 	now := time.Now()
-	entry := &MemoryEntry{
+	entry := &Entry{
 		ID:        "id-1",
 		Content:   "user prefers Go",
 		Category:  CategoryPreference,

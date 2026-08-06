@@ -275,9 +275,9 @@ func TestStreamEvents(t *testing.T) {
 			// Write SSE lines in a goroutine.
 			go func() {
 				for _, line := range tt.sseLines {
-					fmt.Fprintln(pw, line)
+					_, _ = fmt.Fprintln(pw, line)
 				}
-				pw.Close()
+				_ = pw.Close()
 			}()
 
 			// Run streamEvents concurrently.

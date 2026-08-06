@@ -18,6 +18,7 @@ It gets the details of a specific GitHub pull request.
 It returns a JSON object representing the pull request with full details.
 `
 
+// PRGetParams defines the parameters for fetching a GitHub PR.
 type PRGetParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner               string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -26,6 +27,7 @@ type PRGetParams struct {
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=body labels assignees" jsonschema:"(optional) Fields to exclude: 'body', 'labels', 'assignees'."`
 }
 
+// PRGetOutput is the structured output for a PR get.
 type PRGetOutput struct {
 	Number     int      `json:"number"`
 	Title      string   `json:"title"`
@@ -43,11 +45,13 @@ type PRGetOutput struct {
 	HTMLURL    string   `json:"htmlURL"`
 }
 
+// PRGetTool is an eino tool for getting GitHub PRs.
 type PRGetTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke fetches a GitHub PR and returns the result.
 func (t *PRGetTool) Invoke(ctx context.Context, params *PRGetParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -120,6 +124,7 @@ func (t *PRGetTool) Invoke(ctx context.Context, params *PRGetParams) (result str
 	return string(data), nil
 }
 
+// NewPRGetTool creates a new PRGetTool.
 func NewPRGetTool(ctx context.Context, configs Configs) (*PRGetTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

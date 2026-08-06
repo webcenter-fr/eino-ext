@@ -12,6 +12,8 @@ import (
 
 const checkTimeout = 10 * time.Second
 
+// Check performs a health check for the OpenSearch retriever tools,
+// verifying each configured index is searchable.
 func Check(ctx context.Context, configs []Config) checkup.Results {
 	if len(configs) == 0 {
 		return checkup.Results{

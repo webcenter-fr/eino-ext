@@ -24,6 +24,7 @@ It returns the created review comment details.
 - The comment will appear in the PR's "Files changed" tab.
 `
 
+// PRSuggestChangeParams defines the parameters for suggesting a PR change.
 type PRSuggestChangeParams struct {
 	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner      string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -37,11 +38,13 @@ type PRSuggestChangeParams struct {
 	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post the suggestion. Set this after the user has approved the dry-run result."`
 }
 
+// PRSuggestChangeTool is an eino tool for suggesting PR changes.
 type PRSuggestChangeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke suggests a change on a GitHub PR.
 func (t *PRSuggestChangeTool) Invoke(ctx context.Context, params *PRSuggestChangeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -73,6 +76,7 @@ func (t *PRSuggestChangeTool) Invoke(ctx context.Context, params *PRSuggestChang
 	return fmt.Sprintf(`{"created": true, "comment": {"id": %d, "path": %q, "line": %d, "htmlURL": %q}}`, comment.GetID(), comment.GetPath(), comment.GetLine(), comment.GetHTMLURL()), nil
 }
 
+// NewPRSuggestChangeTool creates a new PRSuggestChangeTool.
 func NewPRSuggestChangeTool(ctx context.Context, configs Configs) (*PRSuggestChangeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

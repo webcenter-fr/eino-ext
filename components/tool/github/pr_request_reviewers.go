@@ -19,6 +19,7 @@ It requests reviewers on a GitHub pull request.
 It returns the PR details with the requested reviewers.
 `
 
+// PRRequestReviewersParams defines the parameters for requesting PR reviewers.
 type PRRequestReviewersParams struct {
 	Instance  string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -29,11 +30,13 @@ type PRRequestReviewersParams struct {
 	Confirmed bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually request reviewers. Set this after the user has approved the dry-run result."`
 }
 
+// PRRequestReviewersTool is an eino tool for requesting PR reviewers.
 type PRRequestReviewersTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke requests reviewers for a GitHub PR.
 func (t *PRRequestReviewersTool) Invoke(ctx context.Context, params *PRRequestReviewersParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -67,6 +70,7 @@ func (t *PRRequestReviewersTool) Invoke(ctx context.Context, params *PRRequestRe
 	return fmt.Sprintf(`{"requested": true, "pr": {"number": %d, "requestedReviewers": %v}}`, pr.GetNumber(), requested), nil
 }
 
+// NewPRRequestReviewersTool creates a new PRRequestReviewersTool.
 func NewPRRequestReviewersTool(ctx context.Context, configs Configs) (*PRRequestReviewersTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

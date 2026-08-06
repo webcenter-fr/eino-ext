@@ -23,7 +23,7 @@ func TestListModelsSuccess(t *testing.T) {
 			return
 		}
 
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "gpt-4o",
@@ -175,7 +175,7 @@ func TestListModelsSuccess(t *testing.T) {
 
 func TestListModelsFiltersDisabled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "enabled-model",
@@ -240,7 +240,7 @@ func TestListModelsErrorStatus(t *testing.T) {
 
 func TestListModelsMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("invalid"))
+		_, _ = w.Write([]byte("invalid"))
 	}))
 	defer srv.Close()
 
@@ -253,7 +253,7 @@ func TestListModelsMalformedJSON(t *testing.T) {
 
 func TestListModelsEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{Data: []copilotModelData{}})
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{Data: []copilotModelData{}})
 	}))
 	defer srv.Close()
 
@@ -271,7 +271,7 @@ func TestListModelsVisionViaMediaTypes(t *testing.T) {
 	// Vision should be detected via limits.vision.supported_media_types even
 	// when the "vision" supports flag is not explicitly true.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "vision-from-media",

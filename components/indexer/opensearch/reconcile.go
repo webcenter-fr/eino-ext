@@ -11,7 +11,9 @@ import (
 )
 
 const (
+	// DefaultSourceIDField is the default metadata key for the source record ID.
 	DefaultSourceIDField   = "source_id"
+	// DefaultSourceHashField is the default metadata key for the content hash.
 	DefaultSourceHashField = "source_hash"
 
 	reconcileScrollBatchSize = 1000

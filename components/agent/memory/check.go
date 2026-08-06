@@ -11,6 +11,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
+// Check performs a health check against the memory store and model, returning
+// checkup results suitable for a readiness probe.
 func Check(ctx context.Context, store MemoryStore, m model.BaseChatModel) checkup.Results {
 	var results checkup.Results
 

@@ -23,6 +23,7 @@ It returns the created release details.
 - The release can be marked as a draft or pre-release.
 `
 
+// ReleaseCreateParams defines the parameters for creating a GitHub release.
 type ReleaseCreateParams struct {
 	Instance       string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner          string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -37,11 +38,13 @@ type ReleaseCreateParams struct {
 	Confirmed      bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the release creation. Set this after the user has approved the dry-run result."`
 }
 
+// ReleaseCreateTool is an eino tool for creating GitHub releases.
 type ReleaseCreateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates a GitHub release and returns the result.
 func (t *ReleaseCreateTool) Invoke(ctx context.Context, params *ReleaseCreateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -82,6 +85,7 @@ func (t *ReleaseCreateTool) Invoke(ctx context.Context, params *ReleaseCreatePar
 		rel.GetID(), rel.GetTagName(), rel.GetName(), rel.GetHTMLURL(), rel.GetDraft(), rel.GetPrerelease()), nil
 }
 
+// NewReleaseCreateTool creates a new ReleaseCreateTool.
 func NewReleaseCreateTool(ctx context.Context, configs Configs) (*ReleaseCreateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

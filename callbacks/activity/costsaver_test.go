@@ -30,7 +30,7 @@ func (m *mockModel) Stream(ctx context.Context, messages []*schema.Message, opts
 func TestSessionSummarizer_GetSummary(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 
@@ -86,7 +86,7 @@ func TestSessionSummarizer_GetSummary(t *testing.T) {
 func TestSessionSummarizer_TruncatedText(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 
@@ -112,7 +112,7 @@ func TestSessionSummarizer_TruncatedText(t *testing.T) {
 func TestComplexityAnalyzer_Analyze(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 	sessionID := "test-session"
@@ -171,7 +171,7 @@ func TestComplexityAnalyzer_ModelNil(t *testing.T) {
 func TestComplexityAnalyzer_InvalidJSON(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 	sessionID := "test-session"
@@ -211,7 +211,7 @@ func TestComplexityAnalyzer_InvalidJSON(t *testing.T) {
 func TestComplexityAnalyzer_InvalidValues(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 	sessionID := "test-session"
@@ -380,7 +380,7 @@ func TestFallbackComplexityAnalyzer_Analyze(t *testing.T) {
 func TestCompositeComplexityAnalyzer_LLM(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 	sessionID := "test-session"
@@ -423,7 +423,7 @@ func TestCompositeComplexityAnalyzer_LLM(t *testing.T) {
 func TestCompositeComplexityAnalyzer_Fallback(t *testing.T) {
 	bus, err := NewBus(Config{BufferSize: 100})
 	require.NoError(t, err)
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	summarizer := NewSessionSummarizer(bus)
 	sessionID := "test-session"

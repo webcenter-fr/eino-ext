@@ -14,6 +14,7 @@ import (
 
 const maxModelPickerLog = 5
 
+// ModelInfo describes a Copilot model's capabilities and limits.
 type ModelInfo struct {
 	ID                     string
 	Name                   string
@@ -148,6 +149,7 @@ func listModelsWithClient(ctx context.Context, copilotToken, baseURL string, cli
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: models request failed")
 	}
+	//nolint:errcheck // defer close in request path, error is irrelevant
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)

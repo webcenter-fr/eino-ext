@@ -1,3 +1,5 @@
+// Package memory provides conversation storage interfaces and shared
+// windowing/summarization logic.
 package memory
 
 import (
@@ -25,6 +27,8 @@ func NewSummaryMessage(content string) *schema.Message {
 	}
 }
 
+// Conversation represents a persisted conversation with message history,
+// activity events, and optional summarization support.
 type Conversation interface {
 	// Append adds a message to the conversation.
 	Append(msg *schema.Message)

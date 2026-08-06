@@ -42,7 +42,7 @@ func types(events []Event) []Type {
 func setup(t *testing.T) (*Handler, Bus, <-chan Event, context.Context) {
 	t.Helper()
 	b := mustBus(t, Config{})
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	t.Cleanup(unsub)
 	ctx := WithSession(context.Background(), "s")
@@ -110,7 +110,7 @@ func (p *stubPricer) Cost(model string, t Tokens) float64 {
 
 func TestHandlerChatModelStepEndedCostWithPricer(t *testing.T) {
 	b := mustBus(t, Config{})
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	t.Cleanup(unsub)
 	ctx := WithSession(context.Background(), "s")
@@ -204,7 +204,7 @@ func TestHandlerChatModelStepEndedFallbackTokenCounter(t *testing.T) {
 	// back to the heuristic counter for both input and output tokens, and is
 	// flagged Estimated.
 	b := mustBus(t, Config{})
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	t.Cleanup(unsub)
 	ctx := WithSession(context.Background(), "s")
@@ -248,7 +248,7 @@ func TestHandlerChatModelStepEndedRealUsageNotEstimated(t *testing.T) {
 	// Real gateway usage takes priority over the fallback counter and is
 	// never flagged Estimated, even when a TokenCounter is configured.
 	b := mustBus(t, Config{})
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	t.Cleanup(unsub)
 	ctx := WithSession(context.Background(), "s")
@@ -441,7 +441,7 @@ func TestHandlerStreamMidErrorClosesStartedBlocks(t *testing.T) {
 
 func TestHandlerNeededStreamSkippedWithoutSubscribers(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	h := NewHandler(b)
 	ctx := WithSession(context.Background(), "lonely")
 	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}

@@ -40,7 +40,7 @@ func TestCollector_CostSaver_SkipsNoToolSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	t.Cleanup(func() { bus.Close() })
+	t.Cleanup(func() { _ = bus.Close() })
 
 	reg := prometheus.NewRegistry()
 	c, err := NewCollector(reg, WithCostSaver(CostSaverConfig{
@@ -84,7 +84,7 @@ func TestCollector_CostSaver_RunsForToolSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	t.Cleanup(func() { bus.Close() })
+	t.Cleanup(func() { _ = bus.Close() })
 
 	reg := prometheus.NewRegistry()
 	c, err := NewCollector(reg, WithCostSaver(CostSaverConfig{

@@ -19,23 +19,27 @@ It gets the details of a specific ArgoCD project.
 It returns a JSON object representing the ArgoCD project.
 `
 
+// ProjectDescribeParams defines the parameters for describing an ArgoCD project.
 type ProjectDescribeParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The project name."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status" jsonschema:"(optional) Fields to exclude: 'metadata', 'spec', 'status'."`
 }
 
+// ProjectDescribeOutput is the structured output for a project describe.
 type ProjectDescribeOutput struct {
 	Metadata *api.ObjectMeta    `json:"metadata,omitempty"`
 	Spec     *api.ProjectSpec   `json:"spec,omitempty"`
 	Status   *api.ProjectStatus `json:"status,omitempty"`
 }
 
+// ProjectDescribeTool is an eino tool for describing ArgoCD projects.
 type ProjectDescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns the details of a specific ArgoCD project as JSON.
 func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescribeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -73,6 +77,7 @@ func (t *ProjectDescribeTool) Invoke(ctx context.Context, params *ProjectDescrib
 	return string(data), nil
 }
 
+// NewProjectDescribeTool creates a new ProjectDescribeTool.
 func NewProjectDescribeTool(ctx context.Context, configs Configs) (*ProjectDescribeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

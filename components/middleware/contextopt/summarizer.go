@@ -21,8 +21,10 @@ import (
 //go:embed prompts/summary_template.md
 var DefaultSummaryTemplate string
 
+// Summarizer is a type alias enabling pluggable condensation strategies.
 type Summarizer = summarizer.Summarizer
 
+// SummarizerFunc is a type alias for the functional summarizer adapter.
 type SummarizerFunc = summarizer.SummarizerFunc
 
 // modelSummarizer is an LLM-backed Summarizer.

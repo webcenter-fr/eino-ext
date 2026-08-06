@@ -1,3 +1,5 @@
+// Package opensearch provides a document loader that reads documents from an
+// OpenSearch index.
 package opensearch
 
 import (

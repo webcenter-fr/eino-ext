@@ -106,7 +106,7 @@ func TestToolInvoke(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(handler))
@@ -158,7 +158,7 @@ func TestToolInvokeNoHits(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(handler))
@@ -192,7 +192,7 @@ func TestToolInvokeDefaultTopK(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if sz, ok := body["size"].(float64); ok {
 			receivedSize = int(sz)
 		}
@@ -203,7 +203,7 @@ func TestToolInvokeDefaultTopK(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(handler))
@@ -263,7 +263,7 @@ func TestToolInvokeCustomFormatter(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(handler))
@@ -384,7 +384,7 @@ func TestToolInvokeEmptyQuery(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(handler))

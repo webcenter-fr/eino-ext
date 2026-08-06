@@ -23,11 +23,13 @@ It returns a JSON array of objects, where each object represents a repository wi
 - status: the status of the repository.
 `
 
+// RepositoryListParams defines the parameters for listing ArgoCD repositories.
 type RepositoryListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each repository JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// RepositoryListOutput is the structured output for a repository list.
 type RepositoryListOutput struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -35,11 +37,13 @@ type RepositoryListOutput struct {
 	URL    string `json:"url"`
 }
 
+// RepositoryListTool is an eino tool for listing ArgoCD repositories.
 type RepositoryListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching repositories as JSON.
 func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -70,6 +74,7 @@ func (t *RepositoryListTool) Invoke(ctx context.Context, params *RepositoryListP
 	})
 }
 
+// NewRepositoryListTool creates a new RepositoryListTool.
 func NewRepositoryListTool(ctx context.Context, configs Configs) (*RepositoryListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

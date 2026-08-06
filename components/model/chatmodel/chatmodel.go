@@ -53,11 +53,15 @@ const (
 	High ThinkingLevel = "high"
 )
 
+// Provider identifies a chat model provider.
 type Provider string
 
 const (
-	OllamaProvider  Provider = "ollama"
-	OpenAIProvider  Provider = "openai"
+	// OllamaProvider is the Ollama chat model provider.
+	OllamaProvider Provider = "ollama"
+	// OpenAIProvider is the OpenAI chat model provider.
+	OpenAIProvider Provider = "openai"
+	// CopilotProvider is the GitHub Copilot chat model provider.
 	CopilotProvider Provider = "github-copilot"
 )
 
@@ -197,13 +201,13 @@ func newCopilot(ctx context.Context, cfg *Config) (model.ToolCallingChatModel, e
 	}
 
 	copilotCfg := &copilot.Config{
-		CopilotToken:          cfg.APIKey,
-		BaseURL:               cfg.BaseURL,
-		Timeout:               timeout,
-		TLSSkipVerify:         cfg.TLSSkipVerify,
-		Model:                 cfg.Model,
-		ForceChatCompletions:  cfg.ForceChatCompletions,
-		Logger:                cfg.Logger,
+		CopilotToken:         cfg.APIKey,
+		BaseURL:              cfg.BaseURL,
+		Timeout:              timeout,
+		TLSSkipVerify:        cfg.TLSSkipVerify,
+		Model:                cfg.Model,
+		ForceChatCompletions: cfg.ForceChatCompletions,
+		Logger:               cfg.Logger,
 	}
 
 	if cfg.Temperature > 0 {

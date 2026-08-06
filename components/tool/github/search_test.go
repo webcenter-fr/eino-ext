@@ -19,17 +19,17 @@ func TestRepoSearchTool(t *testing.T) {
 				w.Header().Set("Link", `<https://api.github.com/search/repositories?page=2>; rel="last"`)
 				w.WriteHeader(http.StatusOK)
 				body := `{"total_count":2,"incomplete_results":false,"items":[{"name":"searched-repo-2","full_name":"testorg/searched-repo-2","description":"Search result 2","language":"Python","private":false,"stargazers_count":3,"open_issues_count":1,"default_branch":"develop","html_url":"https://github.com/testorg/searched-repo-2"}]}`
-				w.Write([]byte(body))
+				_, _ = w.Write([]byte(body))
 				return
 			}
 			w.Header().Set("Link", `<https://api.github.com/search/repositories?page=2>; rel="next", <https://api.github.com/search/repositories?page=2>; rel="last"`)
 			w.WriteHeader(http.StatusOK)
 			body := `{"total_count":2,"incomplete_results":false,"items":[{"name":"searched-repo","full_name":"testorg/searched-repo","description":"Search result","language":"Go","private":false,"stargazers_count":5,"open_issues_count":0,"default_branch":"main","html_url":"https://github.com/testorg/searched-repo"}]}`
-			w.Write([]byte(body))
+			_, _ = w.Write([]byte(body))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()

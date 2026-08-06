@@ -170,6 +170,7 @@ func doFetchRequest(ctx context.Context, urlStr, ua string, maxSize int64, clien
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch request failed")
 	}
+	//nolint:errcheck
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {

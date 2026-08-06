@@ -16,6 +16,8 @@ import (
 )
 
 // FileMemoryConfig defines the configuration for FileMemory.
+//
+//nolint:revive // FileMemoryConfig is the established public name; renaming would break API consumers.
 type FileMemoryConfig struct {
 	Dir           string `validate:"omitempty" jsonschema:"description=Directory path for storing memory files,default=/tmp/eino/memory"`
 	MaxWindowSize int    `validate:"gte=0" jsonschema:"description=Maximum number of messages to keep in the window"`
@@ -28,6 +30,8 @@ type FileMemoryConfig struct {
 }
 
 // FileMemory can store messages of each conversation
+//
+//nolint:revive // FileMemory is the established public name.
 type FileMemory struct {
 	mu              sync.Mutex
 	dir             string
@@ -38,6 +42,8 @@ type FileMemory struct {
 }
 
 // FileConversation represents a conversation stored in a file.
+//
+//nolint:revive // FileConversation is the established public name.
 type FileConversation struct {
 	mu sync.Mutex
 
@@ -53,12 +59,14 @@ type FileConversation struct {
 	maxWindowTokens int
 }
 
+// GetDefaultMemory returns a new FileMemory configured with default settings.
 func GetDefaultMemory() (memory.Memory, error) {
 	return NewFileMemory(FileMemoryConfig{
 		MaxWindowSize: 10,
 	})
 }
 
+// NewFileMemory creates a new file-based memory backend.
 func NewFileMemory(cfg FileMemoryConfig) (memory.Memory, error) {
 	if cfg.Dir == "" {
 		cfg.Dir = "/tmp/eino/memory"
@@ -84,6 +92,8 @@ func NewFileMemory(cfg FileMemoryConfig) (memory.Memory, error) {
 	}, nil
 }
 
+// GetConversation returns a conversation by user and id, creating it if
+// createIfNotExist is true.
 func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist bool) (memory.Conversation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -138,6 +148,7 @@ func (m *FileMemory) GetConversation(userId string, id string, createIfNotExist 
 	return m.conversations[userId][id], nil
 }
 
+// ListConversations returns all conversation IDs for the given user.
 func (m *FileMemory) ListConversations(userId string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -158,6 +169,7 @@ func (m *FileMemory) ListConversations(userId string) ([]string, error) {
 	return ids, nil
 }
 
+// DeleteConversation removes a conversation from memory and disk.
 func (m *FileMemory) DeleteConversation(userId string, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -172,6 +184,7 @@ func (m *FileMemory) DeleteConversation(userId string, id string) error {
 	return nil
 }
 
+// Append adds a message to the end of the conversation.
 func (c *FileConversation) Append(msg *schema.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -181,6 +194,7 @@ func (c *FileConversation) Append(msg *schema.Message) {
 	_ = c.Save(msg)
 }
 
+// GetFullMessages returns all messages in the conversation.
 func (c *FileConversation) GetFullMessages() []*schema.Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -244,12 +258,14 @@ func (c *FileConversation) CountTokens() int {
 	return c.tokenCounter(window)
 }
 
+// GetActivities returns all stored activity events.
 func (c *FileConversation) GetActivities() []json.RawMessage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.Activities
 }
 
+// SetActivities replaces all stored activity events.
 func (c *FileConversation) SetActivities(raw []json.RawMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -269,12 +285,13 @@ func (c *FileConversation) saveActivities() {
 	_ = os.WriteFile(c.activitiesPath(), data, 0o600)
 }
 
+// Load reads the conversation from its backing file.
 func (c *FileConversation) Load() error {
 	reader, err := os.Open(c.filePath)
 	if err != nil {
 		return errors.Wrap(err, "failed to open file")
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
@@ -303,6 +320,7 @@ func (c *FileConversation) Load() error {
 	return nil
 }
 
+// Save persists the conversation to its backing file.
 func (c *FileConversation) Save(msg *schema.Message) error {
 	str, _ := json.Marshal(msg)
 
@@ -311,7 +329,7 @@ func (c *FileConversation) Save(msg *schema.Message) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to open message file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(str); err != nil {
 		return errors.Wrap(err, "failed to write message")
 	}

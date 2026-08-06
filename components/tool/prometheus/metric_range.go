@@ -30,6 +30,7 @@ samples (the tail of the time window). For example, with maxSamples=100, only th
 data points are returned per series.
 `
 
+// MetricRangeParams defines the parameters for a Prometheus range query.
 type MetricRangeParams struct {
 	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
 	Query      string `json:"query" validate:"required,max=4096" jsonschema:"(required) The PromQL query to execute."`
@@ -40,16 +41,19 @@ type MetricRangeParams struct {
 	MaxSamples int    `json:"maxSamples,omitempty" validate:"omitempty,min=1,max=10000" jsonschema:"(optional) Maximum number of samples per time series. Defaults to 100."`
 }
 
+// MetricRangeOutput is the structured output for a range query.
 type MetricRangeOutput struct {
 	Metric model.Metric       `json:"metric"`
 	Values []model.SamplePair `json:"values"`
 }
 
+// MetricRangeTool is an eino tool for Prometheus range queries.
 type MetricRangeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke runs the range query and returns results as JSON.
 func (t *MetricRangeTool) Invoke(ctx context.Context, params *MetricRangeParams) (result string, err error) {
 	if params.MaxSamples == 0 {
 		params.MaxSamples = 100
@@ -126,6 +130,7 @@ func (t *MetricRangeTool) Invoke(ctx context.Context, params *MetricRangeParams)
 	return marshalOutputs(outputs)
 }
 
+// NewMetricRangeTool creates a new MetricRangeTool.
 func NewMetricRangeTool(ctx context.Context, configs Configs) (*MetricRangeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

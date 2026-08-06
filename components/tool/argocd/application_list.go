@@ -25,6 +25,7 @@ It returns a JSON array of objects, where each object represents an application 
 - revision: the revision the app is currently synced to.
 `
 
+// ApplicationListParams defines the parameters for listing ArgoCD applications.
 type ApplicationListParams struct {
 	Instance     string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Project      string `json:"project,omitempty" jsonschema:"(optional) Filter by project name."`
@@ -33,6 +34,7 @@ type ApplicationListParams struct {
 	Filter       string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each application JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// ApplicationListOutput is the structured output for an application list.
 type ApplicationListOutput struct {
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace"`
@@ -42,11 +44,13 @@ type ApplicationListOutput struct {
 	Revision   string `json:"revision"`
 }
 
+// ApplicationListTool is an eino tool for listing ArgoCD applications.
 type ApplicationListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching applications as JSON.
 func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -83,6 +87,7 @@ func (t *ApplicationListTool) Invoke(ctx context.Context, params *ApplicationLis
 	})
 }
 
+// NewApplicationListTool creates a new ApplicationListTool.
 func NewApplicationListTool(ctx context.Context, configs Configs) (*ApplicationListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {
