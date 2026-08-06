@@ -44,27 +44,56 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 			resolvedBase = ResolveBaseURL(cfg.EnterpriseURL)
 		}
 	} else {
-		resolved, err := ResolveCopilotToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.BaseURL, timeout)
-		if err != nil {
+		kind := DetectTokenKind(cfg.GitHubToken)
+		if kind == TokenKindFineGrainedPAT {
+			res, err := resolveDirectBearer(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.BaseURL, timeout, nil)
+			if err != nil {
+				results = append(results, checkup.Result{
+					Component: "copilot_token_exchange",
+					Status:    checkup.StatusError,
+					Error:     err.Error(),
+				})
+				results = append(results, checkup.Result{
+					Component: "copilot_models",
+					Status:    checkup.StatusError,
+					Error:     "dependency failed: PAT validation required for /models probe",
+				})
+				return results
+			}
+			msg := fmt.Sprintf("direct-bearer mode (fine-grained PAT); no token exchange")
+			if res.login != "" {
+				msg = fmt.Sprintf("direct-bearer mode (fine-grained PAT, login=%s); no token exchange", res.login)
+			}
 			results = append(results, checkup.Result{
 				Component: "copilot_token_exchange",
-				Status:    checkup.StatusError,
-				Error:     err.Error(),
+				Status:    checkup.StatusOK,
+				Message:   msg,
 			})
+			resolvedToken = res.token
+			resolvedBase = res.baseURL
+		} else {
+			resolved, err := ResolveCopilotToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.BaseURL, timeout)
+			if err != nil {
+				results = append(results, checkup.Result{
+					Component: "copilot_token_exchange",
+					Status:    checkup.StatusError,
+					Error:     err.Error(),
+				})
+				results = append(results, checkup.Result{
+					Component: "copilot_models",
+					Status:    checkup.StatusError,
+					Error:     "dependency failed: token exchange required for /models probe",
+				})
+				return results
+			}
 			results = append(results, checkup.Result{
-				Component: "copilot_models",
-				Status:    checkup.StatusError,
-				Error:     "dependency failed: token exchange required for /models probe",
+				Component: "copilot_token_exchange",
+				Status:    checkup.StatusOK,
+				Message:   fmt.Sprintf("token obtained, expires at %d", resolved.ExpiresAt),
 			})
-			return results
+			resolvedToken = resolved.Token
+			resolvedBase = resolved.BaseURL
 		}
-		results = append(results, checkup.Result{
-			Component: "copilot_token_exchange",
-			Status:    checkup.StatusOK,
-			Message:   fmt.Sprintf("token obtained, expires at %d", resolved.ExpiresAt),
-		})
-		resolvedToken = resolved.Token
-		resolvedBase = resolved.BaseURL
 	}
 
 	results = append(results, probeModels(ctx, resolvedBase, resolvedToken, cfg))

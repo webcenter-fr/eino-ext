@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -77,7 +78,7 @@ func exchangeGitHubTokenWithBase(ctx context.Context, githubToken, apiBase strin
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("copilot: token exchange returned status %d", resp.StatusCode)
+		return nil, exchangeError(resp.StatusCode, apiBase)
 	}
 
 	var tokenResp copilotTokenResponse
@@ -101,6 +102,14 @@ func startTokenRefresh(
 	ctx, cancel := context.WithCancel(ctx)
 
 	if cfg.GitHubToken == "" || tokenResp == nil {
+		cancel()
+		return cancel
+	}
+
+	if tokenResp.ExpiresAt <= 0 {
+		if cfg.Logger != nil {
+			cfg.Logger.Warn("copilot: token has no expiry (expires_at <= 0); background refresh will not be started")
+		}
 		cancel()
 		return cancel
 	}
@@ -179,25 +188,69 @@ func ResolveBaseURL(enterpriseURL string) string {
 	return defaultCopilotBase
 }
 
-// ResolvedToken is the result of exchanging a GitHub token for a Copilot
+// directBearerResolution holds the result of resolving a fine-grained PAT for
+// direct-bearer mode. It is returned by resolveDirectBearer and consumed by
+// ResolveCopilotToken, NewCopilotChatModel, and Check.
+type directBearerResolution struct {
+	token   string // the PAT itself
+	baseURL string // resolved Copilot API base URL
+	login   string // GitHub login (from /copilot_internal/user), empty if best-effort
+}
+
+// resolveDirectBearer validates a fine-grained PAT via GET /copilot_internal/user
+// and resolves the Copilot API base URL. It is the single shared helper for the
+// direct-bearer path, called by ResolveCopilotToken, NewCopilotChatModel, and Check.
+//
+// Returns an error only for 401/403 from validateFineGrainedPAT. Transient
+// errors (5xx/network) are logged (when logger is non-nil) and swallowed —
+// the caller proceeds and the first Copilot API call will surface the real error.
+func resolveDirectBearer(ctx context.Context, pat, enterpriseURL, explicitBase string, timeout time.Duration, logger *logrus.Entry) (*directBearerResolution, error) {
+	login, err := validateFineGrainedPAT(ctx, pat, enterpriseURL, timeout, logger)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := explicitBase
+	if baseURL == "" {
+		baseURL = ResolveBaseURL(enterpriseURL)
+	}
+	return &directBearerResolution{token: pat, baseURL: baseURL, login: login}, nil
+}
+
+// ResolvedToken is the result of resolving a GitHub token for a Copilot
 // bearer token, including the plan-correct API base URL to use for all
 // subsequent Copilot API calls (models, chat/completions, responses).
+//
+// In direct-bearer mode (fine-grained PAT, github_pat_...), Token holds the
+// PAT itself, ExpiresAt is 0 (no exchange → no expiry), and Kind is
+// TokenKindFineGrainedPAT.
 type ResolvedToken struct {
 	Token     string
 	BaseURL   string
 	ExpiresAt int64
+	Plan      Plan
+	Kind      TokenKind
 }
 
-// ResolveCopilotToken exchanges a raw GitHub token for a short-lived Copilot
-// bearer token and the API base URL matching the token's actual Copilot plan
-// (individual/business/enterprise), so callers that only need a one-off API
+// ResolveCopilotToken resolves a raw GitHub token into a Copilot bearer
+// token and the plan-correct API base URL matching the token's actual Copilot
+// plan (individual/business/enterprise). Callers that only need a one-off API
 // call (e.g. a pre-flight ListModels check) don't have to guess the host or
 // construct a full CopilotModel.
 //
-// Precedence of the returned BaseURL (mirrors NewCopilotChatModel):
+// For fine-grained PATs (github_pat_...), the PAT is returned directly as
+// Token (direct-bearer mode) with ExpiresAt == 0 and Kind ==
+// TokenKindFineGrainedPAT. No token exchange is performed — the
+// /copilot_internal/v2/token endpoint 403s for these tokens. The PAT is
+// validated via GET /copilot_internal/user (best-effort; 401/403 fail fast).
+//
+// For classic PATs (ghp_...) and unknown prefixes, the existing exchange path
+// is used (unchanged).
+//
+// Precedence of the returned BaseURL:
 //  1. explicit baseURL, when non-empty (caller override — e.g. a proxy/gateway);
-//  2. endpoints.api from the token exchange response (plan-correct host);
-//  3. ResolveBaseURL(enterpriseURL) fallback.
+//  2. ResolveBaseURL(enterpriseURL) fallback (direct-bearer mode);
+//    OR endpoints.api from the token exchange response (exchange mode);
+//  3. ResolveBaseURL(enterpriseURL) fallback (exchange mode).
 //
 // When githubToken is empty the function returns an error: it does not read
 // environment variables. Callers wanting env-var discovery should populate
@@ -206,6 +259,23 @@ func ResolveCopilotToken(ctx context.Context, githubToken, enterpriseURL, baseUR
 	if githubToken == "" {
 		return nil, errors.New("copilot: githubToken must not be empty")
 	}
+
+	kind := DetectTokenKind(githubToken)
+
+	if kind == TokenKindFineGrainedPAT {
+		res, err := resolveDirectBearer(ctx, githubToken, enterpriseURL, baseURL, timeout, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "copilot: PAT validation failed")
+		}
+		return &ResolvedToken{
+			Token:     res.token,
+			BaseURL:   res.baseURL,
+			ExpiresAt: 0,
+			Plan:      DetectPlan(res.baseURL),
+			Kind:      kind,
+		}, nil
+	}
+
 	tokenResp, err := exchangeGitHubToken(ctx, githubToken, enterpriseURL, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: token exchange failed")
@@ -222,6 +292,8 @@ func ResolveCopilotToken(ctx context.Context, githubToken, enterpriseURL, baseUR
 		Token:     tokenResp.Token,
 		BaseURL:   resolved,
 		ExpiresAt: tokenResp.ExpiresAt,
+		Plan:      DetectPlan(resolved),
+		Kind:      kind,
 	}, nil
 }
 
@@ -251,4 +323,24 @@ func (t *copilotLockedToken) set(token string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.token = token
+}
+
+func exchangeError(statusCode int, apiBase string) error {
+	switch statusCode {
+	case 401:
+		return errors.Errorf("copilot: token exchange returned 401 Unauthorized — the GitHub token is invalid, expired, or lacks the required scope. Note: fine-grained PATs (github_pat_...) are not exchanged; they are used directly as the bearer token. If you are using a fine-grained PAT, ensure it is passed as GitHubToken (the provider auto-detects the prefix).")
+	case 403:
+		return errors.Errorf("copilot: token exchange returned 403 Forbidden — the account has no Copilot access via token exchange, or the token is a fine-grained PAT (github_pat_...) which GitHub does not permit on /copilot_internal/v2/token. Fine-grained PATs are used directly as the bearer token (direct-bearer mode); ensure the provider detects the github_pat_ prefix. For classic/enterprise exchange, verify Copilot is enabled and the PAT has the required scope.")
+	case 404:
+		return errors.Errorf("copilot: token exchange returned 404 Not Found at %s — check EnterpriseURL", apiBase)
+	case 421:
+		return errors.Errorf("copilot: token exchange returned 421 Misdirected Request — wrong API host")
+	case 429:
+		return errors.Errorf("copilot: token exchange returned 429 Too Many Requests — rate limited, retry later")
+	default:
+		if statusCode >= 500 {
+			return errors.Errorf("copilot: token exchange returned status %d (upstream error)", statusCode)
+		}
+		return errors.Errorf("copilot: token exchange returned status %d", statusCode)
+	}
 }

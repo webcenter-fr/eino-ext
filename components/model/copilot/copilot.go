@@ -40,7 +40,7 @@ const (
 )
 
 type Config struct {
-	GitHubToken          string          `validate:"omitempty" jsonschema:"description=GitHub PAT with read:user scope"`
+	GitHubToken          string          `validate:"omitempty" jsonschema:"description=Fine-grained GitHub PAT (github_pat_...) with Copilot Requests account permission (Read)"`
 	CopilotToken         string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`
 	EnterpriseURL        string          `validate:"omitempty" jsonschema:"description=GitHub Enterprise domain"`
 	BaseURL              string          `validate:"omitempty" jsonschema:"description=Override Copilot API base URL"`
@@ -137,23 +137,50 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 			baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 		}
 	} else {
-		tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
-		if err != nil {
-			return nil, errors.Wrap(err, "copilot: initial token exchange failed")
-		}
-		lockedToken.set(tokenResp.Token)
+		kind := DetectTokenKind(cfg.GitHubToken)
 
-		if baseURL == "" {
-			if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
-				baseURL = tokenResp.Endpoints.API
-			} else {
+		if kind == TokenKindCopilotOAuth {
+			// gho_ token passed as GitHubToken — treat as CopilotToken
+			// (direct-bearer, no exchange, no refresh).
+			logger.Infof("copilot: gho_ token passed as GitHubToken; treating as CopilotToken (direct-bearer, no exchange)")
+			// No refresh goroutine (token is long-lived OAuth token).
+			cancelRefresh = nil
+			lockedToken.set(cfg.GitHubToken)
+			if baseURL == "" {
 				baseURL = ResolveBaseURL(cfg.EnterpriseURL)
 			}
-		}
+		} else if kind == TokenKindFineGrainedPAT {
+			res, err := resolveDirectBearer(ctx, cfg.GitHubToken, cfg.EnterpriseURL, baseURL, cfg.Timeout, logger)
+			if err != nil {
+				return nil, errors.Wrap(err, "copilot: PAT validation failed")
+			}
+			lockedToken.set(res.token)
+			baseURL = res.baseURL
+			// No refresh goroutine in direct-bearer mode (PAT is long-lived).
+			cancelRefresh = nil
+			logger.Infof("copilot: direct-bearer mode (fine-grained PAT, login=%s) resolved base URL %s (plan=%s)", res.login, baseURL, DetectPlan(baseURL))
+		} else {
+			// Classic PAT (ghp_...) or unknown prefix → exchange path.
+			tokenResp, err := exchangeGitHubToken(ctx, cfg.GitHubToken, cfg.EnterpriseURL, cfg.Timeout)
+			if err != nil {
+				return nil, errors.Wrap(err, "copilot: initial token exchange failed")
+			}
+			lockedToken.set(tokenResp.Token)
 
-		cancelRefresh = startTokenRefresh(ctx, cfg, tokenResp, func(newToken string) {
-			lockedToken.set(newToken)
-		})
+			if baseURL == "" {
+				if tokenResp.Endpoints != nil && tokenResp.Endpoints.API != "" {
+					baseURL = tokenResp.Endpoints.API
+				} else {
+					baseURL = ResolveBaseURL(cfg.EnterpriseURL)
+				}
+			}
+
+			logger.Infof("copilot: resolved base URL %s (plan=%s)", baseURL, DetectPlan(baseURL))
+
+			cancelRefresh = startTokenRefresh(ctx, cfg, tokenResp, func(newToken string) {
+				lockedToken.set(newToken)
+			})
+		}
 	}
 
 	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)

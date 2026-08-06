@@ -123,7 +123,12 @@ func needsSessionToken(modelID string) bool {
 func (m *CopilotModel) startSessionRefresh(ctx context.Context, sresp *sessionResponse, modelHint string) context.CancelFunc {
 	ctx, cancel := context.WithCancel(ctx)
 
-	if sresp == nil || sresp.SessionToken == "" {
+	if sresp == nil || sresp.SessionToken == "" || sresp.ExpiresAt <= 0 {
+		if sresp != nil && sresp.ExpiresAt <= 0 {
+			if m.logger != nil {
+				m.logger.Warn("copilot: session token has no expiry (expires_at <= 0); background refresh will not be started")
+			}
+		}
 		cancel()
 		return cancel
 	}

@@ -121,11 +121,18 @@ func float32Ptr(v float32) *float32 { return &v }
 // below depend on the exchange response's endpoints.api field, which only
 // exists when a real exchange happens — a pre-obtained CopilotToken skips
 // the exchange entirely (NewCopilotChatModel's CopilotToken branch).
+//
+// Fine-grained PATs (github_pat_...) use direct-bearer mode and are NEVER
+// exchanged — this gate skips when the token is a fine-grained PAT, since
+// the exchange would 403.
 func requireGitHubTokenIntegration(t *testing.T) {
 	t.Helper()
 	requireIntegration(t)
 	if os.Getenv("GITHUB_TOKEN") == "" {
 		t.Skip("GITHUB_TOKEN (raw PAT) not set — acceptance tests need the exchange path")
+	}
+	if strings.HasPrefix(os.Getenv("GITHUB_TOKEN"), "github_pat_") {
+		t.Skip("GITHUB_TOKEN is a fine-grained PAT (github_pat_...) — these tokens use direct-bearer mode, not exchange. Classic acceptance tests require a ghp_/gho_ token.")
 	}
 }
 
@@ -279,7 +286,8 @@ func TestIntegration_Check_GitHubToken(t *testing.T) {
 
 // TestIntegration_ListModels verifies that ListModels returns ≥20 models
 // including gpt-5-mini and at least one Claude model, proving the
-// integration-id header works.
+// integration-id header works. When COPILOT_FREE_TIER=1 the assertions
+// are relaxed to match free-tier's reduced catalog.
 func TestIntegration_ListModels(t *testing.T) {
 	requireIntegration(t)
 
@@ -290,6 +298,16 @@ func TestIntegration_ListModels(t *testing.T) {
 	var token string
 	if tok := os.Getenv("GITHUB_COPILOT_TOKEN"); tok != "" {
 		token = tok
+	} else if os.Getenv("COPILOT_FREE_TIER") == "1" && strings.HasPrefix(os.Getenv("GITHUB_TOKEN"), "github_pat_") {
+		// Free-tier direct-bearer mode: ResolveCopilotToken returns the PAT as Token.
+		resolved, err := ResolveCopilotToken(context.Background(), os.Getenv("GITHUB_TOKEN"), "", "", 30*time.Second)
+		if err != nil {
+			t.Fatalf("ResolveCopilotToken: %v", err)
+		}
+		token = resolved.Token
+		if baseURL == "" {
+			baseURL = resolved.BaseURL
+		}
 	} else {
 		resp, err := exchangeGitHubToken(context.Background(), os.Getenv("GITHUB_TOKEN"), "", 30*time.Second)
 		if err != nil {
@@ -310,8 +328,12 @@ func TestIntegration_ListModels(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 
-	if len(models) < 20 {
-		t.Errorf("expected ≥20 models, got %d", len(models))
+	minModels := 20
+	if os.Getenv("COPILOT_FREE_TIER") == "1" {
+		minModels = 1
+	}
+	if len(models) < minModels {
+		t.Errorf("expected ≥%d models, got %d", minModels, len(models))
 	}
 
 	foundGPT5 := false
@@ -327,11 +349,13 @@ func TestIntegration_ListModels(t *testing.T) {
 		t.Logf("model: id=%s family=%s state=%s endpoints=%v reasoning_efforts=%v picker_enabled=%v",
 			mi.ID, mi.Family, mi.State, mi.SupportedEndpoints, mi.ReasoningEfforts, mi.ModelPickerEnabled)
 	}
-	if !foundGPT5 {
-		t.Error("gpt-5-mini not found in model list")
-	}
-	if !foundClaude {
-		t.Error("no Claude models found in model list")
+	if os.Getenv("COPILOT_FREE_TIER") != "1" {
+		if !foundGPT5 {
+			t.Error("gpt-5-mini not found in model list")
+		}
+		if !foundClaude {
+			t.Error("no Claude models found in model list")
+		}
 	}
 }
 
