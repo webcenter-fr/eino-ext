@@ -1,18 +1,25 @@
+version: "2"
 linters:
   enable:
-    - govet
-    - errcheck
-    - staticcheck
-    - revive
     - misspell
-
-linters-settings:
-  revive:
-    rules:
-      - name: package-comments
-        severity: warning
-      - name: exported
-        severity: warning
-
-issues:
-  exclude-use-default: false
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: package-comments
+          severity: warning
+        - name: exported
+          severity: warning
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

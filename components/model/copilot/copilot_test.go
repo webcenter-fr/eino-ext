@@ -48,6 +48,8 @@ func TestNewCopilotChatModelNilConfig(t *testing.T) {
 }
 
 func TestNewCopilotChatModelNoToken(t *testing.T) {
+	t.Setenv("GITHUB_COPILOT_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
 	ctx := context.Background()
 	cfg := &Config{
 		Timeout: 10 * time.Second,

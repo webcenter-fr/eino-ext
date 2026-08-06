@@ -13,9 +13,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12
+          only-new-issues: true
 
   build-and-vet:
     runs-on: ubuntu-latest
@@ -42,3 +43,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/check_components.sh
+
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -tags=integration -v ./components/model/copilot/...
+        env:
+          COPILOT_INTEGRATION: "1"
