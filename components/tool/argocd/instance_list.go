@@ -20,13 +20,16 @@ It returns a JSON array of objects, where each object represents an instance wit
 - name: the name of the ArgoCD instance.
 `
 
+// InstanceListTool is an eino tool for listing configured ArgoCD instances.
 type InstanceListTool struct {
 	knownInstances []string
 	tool.InvokableTool
 }
 
+// InstanceListParams defines the parameters for listing ArgoCD instances.
 type InstanceListParams struct{}
 
+// Invoke returns known ArgoCD instances as JSON.
 func (t *InstanceListTool) Invoke(ctx context.Context, params *InstanceListParams) (string, error) {
 	b, err := json.Marshal(t.knownInstances)
 	if err != nil {
@@ -35,6 +38,7 @@ func (t *InstanceListTool) Invoke(ctx context.Context, params *InstanceListParam
 	return string(b), nil
 }
 
+// NewInstanceListTool creates a new InstanceListTool.
 func NewInstanceListTool(ctx context.Context, configs Configs) (*InstanceListTool, error) {
 	instanceListTool := &InstanceListTool{
 		knownInstances: configs.GetInstanceNames(),

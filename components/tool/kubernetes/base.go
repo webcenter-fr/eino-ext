@@ -1,3 +1,4 @@
+// Package kubernetes provides eino tools for Kubernetes resource management.
 package kubernetes
 
 import (

@@ -27,6 +27,7 @@ It returns a JSON array of objects, where each object represents an alert with t
 - value: the alert evaluation value.
 `
 
+// AlertListParams defines the parameters for listing Prometheus alerts.
 type AlertListParams struct {
 	Instance string             `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
 	Filter   string             `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each alert JSON. Keep only alerts that match. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
@@ -34,11 +35,13 @@ type AlertListParams struct {
 	Paginate *AlertListPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
+// AlertListPaginate holds pagination state for alert listing.
 type AlertListPaginate struct {
 	PageSize      int    `json:"pageSize,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The number of alerts to return per page. Default is 20."`
 	PaginateToken string `json:"paginateToken,omitempty" jsonschema:"(optional) The token to retrieve the next page of results. This token is returned when there are more results available than can fit in a single page."`
 }
 
+// AlertListOutput is the structured output for a Prometheus alert list.
 type AlertListOutput struct {
 	Labels      model.LabelSet `json:"labels"`
 	Annotations model.LabelSet `json:"annotations"`
@@ -47,6 +50,7 @@ type AlertListOutput struct {
 	Value       string         `json:"value"`
 }
 
+// AlertListTool is an eino tool for listing Prometheus alerts.
 type AlertListTool struct {
 	*baseTool
 	tool.InvokableTool
@@ -56,6 +60,7 @@ type alertPaginateToken struct {
 	PaginateToken int `json:"paginateToken"`
 }
 
+// Invoke returns matching alerts as JSON.
 func (t *AlertListTool) Invoke(ctx context.Context, params *AlertListParams) (result string, err error) {
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
 		params.Paginate.PageSize = 20
@@ -142,6 +147,7 @@ func (t *AlertListTool) Invoke(ctx context.Context, params *AlertListParams) (re
 	return marshalOutputs(outputs)
 }
 
+// NewAlertListTool creates a new AlertListTool.
 func NewAlertListTool(ctx context.Context, configs Configs) (*AlertListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

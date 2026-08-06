@@ -31,41 +31,59 @@ type Type string
 
 const (
 	// TypeStepStarted signals the start of a processing step.
-	TypeStepStarted   Type = "step.started"
+	TypeStepStarted Type = "step.started"
 	// TypeStepEnded signals the end of a processing step.
-	TypeStepEnded     Type = "step.ended"
+	TypeStepEnded Type = "step.ended"
 	// TypeStepFailed signals a processing step failure.
-	TypeStepFailed    Type = "step.failed"
+	TypeStepFailed Type = "step.failed"
 	// TypeAgentSwitched signals that the active agent has changed.
 	TypeAgentSwitched Type = "agent.switched"
+	// TypeModelSwitched signals that the active model has changed.
 	TypeModelSwitched Type = "model.switched"
-	TypePrompted      Type = "prompted"
+	// TypePrompted signals that a new prompt was submitted.
+	TypePrompted Type = "prompted"
 
 	// TypeTextStarted signals the start of text generation.
+	// TypeTextStarted signals the start of text generation.
 	TypeTextStarted Type = "text.started"
-	TypeTextDelta   Type = "text.delta"
-	TypeTextEnded   Type = "text.ended"
+	// TypeTextDelta carries an incremental text chunk.
+	TypeTextDelta Type = "text.delta"
+	// TypeTextEnded signals the end of text generation.
+	TypeTextEnded Type = "text.ended"
 
 	// TypeReasoningStarted signals the start of reasoning output.
 	TypeReasoningStarted Type = "reasoning.started"
-	TypeReasoningDelta   Type = "reasoning.delta"
-	TypeReasoningEnded   Type = "reasoning.ended"
+	// TypeReasoningDelta carries an incremental reasoning text chunk.
+	TypeReasoningDelta Type = "reasoning.delta"
+	// TypeReasoningEnded signals the end of reasoning output.
+	TypeReasoningEnded Type = "reasoning.ended"
 
 	// TypeToolInputStarted signals that a tool invocation has begun receiving input.
 	TypeToolInputStarted Type = "tool.input.started"
-	TypeToolInputDelta   Type = "tool.input.delta"
-	TypeToolInputEnded   Type = "tool.input.ended"
-	TypeToolCalled       Type = "tool.called"
-	TypeToolProgress     Type = "tool.progress"
-	TypeToolSuccess      Type = "tool.success"
-	TypeToolFailed       Type = "tool.failed"
+	// TypeToolInputDelta carries an incremental chunk of tool input.
+	TypeToolInputDelta Type = "tool.input.delta"
+	// TypeToolInputEnded signals the end of tool input streaming.
+	TypeToolInputEnded Type = "tool.input.ended"
+	// TypeToolCalled signals that a tool has been invoked.
+	TypeToolCalled Type = "tool.called"
+	// TypeToolProgress carries a progress update from a running tool.
+	TypeToolProgress Type = "tool.progress"
+	// TypeToolSuccess signals that a tool completed successfully.
+	TypeToolSuccess Type = "tool.success"
+	// TypeToolFailed signals that a tool invocation failed.
+	TypeToolFailed Type = "tool.failed"
 
 	// TypeRetried signals that an operation was retried.
-	TypeRetried           Type = "retried"
+	// TypeRetried signals that an operation was retried.
+	TypeRetried Type = "retried"
+	// TypeCompactionStarted signals the start of context compaction.
 	TypeCompactionStarted Type = "compaction.started"
-	TypeCompactionDelta   Type = "compaction.delta"
-	TypeCompactionEnded   Type = "compaction.ended"
+	// TypeCompactionDelta carries an incremental compaction chunk.
+	TypeCompactionDelta Type = "compaction.delta"
+	// TypeCompactionEnded signals the end of context compaction.
+	TypeCompactionEnded Type = "compaction.ended"
 
+	// TypeSessionEnded signals the end of a session.
 	// TypeSessionEnded signals the end of a session.
 	TypeSessionEnded Type = "session.ended"
 )

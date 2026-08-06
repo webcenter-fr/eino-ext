@@ -27,6 +27,7 @@ It returns the local path where the repository was cloned and the HEAD commit in
 - Repository is cloned under: <CloneDir>/<owner>/<repo>
 `
 
+// RepoCloneParams defines the parameters for cloning a GitHub repository.
 type RepoCloneParams struct {
 	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -37,11 +38,13 @@ type RepoCloneParams struct {
 	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the clone. Set this after the user has approved the dry-run result."`
 }
 
+// RepoCloneTool is an eino tool for cloning GitHub repositories.
 type RepoCloneTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke clones a GitHub repository.
 func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -102,6 +105,7 @@ func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (re
 	return fmt.Sprintf(`{"clonedTo": %q, "headCommit": %q, "headRef": %q}`, targetPath, head.Hash().String(), head.Name().String()), nil
 }
 
+// NewRepoCloneTool creates a new RepoCloneTool.
 func NewRepoCloneTool(ctx context.Context, configs Configs) (*RepoCloneTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

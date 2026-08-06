@@ -11,6 +11,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
+// Check performs a health check against the OpenSearch store.
 func Check(ctx context.Context, cfg *Config, embedder embedding.Embedder) checkup.Results {
 	var results checkup.Results
 

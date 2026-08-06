@@ -53,7 +53,7 @@ func (t *ToolTestSuite) SetupSuite() {
 		case http.MethodPost:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 				"name": "my-new-app",
 				"spec": {"project": "default"}
 			}`))
@@ -68,7 +68,7 @@ func (t *ToolTestSuite) SetupSuite() {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 				"name": "my-app",
 				"namespace": "argocd",
 				"spec": {"project": "default", "source": {"repoURL": "https://git.example.com/repo", "path": "overlays/prod"}},
@@ -76,7 +76,7 @@ func (t *ToolTestSuite) SetupSuite() {
 			}`))
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{}`))
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -86,7 +86,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/applications/my-app/sync", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"name": "my-app",
 			"status": {"sync": {"status": "Synced"}}
 		}`))
@@ -96,14 +96,14 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/applications/non-existent", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error": "not found", "message": "application not found"}`))
+		_, _ = w.Write([]byte(`{"error": "not found", "message": "application not found"}`))
 	})
 
 	// Projects list
 	mux.HandleFunc("/api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"items": [
 				{"name": "default", "spec": {"description": "Default project"}},
 				{"name": "production", "spec": {"description": "Production project"}}
@@ -115,7 +115,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/projects/default", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"name": "default",
 			"spec": {"description": "Default project", "sourceRepos": ["*"]}
 		}`))
@@ -125,7 +125,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/certificates", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"items": [
 				{
 					"certInfo": "SSL certificate for *.example.com",
@@ -147,7 +147,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"items": [
 				{
 					"name": "my-cluster",
@@ -173,12 +173,12 @@ func (t *ToolTestSuite) SetupSuite() {
 		if name == "non-existent" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"error": "not found", "message": "cluster not found"}`))
+			_, _ = w.Write([]byte(`{"error": "not found", "message": "cluster not found"}`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"name": "my-cluster",
 			"server": "https://cluster1.example.com",
 			"project": "production",
@@ -195,7 +195,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/repositories", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"items": [
 				{
 					"repo": "https://github.com/myorg/myapp.git",
@@ -219,7 +219,7 @@ func (t *ToolTestSuite) SetupSuite() {
 	mux.HandleFunc("/api/v1/repositories/https%3A%2F%2Fgithub.com%2Fmyorg%2Fmyapp.git", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"repo": "https://github.com/myorg/myapp.git",
 			"type": "git",
 			"name": "myapp-repo",

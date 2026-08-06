@@ -13,14 +13,19 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
+// EmbeddingProvider identifies an embedding model provider.
 type EmbeddingProvider string
 
 const (
-	OllamaEmbeddingProvider  EmbeddingProvider = "ollama"
-	OpenAIEmbeddingProvider  EmbeddingProvider = "openai"
+	// OllamaEmbeddingProvider is the Ollama embedding provider.
+	OllamaEmbeddingProvider EmbeddingProvider = "ollama"
+	// OpenAIEmbeddingProvider is the OpenAI embedding provider.
+	OpenAIEmbeddingProvider EmbeddingProvider = "openai"
+	// CopilotEmbeddingProvider is the GitHub Copilot embedding provider.
 	CopilotEmbeddingProvider EmbeddingProvider = "github-copilot"
 )
 
+// EmbeddingConfig holds configuration for embedding providers.
 type EmbeddingConfig struct {
 	Provider      EmbeddingProvider `validate:"required" jsonschema:"description=Provider plan: ollama, github-copilot, or openai"`
 	BaseURL       string            `jsonschema:"description=Provider endpoint URL, uses provider default when empty"`
@@ -30,6 +35,7 @@ type EmbeddingConfig struct {
 	APIKey        string            `validate:"omitempty" jsonschema:"description=Provider API key or token (Copilot bearer token for github-copilot)"`
 }
 
+// NewEmbedding creates a new embedding component from the given configuration.
 func NewEmbedding(ctx context.Context, cfg *EmbeddingConfig) (embedding.Embedder, error) {
 	if cfg == nil {
 		return nil, errors.New("embedding: config must not be nil")
@@ -80,7 +86,6 @@ func newCopilotEmbedding(ctx context.Context, cfg *EmbeddingConfig) (embedding.E
 func newOllamaEmbedding(cfg *EmbeddingConfig) (embedding.Embedder, error) {
 	return nil, errors.New("embedding: ollama embedding not yet implemented")
 }
-
 
 func insecureEmbeddingHTTPClient(skip bool, timeout time.Duration) *http.Client {
 	if !skip {

@@ -24,7 +24,7 @@ func TestExchangeGitHubTokenWithBaseSuccess(t *testing.T) {
 			t.Error("missing required headers")
 		}
 
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "copilot-bearer-token",
 			ExpiresAt: time.Now().Unix() + 3600,
 			RefreshIn: 1500,
@@ -74,7 +74,7 @@ func TestExchangeGitHubTokenWithBaseMalformedJSON(t *testing.T) {
 
 func TestExchangeGitHubTokenWithBaseEmptyToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "",
 			ExpiresAt: time.Now().Unix() + 3600,
 		})
@@ -173,7 +173,7 @@ func TestExchangeGitHubTokenWithEndpoints(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "bearer-token",
 			ExpiresAt: time.Now().Unix() + 3600,
 			RefreshIn: 1500,
@@ -202,7 +202,7 @@ func TestExchangeGitHubTokenWithEndpoints(t *testing.T) {
 
 func TestBaseURLResolutionEndpointsAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "copilot-token",
 			ExpiresAt: time.Now().Unix() + 3600,
 			Endpoints: &copilotTokenEndpoints{
@@ -231,7 +231,7 @@ func TestBaseURLResolutionEndpointsAPI(t *testing.T) {
 
 func TestBaseURLResolutionFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "copilot-token",
 			ExpiresAt: time.Now().Unix() + 3600,
 		})
@@ -325,7 +325,7 @@ func TestExchangeErrorMessages(t *testing.T) {
 func TestResolveCopilotTokenSetsPlan(t *testing.T) {
 	t.Run("business", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(copilotTokenResponse{
+			_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 				Token:     "bearer-token",
 				ExpiresAt: time.Now().Unix() + 3600,
 				Endpoints: &copilotTokenEndpoints{
@@ -347,7 +347,7 @@ func TestResolveCopilotTokenSetsPlan(t *testing.T) {
 
 	t.Run("no_endpoints_fallback", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(copilotTokenResponse{
+			_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 				Token:     "bearer-token",
 				ExpiresAt: time.Now().Unix() + 3600,
 			})
@@ -477,7 +477,7 @@ func TestResolveCopilotToken_Classic_StillExchanges(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "exchanged-token",
 			ExpiresAt: time.Now().Unix() + 3600,
 		})
@@ -523,7 +523,7 @@ func TestResolveCopilotToken_UnknownPrefix_Exchanges(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		json.NewEncoder(w).Encode(copilotTokenResponse{
+		_ = json.NewEncoder(w).Encode(copilotTokenResponse{
 			Token:     "exchanged-unknown",
 			ExpiresAt: time.Now().Unix() + 3600,
 		})

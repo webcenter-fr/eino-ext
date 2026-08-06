@@ -15,6 +15,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
+// NewProfileSupervisor creates a new profile supervisor agent.
 func NewProfileSupervisor(ctx context.Context, cfg *SupervisorConfig) (*adk.ChatModelAgent, error) {
 	if cfg == nil {
 		return nil, errors.New("supervisor config is nil")

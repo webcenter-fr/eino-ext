@@ -1,3 +1,4 @@
+// Package opensearch provides eino tools for OpenSearch operations.
 package opensearch
 
 import (

@@ -21,6 +21,7 @@ It creates a new ArgoCD application.
 It returns the created application JSON.
 `
 
+// ApplicationCreateParams defines the parameters for creating an ArgoCD application.
 type ApplicationCreateParams struct {
 	Instance       string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name           string `json:"name" validate:"required" jsonschema:"(required) The application name."`
@@ -36,11 +37,13 @@ type ApplicationCreateParams struct {
 	Confirmed      bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the creation. Set this after the user has approved the dry-run result."`
 }
 
+// ApplicationCreateTool is an eino tool for creating ArgoCD applications.
 type ApplicationCreateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates an ArgoCD application and returns the result.
 func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationCreateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -110,6 +113,7 @@ func (t *ApplicationCreateTool) Invoke(ctx context.Context, params *ApplicationC
 	return string(data), nil
 }
 
+// NewApplicationCreateTool creates a new ApplicationCreateTool.
 func NewApplicationCreateTool(ctx context.Context, configs Configs) (*ApplicationCreateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

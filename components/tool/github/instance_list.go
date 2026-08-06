@@ -20,13 +20,16 @@ It returns a JSON array of strings, where each string is the name of a configure
 Use these instance names when calling any other GitHub tool.
 `
 
+// InstanceListTool is an eino tool for listing configured GitHub instances.
 type InstanceListTool struct {
 	knownInstances []string
 	tool.InvokableTool
 }
 
+// InstanceListParams defines the parameters for listing GitHub instances.
 type InstanceListParams struct{}
 
+// Invoke returns known GitHub instances as JSON.
 func (t *InstanceListTool) Invoke(ctx context.Context, params *InstanceListParams) (string, error) {
 	b, err := json.Marshal(t.knownInstances)
 	if err != nil {

@@ -369,6 +369,7 @@ func newPrometheusRecorder(cfg *Config, pricer modelsdev.CatalogPricer) (*Promet
 	}, nil
 }
 
+// ObserveStep records a step observation into Prometheus metrics.
 func (r *PrometheusRecorder) ObserveStep(model, agent string, se activity.StepEnded) {
 	if r == nil {
 		return
@@ -376,6 +377,7 @@ func (r *PrometheusRecorder) ObserveStep(model, agent string, se activity.StepEn
 	r.collector.Observe(model, agent, se)
 }
 
+// ObserveBreakdown records a cost breakdown in Prometheus metrics.
 func (r *PrometheusRecorder) ObserveBreakdown(model, agent string, b modelsdev.CostBreakdown) {
 	if r == nil {
 		return
@@ -389,6 +391,7 @@ func (r *PrometheusRecorder) ObserveBreakdown(model, agent string, b modelsdev.C
 	}
 }
 
+// RecordTask increments task counters and observes task cost.
 func (r *PrometheusRecorder) RecordTask(sessionID, agent string, cost float64, real bool) {
 	if r == nil {
 		return
@@ -401,6 +404,7 @@ func (r *PrometheusRecorder) RecordTask(sessionID, agent string, cost float64, r
 	r.taskCostHist.Observe(cost)
 }
 
+// RecordCompaction increments the compaction counter per agent.
 func (r *PrometheusRecorder) RecordCompaction(agent string) {
 	if r == nil {
 		return
@@ -408,6 +412,7 @@ func (r *PrometheusRecorder) RecordCompaction(agent string) {
 	r.compactions.WithLabelValues(agent).Inc()
 }
 
+// RecordAnalysis records a complexity analysis metric.
 func (r *PrometheusRecorder) RecordAnalysis(sessionID, agent string, a *activity.ComplexityAnalysis) {
 	if r == nil || a == nil {
 		return
@@ -416,6 +421,7 @@ func (r *PrometheusRecorder) RecordAnalysis(sessionID, agent string, a *activity
 	r.humanSavings.WithLabelValues(agent).Add(a.MoneySavedUSD)
 }
 
+// RecordFallback increments the fallback counter.
 func (r *PrometheusRecorder) RecordFallback(reason string) {
 	if r == nil {
 		return
@@ -423,6 +429,7 @@ func (r *PrometheusRecorder) RecordFallback(reason string) {
 	r.costSaverColl.RecordFallback(reason)
 }
 
+// SetRealtimeCost sets the realtime cost gauge.
 func (r *PrometheusRecorder) SetRealtimeCost(sessionID, agent string, cost float64) {
 	if r == nil {
 		return

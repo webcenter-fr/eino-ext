@@ -19,6 +19,7 @@ It updates repository settings such as default branch, description, visibility, 
 It returns the updated repository details.
 `
 
+// RepoSettingsUpdateParams defines the parameters for updating repo settings.
 type RepoSettingsUpdateParams struct {
 	Instance              string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner                 string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -38,11 +39,13 @@ type RepoSettingsUpdateParams struct {
 	Confirmed             bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the update. Set this after the user has approved the dry-run result."`
 }
 
+// RepoSettingsUpdateTool is an eino tool for updating repo settings.
 type RepoSettingsUpdateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke updates repository settings.
 func (t *RepoSettingsUpdateTool) Invoke(ctx context.Context, params *RepoSettingsUpdateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -109,6 +112,7 @@ func (t *RepoSettingsUpdateTool) Invoke(ctx context.Context, params *RepoSetting
 		updated.GetName(), updated.GetFullName(), updated.GetPrivate(), updated.GetDefaultBranch(), updated.GetHTMLURL()), nil
 }
 
+// NewRepoSettingsUpdateTool creates a new RepoSettingsUpdateTool.
 func NewRepoSettingsUpdateTool(ctx context.Context, configs Configs) (*RepoSettingsUpdateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

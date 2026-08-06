@@ -23,6 +23,9 @@ type Config struct {
 
 // OTelRecorder implements costtrack.Recorder using the OpenTelemetry global
 // metric scope. Instruments mirror the PrometheusRecorder 1:1.
+// OTelRecorder is a Recorder that exports metrics via OpenTelemetry.
+//
+//nolint:revive // Retaining OTel prefix by established naming convention.
 type OTelRecorder struct {
 	scope *otelmetrics.Scope
 
@@ -131,6 +134,7 @@ func NewOTelRecorder(ctx context.Context, cfg *Config) (*OTelRecorder, error) {
 	}, nil
 }
 
+// ObserveStep records a step observation as an OTel span.
 func (r *OTelRecorder) ObserveStep(model, agent string, se activity.StepEnded) {
 	if r == nil {
 		return
@@ -146,6 +150,7 @@ func (r *OTelRecorder) ObserveStep(model, agent string, se activity.StepEnded) {
 	}
 }
 
+// ObserveBreakdown records a cost breakdown as OTel attributes.
 func (r *OTelRecorder) ObserveBreakdown(model, agent string, b modelsdev.CostBreakdown) {
 	if r == nil {
 		return
@@ -160,6 +165,7 @@ func (r *OTelRecorder) ObserveBreakdown(model, agent string, b modelsdev.CostBre
 	}
 }
 
+// RecordTask records a task metric via OTel.
 func (r *OTelRecorder) RecordTask(sessionID, agent string, cost float64, real bool) {
 	if r == nil {
 		return
@@ -173,6 +179,7 @@ func (r *OTelRecorder) RecordTask(sessionID, agent string, cost float64, real bo
 	r.taskCostHist.Record(ctx, cost, attribute.NewSet())
 }
 
+// RecordCompaction increments the compaction counter via OTel.
 func (r *OTelRecorder) RecordCompaction(agent string) {
 	if r == nil {
 		return
@@ -180,6 +187,7 @@ func (r *OTelRecorder) RecordCompaction(agent string) {
 	r.compactions.Add(context.Background(), 1, otelmetrics.Attrs("agent", agent))
 }
 
+// RecordAnalysis records a complexity analysis via OTel.
 func (r *OTelRecorder) RecordAnalysis(sessionID, agent string, a *activity.ComplexityAnalysis) {
 	if r == nil || a == nil {
 		return
@@ -191,6 +199,7 @@ func (r *OTelRecorder) RecordAnalysis(sessionID, agent string, a *activity.Compl
 	r.costSaverRuns.Add(context.Background(), 1, otelmetrics.Attrs("agent", agent))
 }
 
+// RecordFallback increments the fallback counter via OTel.
 func (r *OTelRecorder) RecordFallback(reason string) {
 	if r == nil {
 		return
@@ -198,6 +207,7 @@ func (r *OTelRecorder) RecordFallback(reason string) {
 	r.fallbackCount.Add(context.Background(), 1, otelmetrics.Attrs("reason", reason))
 }
 
+// SetRealtimeCost sets the realtime cost gauge via OTel.
 func (r *OTelRecorder) SetRealtimeCost(sessionID, agent string, cost float64) {
 	if r == nil {
 		return

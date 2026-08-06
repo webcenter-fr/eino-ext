@@ -23,6 +23,7 @@ It returns the created review details.
 - Inline comments can be provided as an array of path/position/body objects.
 `
 
+// PRReviewParams defines the parameters for reviewing a GitHub PR.
 type PRReviewParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -34,11 +35,13 @@ type PRReviewParams struct {
 	Confirmed bool  `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually submit the review. Set this after the user has approved the dry-run result."`
 }
 
+// PRReviewTool is an eino tool for reviewing GitHub PRs.
 type PRReviewTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke submits a review on a GitHub PR.
 func (t *PRReviewTool) Invoke(ctx context.Context, params *PRReviewParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -68,6 +71,7 @@ func (t *PRReviewTool) Invoke(ctx context.Context, params *PRReviewParams) (resu
 	return fmt.Sprintf(`{"created": true, "review": {"id": %d, "event": %q, "htmlURL": %q}}`, review.GetID(), params.Event, review.GetHTMLURL()), nil
 }
 
+// NewPRReviewTool creates a new PRReviewTool.
 func NewPRReviewTool(ctx context.Context, configs Configs) (*PRReviewTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

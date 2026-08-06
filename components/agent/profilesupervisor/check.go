@@ -7,6 +7,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
+// Check performs a health check against the profile supervisor configuration.
 func Check(ctx context.Context, cfg *SupervisorConfig) checkup.Results {
 	if cfg == nil {
 		return checkup.Results{{

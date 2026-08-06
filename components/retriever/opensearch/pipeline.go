@@ -1,3 +1,4 @@
+// Package opensearch provides OpenSearch-based retrieval tools.
 package opensearch
 
 import (

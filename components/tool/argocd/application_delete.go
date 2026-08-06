@@ -20,6 +20,7 @@ It deletes an ArgoCD application.
 It returns a confirmation message.
 `
 
+// ApplicationDeleteParams defines the parameters for deleting an ArgoCD application.
 type ApplicationDeleteParams struct {
 	Instance     string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name         string `json:"name" validate:"required" jsonschema:"(required) The application name."`
@@ -30,11 +31,13 @@ type ApplicationDeleteParams struct {
 	Confirmed    bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the deletion. Set this after the user has approved the dry-run result."`
 }
 
+// ApplicationDeleteTool is an eino tool for deleting ArgoCD applications.
 type ApplicationDeleteTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke deletes an ArgoCD application and returns confirmation.
 func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationDeleteParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -80,6 +83,7 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 	return fmt.Sprintf(`{"message": "Application %q deleted successfully"}`, params.Name), nil
 }
 
+// NewApplicationDeleteTool creates a new ApplicationDeleteTool.
 func NewApplicationDeleteTool(ctx context.Context, configs Configs) (*ApplicationDeleteTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

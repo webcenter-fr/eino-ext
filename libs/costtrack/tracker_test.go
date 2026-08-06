@@ -55,7 +55,7 @@ func TestTracker_NewTracker_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	holder := new(atomic.Pointer[modelsdev.Catalog])
 	holder.Store(&modelsdev.Catalog{})
@@ -170,7 +170,7 @@ func TestTracker_FakeRecorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	holder := new(atomic.Pointer[modelsdev.Catalog])
 	holder.Store(&modelsdev.Catalog{})
@@ -453,7 +453,7 @@ func TestPrometheusRecorder_HumanSavings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBus: %v", err)
 	}
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	holder := new(atomic.Pointer[modelsdev.Catalog])
 	holder.Store(&modelsdev.Catalog{})

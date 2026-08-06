@@ -19,6 +19,7 @@ It creates a new issue in a GitHub repository.
 It returns the created issue details.
 `
 
+// IssueCreateParams defines the parameters for creating a GitHub issue.
 type IssueCreateParams struct {
 	Instance  string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -31,11 +32,13 @@ type IssueCreateParams struct {
 	Confirmed bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the issue creation. Set this after the user has approved the dry-run result."`
 }
 
+// IssueCreateTool is an eino tool for creating GitHub issues.
 type IssueCreateTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates a GitHub issue and returns the result.
 func (t *IssueCreateTool) Invoke(ctx context.Context, params *IssueCreateParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -71,6 +74,7 @@ func (t *IssueCreateTool) Invoke(ctx context.Context, params *IssueCreateParams)
 		issue.GetNumber(), issue.GetTitle(), issue.GetHTMLURL(), issue.GetState()), nil
 }
 
+// NewIssueCreateTool creates a new IssueCreateTool.
 func NewIssueCreateTool(ctx context.Context, configs Configs) (*IssueCreateTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

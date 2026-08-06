@@ -27,6 +27,7 @@ It returns the created or updated webhook details.
 - Secrets are redacted from output.
 `
 
+// WebhookUpsertParams defines the parameters for upserting a webhook.
 type WebhookUpsertParams struct {
 	Instance     string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner        string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -41,11 +42,13 @@ type WebhookUpsertParams struct {
 	Confirmed    bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`
 }
 
+// WebhookUpsertTool is an eino tool for upserting GitHub webhooks.
 type WebhookUpsertTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke creates or updates a GitHub webhook.
 func (t *WebhookUpsertTool) Invoke(ctx context.Context, params *WebhookUpsertParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -153,6 +156,7 @@ func validateWebhookURL(rawURL string) error {
 	return nil
 }
 
+// NewWebhookUpsertTool creates a new WebhookUpsertTool.
 func NewWebhookUpsertTool(ctx context.Context, configs Configs) (*WebhookUpsertTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

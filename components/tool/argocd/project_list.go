@@ -21,21 +21,25 @@ It returns a JSON array of objects, where each object represents a project with 
 - description: the description of the project.
 `
 
+// ProjectListParams defines the parameters for listing ArgoCD projects.
 type ProjectListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each project JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// ProjectListOutput is the structured output for a project list.
 type ProjectListOutput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
+// ProjectListTool is an eino tool for listing ArgoCD projects.
 type ProjectListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching projects as JSON.
 func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -64,6 +68,7 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 	})
 }
 
+// NewProjectListTool creates a new ProjectListTool.
 func NewProjectListTool(ctx context.Context, configs Configs) (*ProjectListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

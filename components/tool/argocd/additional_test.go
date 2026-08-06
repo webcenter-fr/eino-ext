@@ -1,3 +1,4 @@
+// Package argocd provides eino tools for ArgoCD operations.
 package argocd
 
 import (

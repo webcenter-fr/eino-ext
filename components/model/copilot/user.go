@@ -76,7 +76,7 @@ func validateFineGrainedPATToBase(ctx context.Context, pat, apiBase string, time
 		}
 		return "", nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusOK:

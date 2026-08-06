@@ -19,6 +19,7 @@ It adds a comment to a GitHub issue.
 It returns the created comment details.
 `
 
+// IssueCommentParams defines the parameters for commenting on a GitHub issue.
 type IssueCommentParams struct {
 	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -29,11 +30,13 @@ type IssueCommentParams struct {
 	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post the comment. Set this after the user has approved the dry-run result."`
 }
 
+// IssueCommentTool is an eino tool for commenting on GitHub issues.
 type IssueCommentTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke posts a comment on a GitHub issue.
 func (t *IssueCommentTool) Invoke(ctx context.Context, params *IssueCommentParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -62,6 +65,7 @@ func (t *IssueCommentTool) Invoke(ctx context.Context, params *IssueCommentParam
 	return fmt.Sprintf(`{"created": true, "comment": {"id": %d, "htmlURL": %q}}`, comment.GetID(), comment.GetHTMLURL()), nil
 }
 
+// NewIssueCommentTool creates a new IssueCommentTool.
 func NewIssueCommentTool(ctx context.Context, configs Configs) (*IssueCommentTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

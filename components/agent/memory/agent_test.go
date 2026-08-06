@@ -15,8 +15,8 @@ type mockAgent struct {
 	description string
 }
 
-func (m *mockAgent) Name(ctx context.Context) string         { return m.name }
-func (m *mockAgent) Description(ctx context.Context) string  { return m.description }
+func (m *mockAgent) Name(ctx context.Context) string        { return m.name }
+func (m *mockAgent) Description(ctx context.Context) string { return m.description }
 func (m *mockAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 	go func() {
@@ -28,7 +28,7 @@ func (m *mockAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.
 }
 
 func TestBuildQuery_JoinsLastTwoUserMessages(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	messages := []*schema.Message{
 		schema.SystemMessage("system prompt"),
 		schema.UserMessage("first question"),
@@ -39,7 +39,7 @@ func TestBuildQuery_JoinsLastTwoUserMessages(t *testing.T) {
 }
 
 func TestBuildQuery_SingleUserMessage(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	messages := []*schema.Message{
 		schema.SystemMessage("system prompt"),
 		schema.UserMessage("only question"),
@@ -49,7 +49,7 @@ func TestBuildQuery_SingleUserMessage(t *testing.T) {
 }
 
 func TestBuildQuery_ThreeUserMessages_KeepsLastTwo(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	messages := []*schema.Message{
 		schema.UserMessage("oldest"),
 		schema.AssistantMessage("answer 1", nil),
@@ -62,7 +62,7 @@ func TestBuildQuery_ThreeUserMessages_KeepsLastTwo(t *testing.T) {
 }
 
 func TestBuildQuery_NoUserMessage(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	assert.Empty(t, agent.buildQuery([]*schema.Message{
 		schema.SystemMessage("system prompt"),
 		schema.AssistantMessage("answer", nil),
@@ -70,7 +70,7 @@ func TestBuildQuery_NoUserMessage(t *testing.T) {
 }
 
 func TestFormatMemories(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	docs := []*schema.Document{
 		{Content: "user prefers Go", MetaData: map[string]any{"category": "preference"}},
 		{Content: "project uses PostgreSQL", MetaData: map[string]any{"category": "fact"}},
@@ -83,7 +83,7 @@ func TestFormatMemories(t *testing.T) {
 }
 
 func TestInjectContext_WithSystemMessage(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	ctxMsg := NewMemoryContextMessage("memory content")
 	result := agent.injectContext([]*schema.Message{
 		schema.SystemMessage("original system prompt"),
@@ -96,7 +96,7 @@ func TestInjectContext_WithSystemMessage(t *testing.T) {
 }
 
 func TestInjectContext_NoSystemMessage(t *testing.T) {
-	agent := &MemoryAgent{}
+	agent := &Agent{}
 	ctxMsg := NewMemoryContextMessage("memory content")
 	result := agent.injectContext([]*schema.Message{schema.UserMessage("hello")}, ctxMsg)
 	assert.Len(t, result, 2)
@@ -105,7 +105,7 @@ func TestInjectContext_NoSystemMessage(t *testing.T) {
 }
 
 func TestInjectContext_WithSystemPromptPrefix(t *testing.T) {
-	agent := &MemoryAgent{systemPromptPrefix: "CUSTOM PREFIX"}
+	agent := &Agent{systemPromptPrefix: "CUSTOM PREFIX"}
 	ctxMsg := NewMemoryContextMessage("memory content")
 	result := agent.injectContext([]*schema.Message{
 		schema.SystemMessage("original system prompt"),
@@ -122,7 +122,7 @@ func TestNewMemoryAgent(t *testing.T) {
 		AutoExtract:            true,
 		MaxMemoriesPerRetrieve: 3,
 	}
-	agent, err := NewMemoryAgent(ctx, cfg)
+	agent, err := NewAgent(ctx, cfg)
 	require.NoError(t, err)
 	assert.Equal(t, "test", agent.Name(ctx))
 	assert.Equal(t, "test agent", agent.Description(ctx))
@@ -131,13 +131,13 @@ func TestNewMemoryAgent(t *testing.T) {
 }
 
 func TestNewMemoryAgent_NilInnerAgent(t *testing.T) {
-	_, err := NewMemoryAgent(context.Background(), Config{})
+	_, err := NewAgent(context.Background(), Config{})
 	assert.Error(t, err)
 }
 
 func TestMemoryAgent_SetUserID(t *testing.T) {
 	ctx := context.Background()
-	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
+	agent, err := NewAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
 	require.NoError(t, err)
 	agent.SetUserID("user-1")
 	assert.Equal(t, "user-1", agent.userID)
@@ -145,7 +145,7 @@ func TestMemoryAgent_SetUserID(t *testing.T) {
 
 func TestMemoryAgent_SetSessionID(t *testing.T) {
 	ctx := context.Background()
-	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
+	agent, err := NewAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
 	require.NoError(t, err)
 	agent.SetSessionID("session-1")
 	assert.Equal(t, "session-1", agent.sessionID)
@@ -153,7 +153,7 @@ func TestMemoryAgent_SetSessionID(t *testing.T) {
 
 func TestResolveIdentity_Defaults(t *testing.T) {
 	ctx := context.Background()
-	agent, err := NewMemoryAgent(ctx, Config{
+	agent, err := NewAgent(ctx, Config{
 		InnerAgent: &mockAgent{name: "test"},
 		UserID:     "default-user",
 		SessionID:  "default-session",
@@ -165,7 +165,7 @@ func TestResolveIdentity_Defaults(t *testing.T) {
 }
 
 func TestResolveIdentity_SettersOverrideConfig(t *testing.T) {
-	agent, err := NewMemoryAgent(context.Background(), Config{
+	agent, err := NewAgent(context.Background(), Config{
 		InnerAgent: &mockAgent{name: "test"},
 		UserID:     "config-user",
 	})
@@ -183,7 +183,7 @@ func TestResolveIdentity_SettersOverrideConfig(t *testing.T) {
 // inside an actual adk.Runner session (runctx initialized by the runner).
 // In unit tests we verify the fallback to agent defaults.
 func TestResolveIdentity_ContextFallbackToDefaults(t *testing.T) {
-	agent, err := NewMemoryAgent(context.Background(), Config{
+	agent, err := NewAgent(context.Background(), Config{
 		InnerAgent: &mockAgent{name: "test"},
 		UserID:     "default-user",
 	})
@@ -197,7 +197,7 @@ func TestResolveIdentity_ContextFallbackToDefaults(t *testing.T) {
 }
 
 func TestResolveIdentity_NoDefaults(t *testing.T) {
-	agent, err := NewMemoryAgent(context.Background(), Config{
+	agent, err := NewAgent(context.Background(), Config{
 		InnerAgent: &mockAgent{name: "test"},
 	})
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestFilterByUser_EmptyUserID(t *testing.T) {
 
 func TestMemoryAgent_Run(t *testing.T) {
 	ctx := context.Background()
-	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
+	agent, err := NewAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
 	require.NoError(t, err)
 
 	iter := agent.Run(ctx, &adk.AgentInput{
@@ -339,7 +339,7 @@ func TestMonitorRun_MultiTurnToolCalls(t *testing.T) {
 
 	inner := &sequenceAgent{events: turns}
 
-	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: inner})
+	agent, err := NewAgent(ctx, Config{InnerAgent: inner})
 	require.NoError(t, err)
 
 	iter := agent.Run(ctx, &adk.AgentInput{
@@ -399,7 +399,7 @@ func (s *sequenceAgent) Run(ctx context.Context, _ *adk.AgentInput, _ ...adk.Age
 
 func TestMemoryAgent_EnrichInput_NoStore(t *testing.T) {
 	ctx := context.Background()
-	agent, err := NewMemoryAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
+	agent, err := NewAgent(ctx, Config{InnerAgent: &mockAgent{name: "test"}})
 	require.NoError(t, err)
 
 	enriched, userQuery, err := agent.enrichInput(ctx, &adk.AgentInput{

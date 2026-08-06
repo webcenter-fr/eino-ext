@@ -20,11 +20,13 @@ type paginateToken struct {
 	PaginateToken string `json:"paginateToken"`
 }
 
+// ListParamsPaginate holds pagination state for resource listing.
 type ListParamsPaginate struct {
 	PageSize      int    `json:"pageSize,omitempty" validate:"omitempty,min=1,max=500" jsonschema:"(optional) The number of resources to return per page. Default is 50."`
 	PaginateToken string `json:"paginateToken,omitempty" jsonschema:"(optional) The token to retrieve the next page of results. This token is returned in the response when there are more results available than can fit in a single page."`
 }
 
+// ListParams defines the parameters for listing Kubernetes resources.
 type ListParams struct {
 	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Kind           string              `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred. Uses server-side discovery so CRDs are supported automatically."`
@@ -42,11 +44,13 @@ It lists any Kubernetes resource. The 'kind' parameter accepts a PascalCase sing
 Returns a JSON array of objects with curated fields specific to each resource type. For types without dedicated formatters, returns name, namespace, and status.
 `
 
+// ListTool is an eino tool for listing Kubernetes resources.
 type ListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching resources as JSON.
 func (t *ListTool) Invoke(ctx context.Context, params *ListParams) (string, error) {
 	if params.Paginate != nil && params.Paginate.PageSize == 0 {
 		params.Paginate.PageSize = 50
@@ -129,6 +133,7 @@ func (t *ListTool) Invoke(ctx context.Context, params *ListParams) (string, erro
 	return string(data), nil
 }
 
+// NewListTool creates a new ListTool.
 func NewListTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

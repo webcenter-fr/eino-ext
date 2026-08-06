@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// DescribeParams defines the parameters for describing a Kubernetes resource.
 type DescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Kind                string   `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
@@ -55,11 +56,13 @@ It describes any Kubernetes resource. The 'kind' parameter accepts a PascalCase 
 Returns a JSON object with metadata, spec, status, and data fields.
 `
 
+// DescribeTool is an eino tool for describing Kubernetes resources.
 type DescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns the details of a Kubernetes resource as JSON.
 func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (string, error) {
 	if err := validate.Struct(params); err != nil {
 		return "", err
@@ -129,6 +132,7 @@ func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (stri
 	return string(data), nil
 }
 
+// NewDescribeTool creates a new DescribeTool.
 func NewDescribeTool(ctx context.Context, configs Configs) (tool.InvokableTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

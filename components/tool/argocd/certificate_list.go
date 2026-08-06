@@ -22,22 +22,26 @@ It returns a JSON array of objects, where each object represents a certificate w
 - serverName: the server name.
 `
 
+// CertificateListParams defines the parameters for listing ArgoCD certificates.
 type CertificateListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each certificate JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// CertificateListOutput is the structured output for a certificate list.
 type CertificateListOutput struct {
 	CertInfo   string `json:"certInfo"`
 	CertType   string `json:"certType"`
 	ServerName string `json:"serverName"`
 }
 
+// CertificateListTool is an eino tool for listing ArgoCD certificates.
 type CertificateListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching certificates as JSON.
 func (t *CertificateListTool) Invoke(ctx context.Context, params *CertificateListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -67,6 +71,7 @@ func (t *CertificateListTool) Invoke(ctx context.Context, params *CertificateLis
 	})
 }
 
+// NewCertificateListTool creates a new CertificateListTool.
 func NewCertificateListTool(ctx context.Context, configs Configs) (*CertificateListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

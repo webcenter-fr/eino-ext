@@ -29,6 +29,7 @@ It returns a JSON array of objects, where each object represents a pull request 
 - htmlURL: the PR URL on GitHub.
 `
 
+// PRListParams defines the parameters for listing GitHub PRs.
 type PRListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
@@ -41,6 +42,7 @@ type PRListParams struct {
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each PR JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// PRListOutput is the structured output for a PR list.
 type PRListOutput struct {
 	Number     int    `json:"number"`
 	Title      string `json:"title"`
@@ -54,11 +56,13 @@ type PRListOutput struct {
 	HTMLURL    string `json:"htmlURL"`
 }
 
+// PRListTool is an eino tool for listing GitHub PRs.
 type PRListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns matching PRs as JSON.
 func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -129,6 +133,7 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 	})
 }
 
+// NewPRListTool creates a new PRListTool.
 func NewPRListTool(ctx context.Context, configs Configs) (*PRListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

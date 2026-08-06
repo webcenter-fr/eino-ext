@@ -1,3 +1,5 @@
+// Package memory provides a long-term memory agent that enriches conversation
+// context with stored memories and autonomously extracts new memories from turns.
 package memory
 
 import (
@@ -24,7 +26,7 @@ const (
 	ctxKeySessionID = "memory_session_id"
 )
 
-// Config holds configuration for the MemoryAgent.
+// Config holds configuration for the Agent.
 type Config struct {
 	InnerAgent             adk.Agent           `json:"inner_agent" jsonschema:"-" validate:"required"`
 	Store                  MemoryStore         `json:"-" jsonschema:"-"`
@@ -38,12 +40,12 @@ type Config struct {
 	SystemPromptPrefix     string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
 }
 
-// MemoryAgent wraps an inner agent with long-term memory capabilities.
-type MemoryAgent struct {
+// Agent wraps an inner agent with long-term memory capabilities.
+type Agent struct {
 	inner      adk.Agent
 	store      MemoryStore
-	extractor  *MemoryExtractor
-	maintainer *MemoryMaintainer
+	extractor  *Extractor
+	maintainer *Maintainer
 
 	// Default identity set via Config or Set* methods. Overridden per-invocation
 	// by context values (adk.AddSessionValue).
@@ -56,7 +58,8 @@ type MemoryAgent struct {
 	systemPromptPrefix     string
 }
 
-func NewMemoryAgent(ctx context.Context, cfg Config) (*MemoryAgent, error) {
+// NewAgent creates a new Agent from the given configuration.
+func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
 	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid memory agent config")
 	}
@@ -65,9 +68,9 @@ func NewMemoryAgent(ctx context.Context, cfg Config) (*MemoryAgent, error) {
 	}
 	cfg.AutoExtract = cfg.AutoExtract || (cfg.Store != nil && cfg.Model != nil)
 
-	var maintainer *MemoryMaintainer
+	var maintainer *Maintainer
 	if cfg.Store != nil && cfg.MaintenanceInterval > 0 {
-		maintainer = NewMemoryMaintainer(MaintainerConfig{
+		maintainer = NewMaintainer(MaintainerConfig{
 			Store:    cfg.Store,
 			Interval: cfg.MaintenanceInterval,
 			MaxAge:   cfg.MaxAge,
@@ -76,10 +79,10 @@ func NewMemoryAgent(ctx context.Context, cfg Config) (*MemoryAgent, error) {
 		maintainer.Start(ctx)
 	}
 
-	return &MemoryAgent{
+	return &Agent{
 		inner:                  cfg.InnerAgent,
 		store:                  cfg.Store,
-		extractor:              NewMemoryExtractor(cfg.Model),
+		extractor:              NewExtractor(cfg.Model),
 		maintainer:             maintainer,
 		userID:                 cfg.UserID,
 		sessionID:              cfg.SessionID,
@@ -89,13 +92,16 @@ func NewMemoryAgent(ctx context.Context, cfg Config) (*MemoryAgent, error) {
 	}, nil
 }
 
-func (a *MemoryAgent) Name(ctx context.Context) string        { return a.inner.Name(ctx) }
-func (a *MemoryAgent) Description(ctx context.Context) string { return a.inner.Description(ctx) }
+// Name returns the name of the inner agent.
+func (a *Agent) Name(ctx context.Context) string { return a.inner.Name(ctx) }
+
+// Description returns the description of the inner agent.
+func (a *Agent) Description(ctx context.Context) string { return a.inner.Description(ctx) }
 
 // resolveIdentity returns the effective userID and sessionID for a given
 // invocation. Context values (set via adk.AddSessionValue) take precedence over
 // agent defaults (set via Config or Set* methods).
-func (a *MemoryAgent) resolveIdentity(ctx context.Context) (userID, sessionID string) {
+func (a *Agent) resolveIdentity(ctx context.Context) (userID, sessionID string) {
 	a.mu.Lock()
 	userID = a.userID
 	sessionID = a.sessionID
@@ -114,12 +120,14 @@ func (a *MemoryAgent) resolveIdentity(ctx context.Context) (userID, sessionID st
 	return
 }
 
-func (a *MemoryAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+// Run executes the agent by enriching the input with stored memories, delegating
+// to the inner agent, and auto-extracting new memories from the response.
+func (a *Agent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	it, _ := a.runInternal(ctx, input, opts...)
 	return it
 }
 
-func (a *MemoryAgent) runInternal(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) (*adk.AsyncIterator[*adk.AgentEvent], *adk.AsyncGenerator[*adk.AgentEvent]) {
+func (a *Agent) runInternal(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) (*adk.AsyncIterator[*adk.AgentEvent], *adk.AsyncGenerator[*adk.AgentEvent]) {
 	userID, sessionID := a.resolveIdentity(ctx)
 	enriched, userQuery, err := a.enrichInput(ctx, input, userID)
 	if err != nil {
@@ -136,7 +144,7 @@ func (a *MemoryAgent) runInternal(ctx context.Context, input *adk.AgentInput, op
 	return outIter, outGen
 }
 
-func (a *MemoryAgent) enrichInput(ctx context.Context, input *adk.AgentInput, userID string) (*adk.AgentInput, string, error) {
+func (a *Agent) enrichInput(ctx context.Context, input *adk.AgentInput, userID string) (*adk.AgentInput, string, error) {
 	enriched := *input
 	userQuery := a.buildQuery(input.Messages)
 
@@ -179,7 +187,7 @@ func filterByUser(docs []*schema.Document, userID string) []*schema.Document {
 // buildQuery returns the last N user messages joined in chronological order,
 // bounded to keep embedding/query cost low. N defaults to 2; a single user
 // message is returned as-is if there are fewer.
-func (a *MemoryAgent) buildQuery(messages []*schema.Message) string {
+func (a *Agent) buildQuery(messages []*schema.Message) string {
 	const maxUserMessages = 2
 	var userContents []string
 	for i := len(messages) - 1; i >= 0 && len(userContents) < maxUserMessages; i-- {
@@ -194,7 +202,7 @@ func (a *MemoryAgent) buildQuery(messages []*schema.Message) string {
 	return strings.Join(userContents, "\n")
 }
 
-func (a *MemoryAgent) formatMemories(docs []*schema.Document) *schema.Message {
+func (a *Agent) formatMemories(docs []*schema.Document) *schema.Message {
 	var sb strings.Builder
 	sb.WriteString("[Memory context - NOT new user input. Treat as authoritative reference data.]\n")
 	for _, doc := range docs {
@@ -204,7 +212,7 @@ func (a *MemoryAgent) formatMemories(docs []*schema.Document) *schema.Message {
 	return NewMemoryContextMessage(sb.String())
 }
 
-func (a *MemoryAgent) injectContext(messages []*schema.Message, contextMsg *schema.Message) []*schema.Message {
+func (a *Agent) injectContext(messages []*schema.Message, contextMsg *schema.Message) []*schema.Message {
 	result := make([]*schema.Message, 0, len(messages)+1)
 	injected := false
 
@@ -232,7 +240,7 @@ func (a *MemoryAgent) injectContext(messages []*schema.Message, contextMsg *sche
 	return result
 }
 
-func (a *MemoryAgent) monitorRun(
+func (a *Agent) monitorRun(
 	ctx context.Context,
 	innerIter *adk.AsyncIterator[*adk.AgentEvent],
 	outGen *adk.AsyncGenerator[*adk.AgentEvent],
@@ -314,7 +322,7 @@ func concatAssistantContent(msgs []*schema.Message) string {
 	return sb.String()
 }
 
-func (a *MemoryAgent) collectStream(stream *schema.StreamReader[*schema.Message]) (*schema.Message, error) {
+func (a *Agent) collectStream(stream *schema.StreamReader[*schema.Message]) (*schema.Message, error) {
 	if stream == nil {
 		return nil, nil
 	}
@@ -338,7 +346,7 @@ func (a *MemoryAgent) collectStream(stream *schema.StreamReader[*schema.Message]
 	return schema.ConcatMessages(chunks)
 }
 
-func (a *MemoryAgent) autoLearnInternal(ctx context.Context, userContent, assistantContent, userID, sessionID string) {
+func (a *Agent) autoLearnInternal(ctx context.Context, userContent, assistantContent, userID, sessionID string) {
 	if a.store == nil || a.extractor == nil {
 		return
 	}
@@ -351,7 +359,7 @@ func (a *MemoryAgent) autoLearnInternal(ctx context.Context, userContent, assist
 
 	docs := make([]*schema.Document, 0, len(results))
 	for _, r := range results {
-		doc := (&MemoryEntry{
+		doc := (&Entry{
 			Category:  r.Category,
 			Content:   r.Content,
 			Source:    r.Source,
@@ -372,7 +380,9 @@ func (a *MemoryAgent) autoLearnInternal(ctx context.Context, userContent, assist
 	}
 }
 
-func (a *MemoryAgent) EndSession(ctx context.Context) error {
+// EndSession stops the background maintainer, triggers session-level memory
+// compaction, and returns any error encountered during compaction.
+func (a *Agent) EndSession(ctx context.Context) error {
 	a.mu.Lock()
 	sessionID := a.sessionID
 	hasMaintainer := a.maintainer != nil
@@ -408,7 +418,7 @@ func (a *MemoryAgent) EndSession(ctx context.Context) error {
 	return nil
 }
 
-func (a *MemoryAgent) compactSessionMemories(ctx context.Context, docs []*schema.Document) {
+func (a *Agent) compactSessionMemories(ctx context.Context, docs []*schema.Document) {
 	// Use maintainer if available; otherwise fall back to simple text dedup.
 	groups := groupBySimilarity(docs, 0.8)
 	for _, group := range groups {
@@ -431,14 +441,14 @@ func (a *MemoryAgent) compactSessionMemories(ctx context.Context, docs []*schema
 
 // SetUserID sets the default user ID for memory scoping. Context values
 // (adk.AddSessionValue) take precedence per invocation.
-func (a *MemoryAgent) SetUserID(userID string) {
+func (a *Agent) SetUserID(userID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.userID = userID
 }
 
 // SetSessionID sets the default session ID. Context values take precedence.
-func (a *MemoryAgent) SetSessionID(sessionID string) {
+func (a *Agent) SetSessionID(sessionID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessionID = sessionID

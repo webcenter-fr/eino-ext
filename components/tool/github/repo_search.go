@@ -28,6 +28,7 @@ It returns a JSON array of objects, where each object represents a repository wi
 - htmlURL: the repository URL on GitHub.
 `
 
+// RepoSearchParams defines the parameters for searching GitHub repositories.
 type RepoSearchParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Query    string `json:"query" validate:"required" jsonschema:"(required) Search query (GitHub search syntax)."`
@@ -36,6 +37,7 @@ type RepoSearchParams struct {
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each repository JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// RepoSearchOutput is the structured output for a repo search.
 type RepoSearchOutput struct {
 	Name          string `json:"name"`
 	FullName      string `json:"fullName"`
@@ -48,11 +50,13 @@ type RepoSearchOutput struct {
 	HTMLURL       string `json:"htmlURL"`
 }
 
+// RepoSearchTool is an eino tool for searching GitHub repositories.
 type RepoSearchTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke searches GitHub repositories and returns results as JSON.
 func (t *RepoSearchTool) Invoke(ctx context.Context, params *RepoSearchParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -106,6 +110,7 @@ func (t *RepoSearchTool) Invoke(ctx context.Context, params *RepoSearchParams) (
 	})
 }
 
+// NewRepoSearchTool creates a new RepoSearchTool.
 func NewRepoSearchTool(ctx context.Context, configs Configs) (*RepoSearchTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

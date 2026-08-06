@@ -1,3 +1,4 @@
+// Package prometheus provides eino tools for Prometheus monitoring and alerting.
 package prometheus
 
 import (
@@ -23,6 +24,7 @@ It retrieves the full details of alerts matching a label-based regex filter from
 It returns a JSON array of alert objects with all labels and annotations for matching alerts.
 `
 
+// AlertDescribeParams defines the parameters for describing a Prometheus alert.
 type AlertDescribeParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
 	Filter   string `json:"filter" validate:"required" jsonschema:"(required) A Go RE2 regex applied on alert label JSON. Only matching alerts are returned. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'HighCPU|HighMemory'."`
@@ -49,11 +51,13 @@ func toAlertDescribeOutput(a promapi.Alert) alertDescribeOutput {
 	}
 }
 
+// AlertDescribeTool is an eino tool for describing Prometheus alerts.
 type AlertDescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns alert details as JSON.
 func (t *AlertDescribeTool) Invoke(ctx context.Context, params *AlertDescribeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -100,6 +104,7 @@ func (t *AlertDescribeTool) Invoke(ctx context.Context, params *AlertDescribePar
 	return marshalOutputs(outputs)
 }
 
+// NewAlertDescribeTool creates a new AlertDescribeTool.
 func NewAlertDescribeTool(ctx context.Context, configs Configs) (*AlertDescribeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

@@ -19,6 +19,7 @@ It triggers a sync for an ArgoCD application.
 It returns the application status after sync initiation.
 `
 
+// ApplicationSyncParams defines the parameters for syncing an ArgoCD application.
 type ApplicationSyncParams struct {
 	Instance     string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name         string `json:"name" validate:"required" jsonschema:"(required) The application name."`
@@ -30,11 +31,13 @@ type ApplicationSyncParams struct {
 	Prune        bool   `json:"prune,omitempty" jsonschema:"(optional) Delete resources no longer in git. Be careful with this option, it can delete resources in your cluster."`
 }
 
+// ApplicationSyncTool is an eino tool for syncing ArgoCD applications.
 type ApplicationSyncTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke triggers a sync for an ArgoCD application.
 func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyncParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -62,6 +65,7 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 	return fmt.Sprintf(`{"message": "Application %q sync successfully"}`, params.Name), nil
 }
 
+// NewApplicationSyncTool creates a new ApplicationSyncTool.
 func NewApplicationSyncTool(ctx context.Context, configs Configs) (*ApplicationSyncTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

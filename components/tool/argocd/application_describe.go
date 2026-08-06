@@ -19,6 +19,7 @@ It gets the details of a specific ArgoCD application.
 It returns a JSON object representing the ArgoCD application.
 `
 
+// ApplicationDescribeParams defines the parameters for describing an ArgoCD application.
 type ApplicationDescribeParams struct {
 	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The application name."`
@@ -27,17 +28,20 @@ type ApplicationDescribeParams struct {
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status" jsonschema:"(optional) Fields to exclude: 'metadata', 'spec', 'status'."`
 }
 
+// ApplicationDescribeOutput is the structured output for an application describe.
 type ApplicationDescribeOutput struct {
 	Metadata *api.ObjectMeta        `json:"metadata,omitempty"`
 	Spec     *api.ApplicationSpec   `json:"spec,omitempty"`
 	Status   *api.ApplicationStatus `json:"status,omitempty"`
 }
 
+// ApplicationDescribeTool is an eino tool for describing ArgoCD applications.
 type ApplicationDescribeTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns application details as JSON.
 func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *ApplicationDescribeParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -78,6 +82,7 @@ func (t *ApplicationDescribeTool) Invoke(ctx context.Context, params *Applicatio
 	return string(data), nil
 }
 
+// NewApplicationDescribeTool creates a new ApplicationDescribeTool.
 func NewApplicationDescribeTool(ctx context.Context, configs Configs) (*ApplicationDescribeTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

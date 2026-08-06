@@ -19,6 +19,7 @@ func NewMultiRecorder(recorders ...Recorder) MultiRecorder {
 	return MultiRecorder(recorders)
 }
 
+// ObserveStep fans out the step observation to all non-nil recorders.
 func (m MultiRecorder) ObserveStep(model, agent string, se activity.StepEnded) {
 	for _, r := range m {
 		if r != nil {
@@ -27,6 +28,7 @@ func (m MultiRecorder) ObserveStep(model, agent string, se activity.StepEnded) {
 	}
 }
 
+// ObserveBreakdown fans out the cost breakdown to all non-nil recorders.
 func (m MultiRecorder) ObserveBreakdown(model, agent string, b modelsdev.CostBreakdown) {
 	for _, r := range m {
 		if r != nil {
@@ -35,6 +37,7 @@ func (m MultiRecorder) ObserveBreakdown(model, agent string, b modelsdev.CostBre
 	}
 }
 
+// RecordTask fans out the task record to all non-nil recorders.
 func (m MultiRecorder) RecordTask(sessionID, agent string, cost float64, real bool) {
 	for _, r := range m {
 		if r != nil {
@@ -43,6 +46,7 @@ func (m MultiRecorder) RecordTask(sessionID, agent string, cost float64, real bo
 	}
 }
 
+// RecordCompaction fans out the compaction record to all non-nil recorders.
 func (m MultiRecorder) RecordCompaction(agent string) {
 	for _, r := range m {
 		if r != nil {
@@ -51,6 +55,7 @@ func (m MultiRecorder) RecordCompaction(agent string) {
 	}
 }
 
+// RecordAnalysis fans out the analysis record to all non-nil recorders.
 func (m MultiRecorder) RecordAnalysis(sessionID, agent string, a *activity.ComplexityAnalysis) {
 	for _, r := range m {
 		if r != nil {
@@ -59,6 +64,7 @@ func (m MultiRecorder) RecordAnalysis(sessionID, agent string, a *activity.Compl
 	}
 }
 
+// RecordFallback fans out the fallback record to all non-nil recorders.
 func (m MultiRecorder) RecordFallback(reason string) {
 	for _, r := range m {
 		if r != nil {
@@ -67,6 +73,7 @@ func (m MultiRecorder) RecordFallback(reason string) {
 	}
 }
 
+// SetRealtimeCost fans out the realtime cost to all non-nil recorders.
 func (m MultiRecorder) SetRealtimeCost(sessionID, agent string, cost float64) {
 	for _, r := range m {
 		if r != nil {

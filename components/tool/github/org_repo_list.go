@@ -28,6 +28,7 @@ It returns a JSON array of objects, where each object represents a repository wi
 - htmlURL: the repository URL on GitHub.
 `
 
+// OrgRepoListParams defines the parameters for listing an org's repos.
 type OrgRepoListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Org      string `json:"org" validate:"required" jsonschema:"(required) Organization name."`
@@ -37,6 +38,7 @@ type OrgRepoListParams struct {
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each repository JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
 }
 
+// OrgRepoListOutput is the structured output for an org repo list.
 type OrgRepoListOutput struct {
 	Name          string `json:"name"`
 	FullName      string `json:"fullName"`
@@ -49,11 +51,13 @@ type OrgRepoListOutput struct {
 	HTMLURL       string `json:"htmlURL"`
 }
 
+// OrgRepoListTool is an eino tool for listing an org's repos.
 type OrgRepoListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke returns an org's repositories as JSON.
 func (t *OrgRepoListTool) Invoke(ctx context.Context, params *OrgRepoListParams) (result string, err error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -109,6 +113,7 @@ func (t *OrgRepoListTool) Invoke(ctx context.Context, params *OrgRepoListParams)
 	})
 }
 
+// NewOrgRepoListTool creates a new OrgRepoListTool.
 func NewOrgRepoListTool(ctx context.Context, configs Configs) (*OrgRepoListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

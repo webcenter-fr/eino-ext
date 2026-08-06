@@ -25,6 +25,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
+// Config holds configuration for the OpenSearch-backed memory store.
 type Config struct {
 	URLs           []string           `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
 	Username       string             `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
@@ -40,6 +41,7 @@ type Config struct {
 	SearchPipeline string             `validate:"omitempty" jsonschema:"description=Optional search pipeline name"`
 }
 
+// Store is an OpenSearch-backed implementation of MemoryStore.
 type Store struct {
 	client       opensearchv4.Client
 	indexer      indexer.Indexer
@@ -54,6 +56,7 @@ var _ indexer.Indexer = (*Store)(nil)
 
 var _ retriever.Retriever = (*Store)(nil)
 
+// NewStore creates a new OpenSearch-backed Store from the given configuration.
 func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 	if cfg == nil {
 		cfg = &Config{}
@@ -183,7 +186,7 @@ func createIndex(ctx context.Context, client opensearchv4.Client, cfg *Config) e
 
 	body := map[string]any{
 		"settings": map[string]any{
-			"number_of_shards":          1,
+			"number_of_shards":           1,
 			"index.auto_expand_replicas": "0-2",
 		},
 		"mappings": map[string]any{
@@ -200,14 +203,17 @@ func createIndex(ctx context.Context, client opensearchv4.Client, cfg *Config) e
 	return nil
 }
 
+// Store indexes documents into OpenSearch.
 func (s *Store) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) ([]string, error) {
 	return s.indexer.Store(ctx, docs, opts...)
 }
 
+// Retrieve searches OpenSearch for documents matching the query.
 func (s *Store) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	return s.retriever.Retrieve(ctx, query, withRetrieverIndex(s.indexName, opts)...)
 }
 
+// Delete removes a document from OpenSearch by ID.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -223,6 +229,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByFilter removes documents matching the given filter.
 func (s *Store) DeleteByFilter(ctx context.Context, filter map[string]any) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -242,6 +249,7 @@ func (s *Store) DeleteByFilter(ctx context.Context, filter map[string]any) (int,
 	return int(resp.Deleted), nil
 }
 
+// List returns documents from OpenSearch with pagination.
 func (s *Store) List(ctx context.Context, offset, limit int) ([]*schema.Document, error) {
 	if offset < 0 {
 		offset = 0
@@ -279,6 +287,7 @@ func (s *Store) List(ctx context.Context, offset, limit int) ([]*schema.Document
 	return s.parseHits(result)
 }
 
+// Count returns the number of documents in OpenSearch.
 func (s *Store) Count(ctx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -291,10 +300,12 @@ func (s *Store) Count(ctx context.Context) (int, error) {
 	return int(count), nil
 }
 
+// GetType returns the indexer type.
 func (s *Store) GetType() string {
 	return "OpenSearch"
 }
 
+// IsCallbacksEnabled returns false for this store.
 func (s *Store) IsCallbacksEnabled() bool {
 	return true
 }
