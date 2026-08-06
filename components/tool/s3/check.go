@@ -2,7 +2,6 @@ package s3
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"emperror.dev/errors"
@@ -13,6 +12,7 @@ import (
 
 const s3CheckTimeout = 15 * time.Second
 
+// Check runs health checks on each configured S3 instance.
 func Check(ctx context.Context, configs Configs) checkup.Results {
 	if len(configs) == 0 {
 		return checkup.Results{{
@@ -149,6 +149,6 @@ func probeGetLifecycle(ctx context.Context, client Client, instance string, cfg 
 		Component: "s3_get_lifecycle",
 		Instance:  instance,
 		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("lifecycle configuration retrieved, RBAC ok"),
+		Message:   "lifecycle configuration retrieved, RBAC ok",
 	}
 }

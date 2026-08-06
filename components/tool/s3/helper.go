@@ -13,8 +13,11 @@ import (
 type SortOrder string
 
 const (
+	// SortAlphanumeric sorts entries alphabetically by key.
 	SortAlphanumeric SortOrder = "alphanumeric"
-	SortSize         SortOrder = "size"
+	// SortSize sorts entries by size, descending.
+	SortSize SortOrder = "size"
+	// SortLastModified sorts entries by last modification time, descending.
 	SortLastModified SortOrder = "last_modified"
 )
 

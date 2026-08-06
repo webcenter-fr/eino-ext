@@ -20,6 +20,7 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewGetLifecycleTool(ctx, c) },
 }
 
+//nolint:unused // placeholder for future write tools
 var writeConstructors []toolConstructor
 
 func buildTools(ctx context.Context, configs Configs, constructors []toolConstructor) ([]tool.InvokableTool, error) {
