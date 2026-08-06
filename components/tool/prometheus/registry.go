@@ -18,8 +18,6 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertDescribeTool(ctx, c) },
 }
 
-var writeConstructors []toolConstructor
-
 func buildTools(ctx context.Context, configs Configs, constructors []toolConstructor) ([]tool.InvokableTool, error) {
 	tools := make([]tool.InvokableTool, 0, len(constructors))
 	for i, fn := range constructors {

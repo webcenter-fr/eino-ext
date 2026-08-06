@@ -43,7 +43,7 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 			Error:     err.Error(),
 		}}
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	version, _ := client.Version(checkCtx)
 

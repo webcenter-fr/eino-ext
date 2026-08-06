@@ -274,7 +274,7 @@ func TestCondense_AtThresholdAppendsSummary(t *testing.T) {
 		t.Fatalf("unexpected summary content: %q", win[0].Content)
 	}
 
-	turn.CommitAssistant(schema.AssistantMessage("ok", nil))
+	_ = turn.CommitAssistant(schema.AssistantMessage("ok", nil))
 
 	// A subsequent condensation passes the previous summary text for incremental update.
 	turn2, _ := sm.BeginTurn("u", "c", schema.UserMessage(strings.Repeat("b", 1000)))
@@ -290,7 +290,7 @@ func TestCondense_AtThresholdAppendsSummary(t *testing.T) {
 func TestDeleteConversation_CleansLock(t *testing.T) {
 	sm := newManager(t, Config{})
 	turn, _ := sm.BeginTurn("u", "c", schema.UserMessage("q"))
-	turn.CommitAssistant(schema.AssistantMessage("a", nil))
+	_ = turn.CommitAssistant(schema.AssistantMessage("a", nil))
 
 	if err := sm.DeleteConversation("u", "c"); err != nil {
 		t.Fatalf("DeleteConversation: %v", err)

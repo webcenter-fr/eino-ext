@@ -6,7 +6,7 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
@@ -16,7 +16,7 @@ func TestCheck_OK(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSyncer(exp),
 	)
-	defer tp.Shutdown(context.Background())
+	defer func() { _ = tp.Shutdown(context.Background()) }()
 
 	h, err := NewHandler(context.Background(), &Config{
 		TracerProvider: tp,
@@ -36,7 +36,7 @@ func TestCheck_OK(t *testing.T) {
 
 func TestCheck_Noop(t *testing.T) {
 	h, err := NewHandler(context.Background(), &Config{
-		TracerProvider: trace.NewNoopTracerProvider(),
+		TracerProvider: noop.NewTracerProvider(),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

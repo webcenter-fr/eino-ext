@@ -276,10 +276,13 @@ func buildUserContentParts(parts []schema.MessageInputPart) []copilotContentPart
 
 // buildUserContentPartsFromDeprecated converts deprecated MultiContent to
 // Copilot array-content format.
+//
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func buildUserContentPartsFromDeprecated(parts []schema.ChatMessagePart) []copilotContentPart {
 	return buildContentParts(parts)
 }
 
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func buildContentParts(parts interface{}) []copilotContentPart {
 	var result []copilotContentPart
 	switch p := parts.(type) {
@@ -309,6 +312,7 @@ func convertMessageInputPart(part schema.MessageInputPart) copilotContentPart {
 	}
 }
 
+//nolint:staticcheck // uses deprecated ChatMessagePart for backward compatibility
 func convertChatMessagePart(part schema.ChatMessagePart) copilotContentPart {
 	switch part.Type {
 	case schema.ChatMessagePartTypeText:
@@ -330,6 +334,7 @@ func buildImageURLPart(img *schema.MessageInputImage) *copilotImageURLPart {
 	return &copilotImageURLPart{URL: imageDataToURL(img.URL, img.Base64Data, img.MIMEType)}
 }
 
+//nolint:staticcheck // uses deprecated ChatMessageImageURL for backward compatibility
 func buildImageURLPartFromDeprecated(img *schema.ChatMessageImageURL) *copilotImageURLPart {
 	if img == nil {
 		return nil
@@ -638,7 +643,7 @@ func (m *CopilotModel) sendChatRequestOnce(ctx context.Context, payload []byte, 
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: request failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

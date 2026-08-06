@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -84,7 +85,7 @@ func NewHandler(ctx context.Context, cfg *Config) (*Handler, error) {
 		cfg.SpanKindClient = true
 	}
 	if cfg.TracerProvider == nil {
-		cfg.TracerProvider = trace.NewNoopTracerProvider()
+		cfg.TracerProvider = noop.NewTracerProvider()
 	}
 	if err := validate.Struct(cfg); err != nil {
 		return nil, err

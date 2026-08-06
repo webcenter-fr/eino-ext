@@ -29,15 +29,6 @@ type baseTool struct {
 	disallowedNamespaces  map[string]map[string]bool
 }
 
-// client returns the controller-runtime client for the given cluster name.
-func (b *baseTool) client(cluster string) (client.Client, error) {
-	c, ok := b.clients[cluster]
-	if !ok {
-		return nil, clusterNotFoundError(cluster, b.knownClusters)
-	}
-	return c, nil
-}
-
 // clientset returns the typed Kubernetes clientset for the given cluster name.
 func (b *baseTool) clientset(cluster string) (*kubernetes.Clientset, error) {
 	c, ok := b.clientsets[cluster]

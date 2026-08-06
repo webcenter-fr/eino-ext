@@ -10,6 +10,7 @@ package safety
 // OperationType classifies the kind of tool operation being performed.
 type OperationType string
 
+// Known operation types.
 const (
 	OpCreate OperationType = "create"
 	OpUpdate OperationType = "update"
@@ -21,6 +22,7 @@ const (
 // Phase captures the lifecycle phase of a tool invocation.
 type Phase string
 
+// Known lifecycle phases.
 const (
 	PhaseRead     Phase = "read"      // Read-only tool call (list, describe, log)
 	PhaseDryRun   Phase = "dry-run"   // Write tool dry-run simulation
@@ -31,6 +33,7 @@ const (
 // MutabilityLevel marks whether a tool is read-only or write/mutative.
 type MutabilityLevel string
 
+// Known mutability levels.
 const (
 	MutabilityReadOnly MutabilityLevel = "readonly"
 	MutabilityWrite    MutabilityLevel = "write"

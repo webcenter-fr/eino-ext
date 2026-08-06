@@ -30,7 +30,7 @@ func recv(t *testing.T, ch <-chan Event) (Event, bool) {
 
 func TestBusPublishSubscribe(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch, unsub := b.Subscribe(context.Background(), "s1", "")
 	defer unsub()
@@ -48,7 +48,7 @@ func TestBusPublishSubscribe(t *testing.T) {
 
 func TestBusSessionIsolation(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch1, u1 := b.Subscribe(context.Background(), "s1", "")
 	defer u1()
@@ -69,7 +69,7 @@ func TestBusSessionIsolation(t *testing.T) {
 
 func TestBusReplay(t *testing.T) {
 	b := mustBus(t, Config{BufferSize: 8})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	// publish three before any subscriber.
 	for i := 0; i < 3; i++ {
@@ -100,7 +100,7 @@ func TestBusReplay(t *testing.T) {
 
 func TestBusReplayBounded(t *testing.T) {
 	b := mustBus(t, Config{BufferSize: 2})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	for i := 0; i < 5; i++ {
 		b.Publish(context.Background(), Event{SessionID: "s", Type: TypeTextDelta})
@@ -118,7 +118,7 @@ func TestBusReplayBounded(t *testing.T) {
 func TestBusSlowSubscriberDropEvent(t *testing.T) {
 	// queue of 1 + buffer 1 => capacity 2; publishing more must not block.
 	b := mustBus(t, Config{BufferSize: 1, SubscriberQueueSize: 1, SlowPolicy: DropEvent})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	defer unsub()
@@ -140,7 +140,7 @@ func TestBusSlowSubscriberDropEvent(t *testing.T) {
 
 func TestBusSlowSubscriberDropSubscriber(t *testing.T) {
 	b := mustBus(t, Config{BufferSize: 1, SubscriberQueueSize: 1, SlowPolicy: DropSubscriber})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	defer unsub()
@@ -164,7 +164,7 @@ func TestBusSlowSubscriberDropSubscriber(t *testing.T) {
 
 func TestBusUnsubscribe(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	unsub()
@@ -177,7 +177,7 @@ func TestBusUnsubscribe(t *testing.T) {
 
 func TestBusContextCancelUnsubscribes(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch, _ := b.Subscribe(ctx, "s", "")
@@ -195,7 +195,7 @@ func TestBusContextCancelUnsubscribes(t *testing.T) {
 
 func TestBusHasSubscribers(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	sc := b.(SubscriberCounter)
 	if sc.HasSubscribers("s") {
@@ -213,7 +213,7 @@ func TestBusHasSubscribers(t *testing.T) {
 
 func TestBusConcurrentPublish(t *testing.T) {
 	b := mustBus(t, Config{BufferSize: 1024, SubscriberQueueSize: 1024})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	ch, unsub := b.Subscribe(context.Background(), "s", "")
 	defer unsub()
@@ -266,7 +266,7 @@ func TestBusClosedNoPublishPanic(t *testing.T) {
 
 func TestBusMaxSessionsEvictsIdle(t *testing.T) {
 	b := mustBus(t, Config{MaxSessions: 2})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	mb := b.(*memBus)
 
 	// publish to two idle sessions, then a third triggers eviction of the LRU.
@@ -288,7 +288,7 @@ func TestBusMaxSessionsEvictsIdle(t *testing.T) {
 
 func TestBusMaxSessionsNeverEvictsSubscribed(t *testing.T) {
 	b := mustBus(t, Config{MaxSessions: 1})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	mb := b.(*memBus)
 
 	// 'a' has an active subscriber; it must survive eviction pressure.

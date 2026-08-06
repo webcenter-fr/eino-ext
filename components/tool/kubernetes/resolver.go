@@ -15,11 +15,6 @@ import (
 	"k8s.io/client-go/restmapper"
 )
 
-// kindFormatSentence is the shared description text for how the 'kind'
-// parameter accepts various formats. It is used by all Kubernetes tool
-// Description constants to avoid duplication and prevent drift.
-const kindFormatSentence = "The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."
-
 type resolveResult struct {
 	GVR    schema.GroupVersionResource
 	GVK    schema.GroupVersionKind

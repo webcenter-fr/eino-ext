@@ -1,3 +1,5 @@
+// Package validate provides a thin wrapper around go-playground/validator
+// with a singleton validator instance for use across eino-ext components.
 package validate
 
 import (
@@ -17,6 +19,7 @@ func get() *validator.Validate {
 	return v
 }
 
+// Struct validates the given struct using the shared validator instance.
 func Struct(s any) error {
 	if err := get().Struct(s); err != nil {
 		return errors.Wrapf(err, "invalid parameters for %T", s)

@@ -9,6 +9,7 @@ import (
 	"emperror.dev/errors"
 )
 
+// Resolve scans the workdir for project markers and returns matching profiles.
 func (r *Resolver) Resolve(ctx context.Context, workdir string) ([]Profile, error) {
 	if workdir == "" {
 		return nil, errors.New("workdir is empty")

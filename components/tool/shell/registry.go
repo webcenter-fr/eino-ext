@@ -63,14 +63,14 @@ func NewShellTool(ctx context.Context, cfg *Config) (*ShellTool, error) {
 
 	invokable, err := utils.InferTool("shell_exec", shellDescription, st.Invoke)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, errors.Wrap(err, "failed to create invokable tool")
 	}
 	st.invokable = invokable
 
 	streamable, err := utils.InferStreamTool("shell_exec", shellDescription, st.InvokeAsStream)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, errors.Wrap(err, "failed to create streamable tool")
 	}
 	st.streamable = streamable

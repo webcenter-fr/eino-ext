@@ -23,6 +23,7 @@ var DefaultBackoff = wait.Backoff{
 	Cap:      15 * time.Second,
 }
 
+// Do executes fn with exponential backoff, retrying only on transient errors.
 func Do(ctx context.Context, backoff wait.Backoff, fn func(context.Context) error) error {
 	return wait.ExponentialBackoffWithContext(ctx, backoff, func(retryCtx context.Context) (bool, error) {
 		err := fn(retryCtx)
@@ -36,10 +37,12 @@ func Do(ctx context.Context, backoff wait.Backoff, fn func(context.Context) erro
 	})
 }
 
+// Retry is a convenience wrapper around Do using DefaultBackoff.
 func Retry(ctx context.Context, fn func(context.Context) error) error {
 	return Do(ctx, DefaultBackoff, fn)
 }
 
+// IsTransient returns true if the error is a transient Kubernetes API error.
 func IsTransient(err error) bool {
 	if err == nil {
 		return false
@@ -60,7 +63,7 @@ func IsTransient(err error) bool {
 		return true
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) { //nolint:staticcheck // Temporary remains a useful heuristic for network errors
 		return true
 	}
 	return false

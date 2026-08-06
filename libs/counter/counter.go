@@ -2,6 +2,7 @@ package counter
 
 import "github.com/cloudwego/eino/schema"
 
+// TokenCounter is a function that estimates token count for a conversation.
 type TokenCounter func(msgs []*schema.Message) int
 
 func DefaultTokenCounter(msgs []*schema.Message) int {

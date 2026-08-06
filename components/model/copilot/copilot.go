@@ -23,6 +23,11 @@ import (
 )
 
 var _ model.ToolCallingChatModel = (*CopilotModel)(nil)
+
+// CopilotModel also satisfies the deprecated ChatModel interface for
+// backward compatibility with older eino consumers.
+//
+//nolint:staticcheck
 var _ model.ChatModel = (*CopilotModel)(nil)
 
 const copilotGetType = "GitHubCopilot"

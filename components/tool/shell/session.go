@@ -112,9 +112,3 @@ func (sm *sessionManager) exec(ctx context.Context, ses *session, command []stri
 
 	return stdout, stderr, exitCode, nil
 }
-
-func (sm *sessionManager) close() {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	sm.sessions = make(map[sessionKey]*session)
-}

@@ -77,7 +77,7 @@ func (t *PodLogTool) Invoke(ctx context.Context, params *PodLogParams) (string, 
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get pod logs")
 	}
-	defer podLogs.Close()
+	defer func() { _ = podLogs.Close() }()
 
 	buf := bufio.NewScanner(podLogs)
 	var logs []string
@@ -122,7 +122,7 @@ func (t *PodLogTool) InvokeAsStream(ctx context.Context, params *PodLogParams) (
 	sr, sw := schema.Pipe[string](100)
 
 	go func() {
-		defer podLogs.Close()
+		defer func() { _ = podLogs.Close() }()
 		defer sw.Close()
 
 		scanner := bufio.NewScanner(podLogs)

@@ -64,7 +64,7 @@ func (s *Store) load() error {
 	if err != nil {
 		return errors.Wrap(err, "open memories file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := json.NewDecoder(f)
 	line := 0
@@ -90,7 +90,7 @@ func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.O
 	if err != nil {
 		return nil, errors.Wrap(err, "open memories file for append")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	enc := json.NewEncoder(f)
 	now := time.Now()

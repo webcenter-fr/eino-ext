@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
@@ -46,4 +47,4 @@ func Check(ctx context.Context, h *Handler) checkup.Results {
 }
 
 // Ensure noop trace provider is detected.
-var _ trace.TracerProvider = trace.NewNoopTracerProvider()
+var _ trace.TracerProvider = noop.NewTracerProvider()

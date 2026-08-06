@@ -60,7 +60,7 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 				})
 				return results
 			}
-			msg := fmt.Sprintf("direct-bearer mode (fine-grained PAT); no token exchange")
+			msg := "direct-bearer mode (fine-grained PAT); no token exchange"
 			if res.login != "" {
 				msg = fmt.Sprintf("direct-bearer mode (fine-grained PAT, login=%s); no token exchange", res.login)
 			}

@@ -1,3 +1,4 @@
+// Package filter provides regex-based JSON filtering utilities.
 package filter
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/goccy/go-json"
 )
 
+// Compile compiles a regex pattern string, returning nil if pattern is empty.
 func Compile(pattern string) (*regexp.Regexp, error) {
 	if pattern == "" {
 		return nil, nil
@@ -18,6 +20,7 @@ func Compile(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
+// Match checks if the given JSON data matches the filter regex.
 func Match(data json.RawMessage, filter *regexp.Regexp) bool {
 	if filter == nil {
 		return true

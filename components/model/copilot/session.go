@@ -135,7 +135,7 @@ func (m *CopilotModel) startSessionRefresh(ctx context.Context, sresp *sessionRe
 
 	go func() {
 		currentExpiresAt := sresp.ExpiresAt
-		currentToken := sresp.SessionToken
+		var currentToken string
 
 		for {
 			sleepSecs := currentExpiresAt - time.Now().Unix() - refreshBufSecs

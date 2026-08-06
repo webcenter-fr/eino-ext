@@ -10,12 +10,14 @@ import (
 	"emperror.dev/errors"
 )
 
+// Proxy is an HTTP/HTTPS CONNECT proxy that enforces egress policies.
 type Proxy struct {
 	policy  *Policy
 	server  *http.Server
 	addr    string
 }
 
+// NewProxy creates a new Proxy with the given egress policy.
 func NewProxy(pol *Policy) (*Proxy, error) {
 	if pol == nil {
 		pol = &Policy{DefaultDeny: true}
@@ -26,6 +28,7 @@ func NewProxy(pol *Policy) (*Proxy, error) {
 	return &Proxy{policy: pol}, nil
 }
 
+// Serve starts the proxy server on the given listener and blocks until ctx is done.
 func (p *Proxy) Serve(ctx context.Context, ln net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handleConnect)
@@ -55,6 +58,7 @@ func (p *Proxy) Serve(ctx context.Context, ln net.Listener) error {
 	}
 }
 
+// Addr returns the address the proxy server is listening on.
 func (p *Proxy) Addr() string {
 	return p.addr
 }
@@ -101,26 +105,26 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
-		destConn.Close()
+		_ = destConn.Close()
 		return
 	}
 
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, "hijack failed", http.StatusInternalServerError)
-		destConn.Close()
+		_ = destConn.Close()
 		return
 	}
 
-	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 	go transfer(clientConn, destConn)
 	go transfer(destConn, clientConn)
 }
 
 func transfer(dst, src net.Conn) {
-	defer dst.Close()
-	defer src.Close()
+	defer func() { _ = dst.Close() }()
+	defer func() { _ = src.Close() }()
 
 	buf := make([]byte, 32*1024)
 	for {
@@ -136,6 +140,7 @@ func transfer(dst, src net.Conn) {
 	}
 }
 
+// EnvVars returns environment variables that configure the proxy for downstream processes.
 func (p *Proxy) EnvVars(listenAddr string) map[string]string {
 	proxyURL := "http://" + listenAddr
 	return map[string]string{
@@ -148,6 +153,7 @@ func (p *Proxy) EnvVars(listenAddr string) map[string]string {
 	}
 }
 
+// ValidateProxyURL checks that the given URL is a valid HTTP/HTTPS proxy URL.
 func ValidateProxyURL(_ context.Context, rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {

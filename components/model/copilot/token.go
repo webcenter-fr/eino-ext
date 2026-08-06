@@ -115,7 +115,7 @@ func startTokenRefresh(
 	}
 
 	go func() {
-		currentToken := tokenResp.Token
+		var currentToken string
 		currentExpiresAt := tokenResp.ExpiresAt
 
 		for {

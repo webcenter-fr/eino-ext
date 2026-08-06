@@ -55,7 +55,7 @@ func TestNewScope_CustomMeterName(t *testing.T) {
 func TestCounter_Add(t *testing.T) {
 	rdr := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
-	defer mp.Shutdown(context.Background())
+	defer func() { _ = mp.Shutdown(context.Background()) }()
 
 	s, err := NewScope(context.Background(), &Config{
 		MeterProvider: mp,
@@ -122,7 +122,7 @@ func TestCounter_Add(t *testing.T) {
 func TestHistogram_Record(t *testing.T) {
 	rdr := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
-	defer mp.Shutdown(context.Background())
+	defer func() { _ = mp.Shutdown(context.Background()) }()
 
 	s, err := NewScope(context.Background(), &Config{
 		MeterProvider: mp,
@@ -173,7 +173,7 @@ func TestHistogram_Record(t *testing.T) {
 func TestGauge_Set(t *testing.T) {
 	rdr := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
-	defer mp.Shutdown(context.Background())
+	defer func() { _ = mp.Shutdown(context.Background()) }()
 
 	s, err := NewScope(context.Background(), &Config{
 		MeterProvider: mp,

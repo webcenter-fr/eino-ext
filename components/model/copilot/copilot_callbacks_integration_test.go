@@ -56,7 +56,7 @@ func TestCopilotModelCallbacksFireThroughComposeChain(t *testing.T) {
 			`data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
 			`data: [DONE]`,
 		} {
-			fmt.Fprintf(w, "%s\n\n", line)
+			_, _ = fmt.Fprintf(w, "%s\n\n", line)
 		}
 	}))
 	defer srv.Close()

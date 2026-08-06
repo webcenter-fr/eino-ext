@@ -9,7 +9,6 @@ package otelmetrics
 import (
 	"context"
 
-	"emperror.dev/errors"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 
@@ -71,9 +70,3 @@ func (s *Scope) Provider() metric.MeterProvider {
 // validateScope checks that s is non-nil and returns an error otherwise.
 // Used as a manual guard by downstream packages that embed Scope in their
 // Config (pointer fields cannot use validate:"required").
-func validateScope(s *Scope) error {
-	if s == nil {
-		return errors.New("otelmetrics: Scope is required")
-	}
-	return nil
-}

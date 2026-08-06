@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("gen: fetching %s: %v", *url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		log.Fatalf("gen: unexpected status %d fetching %s", resp.StatusCode, *url)
 	}

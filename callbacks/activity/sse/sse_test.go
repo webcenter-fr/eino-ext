@@ -27,20 +27,20 @@ func startServer(t *testing.T, bus activity.Bus) string {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	h := server.New(server.WithHostPorts(addr), server.WithExitWaitTime(50*time.Millisecond))
 	h.GET("/events", NewHandler(Config{Bus: bus, HeartbeatInterval: 100 * time.Millisecond}))
 
 	go h.Spin()
-	t.Cleanup(func() { h.Close() })
+	t.Cleanup(func() { _ = h.Close() })
 
 	// wait for the port to accept connections.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		c, err := net.Dial("tcp", addr)
 		if err == nil {
-			c.Close()
+			_ = c.Close()
 			return addr
 		}
 		time.Sleep(10 * time.Millisecond)

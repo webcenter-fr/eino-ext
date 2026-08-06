@@ -37,7 +37,7 @@ func TestCheckNoToken(t *testing.T) {
 
 func TestCheckDirectTokenWithModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "gpt-4o",
@@ -66,7 +66,7 @@ func TestCheckDirectTokenWithModels(t *testing.T) {
 
 func TestCheckDirectTokenWithNoModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{Data: []copilotModelData{}})
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{Data: []copilotModelData{}})
 	}))
 	defer srv.Close()
 
@@ -97,7 +97,7 @@ func TestCheckTokenExchangeSkipped(t *testing.T) {
 
 func TestCheckResultStatuses(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "gpt-4o",
@@ -126,7 +126,7 @@ func TestCheckResultStatuses(t *testing.T) {
 
 func TestProbeModelsWithToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(copilotModelsResponse{
+		_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 			Data: []copilotModelData{
 				{
 					ID:                 "gpt-4o",
@@ -158,9 +158,9 @@ func TestCheck_DirectBearer(t *testing.T) {
 		switch r.URL.Path {
 		case userURLPath:
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"login":"testuser"}`))
+			_, _ = w.Write([]byte(`{"login":"testuser"}`))
 		case "/models":
-			json.NewEncoder(w).Encode(copilotModelsResponse{
+			_ = json.NewEncoder(w).Encode(copilotModelsResponse{
 				Data: []copilotModelData{
 					{
 						ID:                 "gpt-4o",

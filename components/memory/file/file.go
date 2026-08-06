@@ -274,7 +274,7 @@ func (c *FileConversation) Load() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to open file")
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
@@ -311,7 +311,7 @@ func (c *FileConversation) Save(msg *schema.Message) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to open message file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(str); err != nil {
 		return errors.Wrap(err, "failed to write message")
 	}

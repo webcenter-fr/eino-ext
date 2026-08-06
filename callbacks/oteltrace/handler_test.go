@@ -24,7 +24,7 @@ func setupTracer(t *testing.T) (*tracetest.InMemoryExporter, trace.TracerProvide
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSyncer(exp),
 	)
-	t.Cleanup(func() { tp.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 	return exp, tp
 }
 
