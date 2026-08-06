@@ -24,7 +24,7 @@ func TestValidateFineGrainedPAT_Success(t *testing.T) {
 			t.Errorf("expected Authorization: Bearer <pat>, got %q", auth)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"login":"testuser"}`))
+		_, _ = w.Write([]byte(`{"login":"testuser"}`))
 	}))
 	defer srv.Close()
 

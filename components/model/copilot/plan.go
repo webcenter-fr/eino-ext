@@ -9,6 +9,7 @@ import (
 // It is diagnostic only — routing is driven by the resolved BaseURL, not by Plan.
 type Plan string
 
+//nolint:revive // Plan* consts share this block comment
 const (
 	// PlanUnknown indicates the Copilot subscription plan could not be determined.
 	PlanUnknown    Plan = "unknown"

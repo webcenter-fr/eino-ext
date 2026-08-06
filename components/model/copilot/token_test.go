@@ -412,7 +412,7 @@ func TestResolveCopilotToken_DirectBearer_FineGrainedPAT(t *testing.T) {
 func TestResolveCopilotToken_DirectBearer_ExplicitBaseURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"login":"testuser"}`))
+		_, _ = w.Write([]byte(`{"login":"testuser"}`))
 	}))
 	defer srv.Close()
 	setTestUserAPIBaseForTesting(srv.URL)

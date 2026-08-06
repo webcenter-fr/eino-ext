@@ -75,6 +75,7 @@ func exchangeGitHubTokenWithBase(ctx context.Context, githubToken, apiBase strin
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: token exchange request failed")
 	}
+	//nolint:errcheck
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {

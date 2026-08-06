@@ -1,3 +1,4 @@
+// Package file provides a file-backed memory store.
 package file
 
 import (

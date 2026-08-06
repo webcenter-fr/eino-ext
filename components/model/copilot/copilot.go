@@ -71,6 +71,8 @@ type Config struct {
 }
 
 // CopilotModel implements the eino chat model interface for GitHub Copilot.
+//
+//nolint:revive // CopilotModel is the established public name.
 type CopilotModel struct {
 	lockedToken   *copilotLockedToken
 	baseURL       string

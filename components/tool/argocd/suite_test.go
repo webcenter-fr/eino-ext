@@ -34,8 +34,8 @@ func (t *ToolTestSuite) SetupSuite() {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			// Flat JSON — goargocdclient embeds ObjectMeta directly
-			w.Write([]byte(`{
-				"items": [
+			_, _ = w.Write([]byte(`{
+			"items": [
 					{
 						"name": "my-app",
 						"namespace": "argocd",

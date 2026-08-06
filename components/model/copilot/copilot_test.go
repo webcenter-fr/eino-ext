@@ -319,7 +319,7 @@ func TestGenerateWithMockServer(t *testing.T) {
 				TotalTokens:      15,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -380,7 +380,7 @@ func TestGenerateWithToolChoice(t *testing.T) {
 				FinishReason: "tool_calls",
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -463,7 +463,7 @@ func TestGenerateWithVisionInput(t *testing.T) {
 				FinishReason: "stop",
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -538,7 +538,7 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 					FinishReason: "stop",
 				}},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -557,7 +557,7 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 				FinishReason: "stop",
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -798,7 +798,7 @@ func TestBuildChatRequestHasMissingFields(t *testing.T) {
 				Message: copilotMessage{Role: "assistant", Content: "ok"},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 

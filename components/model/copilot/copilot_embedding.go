@@ -39,6 +39,8 @@ var _ embedding.Embedder = (*CopilotEmbedder)(nil)
 
 // CopilotEmbedder implements the eino embedding.Embedder interface for
 // the Copilot embeddings API.
+//
+//nolint:revive // CopilotEmbedder is the established public name.
 type CopilotEmbedder struct {
 	httpClient *http.Client
 	baseURL    string

@@ -29,6 +29,7 @@ const (
 	// under which the source record id and the content hash are written when
 	// Config.SourceIDField / Config.SourceHashField are left empty.
 	DefaultSourceIDField   = "source_id"
+	// DefaultSourceHashField is the default metadata key for the content hash.
 	DefaultSourceHashField = "source_hash"
 )
 

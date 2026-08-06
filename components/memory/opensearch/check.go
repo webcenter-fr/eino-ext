@@ -1,3 +1,4 @@
+// Package opensearch provides an OpenSearch-backed memory store.
 package opensearch
 
 import (

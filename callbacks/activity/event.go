@@ -36,6 +36,7 @@ const (
 	TypeStepEnded     Type = "step.ended"
 	// TypeStepFailed signals a processing step failure.
 	TypeStepFailed    Type = "step.failed"
+	// TypeAgentSwitched signals that the active agent has changed.
 	TypeAgentSwitched Type = "agent.switched"
 	TypeModelSwitched Type = "model.switched"
 	TypePrompted      Type = "prompted"
