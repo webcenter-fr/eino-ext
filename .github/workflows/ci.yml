@@ -46,7 +46,6 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -55,4 +54,3 @@ jobs:
       - run: go test -tags=integration -v ./components/model/copilot/...
         env:
           COPILOT_INTEGRATION: "1"
-          GITHUB_COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
