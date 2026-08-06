@@ -47,7 +47,7 @@ func TestResponsesNonStreaming(t *testing.T) {
 				TotalTokens:  15,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -103,7 +103,7 @@ func TestResponsesStoreOmitted(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -143,7 +143,7 @@ func TestResponsesWithFunctionCall(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -199,7 +199,7 @@ func TestResponsesWithReasoning(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -371,7 +371,7 @@ func TestResponsesWithModelOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -417,7 +417,7 @@ func TestResponsesWithReasoningEffortOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -462,7 +462,7 @@ func TestResponsesWithMaxTokensOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -506,7 +506,7 @@ func TestResponsesWithTemperatureOverride(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -540,7 +540,7 @@ func TestResponsesWithToolChoiceFormat(t *testing.T) {
 			ID:    "resp-1",
 			Model: "gpt-5",
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -604,7 +604,7 @@ func TestResponsesWithDefaultReasoning(t *testing.T) {
 				},
 			}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -655,7 +655,7 @@ func TestResponsesStreamingWithModelOverride(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
 		flusher.Flush()
-		fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
+		_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()

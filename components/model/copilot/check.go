@@ -11,6 +11,9 @@ import (
 
 const copilotCheckTimeout = 10 * time.Second
 
+// Check performs a health check for the Copilot model by exchanging the
+// configured credentials for a model session token and verifying the auth
+// user identity.
 func Check(ctx context.Context, cfg *Config) checkup.Results {
 	if cfg == nil {
 		return checkup.Results{{

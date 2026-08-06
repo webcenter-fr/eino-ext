@@ -58,6 +58,7 @@ func (m *CopilotModel) streamResponses(ctx context.Context, in []*schema.Message
 	sr, sw := schema.Pipe[*schema.Message](1)
 
 	go func() {
+		//nolint:errcheck // goroutine close, error is irrelevant
 		defer resp.Body.Close()
 		defer sw.Close()
 

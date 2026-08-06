@@ -192,7 +192,7 @@ func TestToolInvokeDefaultTopK(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if sz, ok := body["size"].(float64); ok {
 			receivedSize = int(sz)
 		}

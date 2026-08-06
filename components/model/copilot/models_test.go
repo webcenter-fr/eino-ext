@@ -240,7 +240,7 @@ func TestListModelsErrorStatus(t *testing.T) {
 
 func TestListModelsMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("invalid"))
+		_, _ = w.Write([]byte("invalid"))
 	}))
 	defer srv.Close()
 

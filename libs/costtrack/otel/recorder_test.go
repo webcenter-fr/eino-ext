@@ -16,7 +16,7 @@ func setupRecorder(t *testing.T) (*OTelRecorder, *sdkmetric.ManualReader) {
 	t.Helper()
 	rdr := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
-	t.Cleanup(func() { mp.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
 
 	scope, err := otelmetrics.NewScope(context.Background(), &otelmetrics.Config{
 		MeterProvider: mp,

@@ -32,9 +32,11 @@ var _ model.ChatModel = (*CopilotModel)(nil)
 
 const copilotGetType = "GitHubCopilot"
 
+// ReasoningEffort controls the reasoning effort level for supported Copilot models.
 type ReasoningEffort string
 
 const (
+	// ReasoningEffortNone disables reasoning.
 	ReasoningEffortNone    ReasoningEffort = "none"
 	ReasoningEffortMinimal ReasoningEffort = "minimal"
 	ReasoningEffortLow     ReasoningEffort = "low"
@@ -44,6 +46,7 @@ const (
 	ReasoningEffortMax     ReasoningEffort = "max"
 )
 
+// Config holds the configuration for a [CopilotModel].
 type Config struct {
 	GitHubToken          string          `validate:"omitempty" jsonschema:"description=Fine-grained GitHub PAT (github_pat_...) with Copilot Requests account permission (Read)"`
 	CopilotToken         string          `validate:"omitempty" jsonschema:"description=Pre-obtained Copilot bearer token"`

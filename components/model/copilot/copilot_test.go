@@ -512,7 +512,7 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 	tokenVal := "test-token"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body copilotChatRequest
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		// Check that reasoning_opaque from the input assistant message is
 		// round-tripped back in the request.
@@ -736,7 +736,7 @@ func TestStreamWithMockServer(t *testing.T) {
 			`data: {"choices":[{"finish_reason":"stop","delta":{}}]}`,
 			`data: [DONE]`,
 		} {
-			fmt.Fprintf(w, "%s\n\n", line)
+			_, _ = fmt.Fprintf(w, "%s\n\n", line)
 			flusher.Flush()
 		}
 	}))
@@ -941,7 +941,7 @@ func TestNewCopilotChatModel_DirectBearer_NoRefresh(t *testing.T) {
 func TestNewCopilotChatModel_DirectBearer_DefaultBaseURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"login":"testuser"}`))
+		_, _ = w.Write([]byte(`{"login":"testuser"}`))
 	}))
 	defer srv.Close()
 	setTestUserAPIBaseForTesting(srv.URL)

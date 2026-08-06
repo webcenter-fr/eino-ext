@@ -17,6 +17,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
+// Config holds the configuration for an OpenSearch-backed memory store.
 type Config struct {
 	URLs            []string `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
 	Username        string   `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
@@ -29,6 +30,7 @@ type Config struct {
 	TokenCounter memory.TokenCounter
 }
 
+// OpenSearchMemory stores conversations in an OpenSearch index.
 type OpenSearchMemory struct {
 	mu              sync.Mutex
 	client          opensearchv4.Client
@@ -39,6 +41,7 @@ type OpenSearchMemory struct {
 	conversations   map[string]map[string]*OpenSearchConversation
 }
 
+// OpenSearchConversation represents a conversation stored in OpenSearch.
 type OpenSearchConversation struct {
 	mu sync.Mutex
 
@@ -178,6 +181,8 @@ func createIndex(ctx context.Context, client opensearchv4.Client, indexName stri
 	return nil
 }
 
+// GetConversation returns a conversation by userID and conversationID,
+// creating it in OpenSearch if createIfNotExist is true.
 func (m *OpenSearchMemory) GetConversation(userID string, conversationID string, createIfNotExist bool) (memory.Conversation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -290,6 +295,7 @@ func (m *OpenSearchMemory) ListConversations(userID string) ([]string, error) {
 	return allIDs, nil
 }
 
+// DeleteConversation removes a conversation from the OpenSearch index.
 func (m *OpenSearchMemory) DeleteConversation(userID string, conversationID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -387,12 +393,14 @@ func (c *OpenSearchConversation) CountTokens() int {
 	return c.tokenCounter(window)
 }
 
+// GetActivities returns all stored activity events for the conversation.
 func (c *OpenSearchConversation) GetActivities() []json.RawMessage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.Activities
 }
 
+// SetActivities replaces all stored activity events for the conversation.
 func (c *OpenSearchConversation) SetActivities(raw []json.RawMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

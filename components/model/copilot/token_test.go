@@ -48,7 +48,7 @@ func TestExchangeGitHubTokenWithBaseSuccess(t *testing.T) {
 func TestExchangeGitHubTokenWithBaseErrorStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"error":"forbidden"}`))
+		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
 	}))
 	defer srv.Close()
 

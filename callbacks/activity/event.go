@@ -30,25 +30,26 @@ import (
 type Type string
 
 const (
-	// Lifecycle.
+	// TypeStepStarted signals the start of a processing step.
 	TypeStepStarted   Type = "step.started"
+	// TypeStepEnded signals the end of a processing step.
 	TypeStepEnded     Type = "step.ended"
 	TypeStepFailed    Type = "step.failed"
 	TypeAgentSwitched Type = "agent.switched"
 	TypeModelSwitched Type = "model.switched"
 	TypePrompted      Type = "prompted"
 
-	// Text.
+	// TypeTextStarted signals the start of text generation.
 	TypeTextStarted Type = "text.started"
 	TypeTextDelta   Type = "text.delta"
 	TypeTextEnded   Type = "text.ended"
 
-	// Reasoning.
+	// TypeReasoningStarted signals the start of reasoning output.
 	TypeReasoningStarted Type = "reasoning.started"
 	TypeReasoningDelta   Type = "reasoning.delta"
 	TypeReasoningEnded   Type = "reasoning.ended"
 
-	// Tool.
+	// TypeToolInputStarted signals that a tool invocation has begun receiving input.
 	TypeToolInputStarted Type = "tool.input.started"
 	TypeToolInputDelta   Type = "tool.input.delta"
 	TypeToolInputEnded   Type = "tool.input.ended"
@@ -57,13 +58,13 @@ const (
 	TypeToolSuccess      Type = "tool.success"
 	TypeToolFailed       Type = "tool.failed"
 
-	// Misc (parity).
+	// TypeRetried signals that an operation was retried.
 	TypeRetried           Type = "retried"
 	TypeCompactionStarted Type = "compaction.started"
 	TypeCompactionDelta   Type = "compaction.delta"
 	TypeCompactionEnded   Type = "compaction.ended"
 
-	// Session.
+	// TypeSessionEnded signals the end of a session.
 	TypeSessionEnded Type = "session.ended"
 )
 

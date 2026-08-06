@@ -194,6 +194,7 @@ func convertToResponsesUserContent(parts []schema.MessageInputPart) []map[string
 	return result
 }
 
+//nolint:staticcheck // intentionally handles deprecated schema.ChatMessagePart for backward compatibility
 func convertToResponsesUserContentDeprecated(parts []schema.ChatMessagePart) []map[string]string {
 	var result []map[string]string
 	for _, p := range parts {
@@ -503,6 +504,7 @@ func (m *CopilotModel) sendResponsesRequestOnce(ctx context.Context, payload []b
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: responses request failed")
 	}
+	//nolint:errcheck // defer close in request path, error is irrelevant
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -510,6 +512,7 @@ func (m *CopilotModel) sendResponsesRequestOnce(ctx context.Context, payload []b
 		return nil, errors.Wrap(err, "copilot: failed to read responses body")
 	}
 
+	// ... after reading, if we're in the 502 area, this is the responses code path
 	if resp.StatusCode != http.StatusOK {
 		bodyPreview := redactErrorBody(respBody)
 		return nil, errors.Errorf("copilot: responses API returned status %d: %s", resp.StatusCode, bodyPreview)

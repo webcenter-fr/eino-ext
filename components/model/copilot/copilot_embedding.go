@@ -99,6 +99,7 @@ func (e *CopilotEmbedder) EmbedStrings(ctx context.Context, texts []string, opts
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: embedding request failed")
 	}
+	//nolint:errcheck // defer close in request path, error is irrelevant
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)

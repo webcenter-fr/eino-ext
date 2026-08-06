@@ -8,8 +8,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
-// ctx is reserved for future use (BeginTurn does not yet support context
-// propagation).
+// Check performs a health check on the session manager, verifying that
+// BeginTurn, AppendAssistant, and EndTurn operate correctly.
 func Check(ctx context.Context, sm *SessionManager) checkup.Results {
 	if sm == nil {
 		return checkup.Results{

@@ -11,6 +11,9 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
 
+// Check performs a health check for the file-based memory backend,
+// verifying directory access, conversation creation, append, list,
+// and deletion.
 func Check(ctx context.Context, cfg FileMemoryConfig) checkup.Results {
 	var results checkup.Results
 

@@ -1,3 +1,5 @@
+// Package opensearch provides a document parser that converts OpenSearch search
+// responses into eino schema.Document values.
 package opensearch
 
 import (
@@ -14,6 +16,7 @@ import (
 )
 
 const (
+	// MetaKeyId is the metadata key for the document identifier.
 	MetaKeyId    = "id"
 	MetaKeyIndex = "index"
 	MetaScore    = "score"
