@@ -7,6 +7,11 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/RedHatInsights/strimzi-client-go v0.40.0
+	github.com/aws/aws-sdk-go-v2 v1.43.4
+	github.com/aws/aws-sdk-go-v2/config v1.32.35
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.5
+	github.com/aws/smithy-go v1.27.6
 	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/document/loader/url v0.0.0-20260702024331-c05d17c7dace
 	github.com/cloudwego/eino-ext/components/model/ollama v0.1.9
@@ -16,6 +21,7 @@ require (
 	github.com/disaster37/goargocdclient v0.0.0-20260709162736-32f52f5c5509
 	github.com/disaster37/opensearch/v4 v4.0.0-7.0.20260805161610-f4179193fef2
 	github.com/disaster37/operator-sdk-extra/v2 v2.0.10
+	github.com/dustin/go-humanize v1.0.1
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/elastic/go-ucfg v0.9.1
 	github.com/go-git/go-git/v5 v5.19.1
@@ -65,6 +71,19 @@ require (
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.35 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.35 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.35 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.36 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.15 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.28 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.35 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.36 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.33.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.45.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -82,7 +101,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/ollama v0.1.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
