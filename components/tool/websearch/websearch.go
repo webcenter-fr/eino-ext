@@ -17,12 +17,16 @@ import (
 var webSearchDescription string
 
 // WebSearchParams are the input parameters for the web_search tool.
+//
+//nolint:revive // WebSearchParams is the established public name.
 type WebSearchParams struct {
 	Query      string `json:"query" validate:"required" jsonschema:"(required) The search query string."`
 	NumResults int    `json:"numResults,omitempty" validate:"omitempty,min=1,max=20" jsonschema:"(optional, default 10, max 20) Number of results to return."`
 }
 
 // WebSearchTool is an invokable tool that performs web searches via SearXNG.
+//
+//nolint:revive // WebSearchTool is the established public name.
 type WebSearchTool struct {
 	cfg Config
 	tool.InvokableTool

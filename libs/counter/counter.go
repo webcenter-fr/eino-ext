@@ -1,3 +1,4 @@
+// Package counter provides token counting utilities for chat messages.
 package counter
 
 import "github.com/cloudwego/eino/schema"

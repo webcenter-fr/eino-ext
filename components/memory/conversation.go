@@ -1,3 +1,5 @@
+// Package memory provides conversation storage interfaces and shared
+// windowing/summarization logic.
 package memory
 
 import (

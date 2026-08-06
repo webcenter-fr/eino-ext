@@ -9,8 +9,8 @@ import (
 )
 
 // MemoryStore is the composite storage interface for long-term agent memory.
-// It composes eino's Indexer and Retriever for RAG compatibility, plus
-// maintenance operations.
+//
+//nolint:revive // MemoryStore is the established public name.
 type MemoryStore interface {
 	indexer.Indexer
 	retriever.Retriever

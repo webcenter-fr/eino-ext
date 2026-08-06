@@ -35,6 +35,7 @@ const copilotGetType = "GitHubCopilot"
 // ReasoningEffort controls the reasoning effort level for supported Copilot models.
 type ReasoningEffort string
 
+//nolint:revive // ReasoningEffort* consts share this block comment
 const (
 	// ReasoningEffortNone disables reasoning.
 	ReasoningEffortNone    ReasoningEffort = "none"
@@ -69,6 +70,7 @@ type Config struct {
 	Store            *bool    `validate:"omitempty" jsonschema:"description=Store the conversation for later use"`
 }
 
+// CopilotModel implements the eino chat model interface for GitHub Copilot.
 type CopilotModel struct {
 	lockedToken   *copilotLockedToken
 	baseURL       string
@@ -90,6 +92,7 @@ type CopilotModel struct {
 	toolChoice *schema.ToolChoice
 }
 
+// NewCopilotChatModel creates a new Copilot chat model from the given config.
 func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error) {
 	if cfg == nil {
 		return nil, errors.New("copilot: config must not be nil")
@@ -224,6 +227,7 @@ func newHTTPClient(timeout time.Duration, skipVerify bool) *http.Client {
 	return c
 }
 
+// GetType returns the component type identifier.
 func (m *CopilotModel) GetType() string { return copilotGetType }
 
 // IsCallbacksEnabled implements components.Checker. CopilotModel does not
@@ -236,6 +240,7 @@ func (m *CopilotModel) GetType() string { return copilotGetType }
 // Copilot call.
 func (m *CopilotModel) IsCallbacksEnabled() bool { return false }
 
+// WithTools returns a copy of the model with the given tools configured.
 func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	n := *m // safe: mutex fields are pointers (shared across copies), rest are values or safe-to-copy pointers
 	n.tools = tools
@@ -246,6 +251,7 @@ func (m *CopilotModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCha
 	return &n, nil
 }
 
+// BindTools configures the tools available for the next call.
 func (m *CopilotModel) BindTools(tools []*schema.ToolInfo) error {
 	m.tools = tools
 	if len(tools) > 0 {

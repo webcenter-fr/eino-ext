@@ -36,6 +36,7 @@ var summarizeSystemPrompt string
 //go:embed prompts/summarize_user.md
 var summarizeUserTemplate string
 
+// ExtractionResult holds the result of a memory extraction operation.
 type ExtractionResult struct {
 	Content    string  `json:"content"`
 	Category   string  `json:"category"`
@@ -43,6 +44,7 @@ type ExtractionResult struct {
 	Confidence float64 `json:"confidence"`
 }
 
+// MemoryExtractor extracts structured memories from conversation turns.
 type MemoryExtractor struct {
 	model model.BaseChatModel
 }

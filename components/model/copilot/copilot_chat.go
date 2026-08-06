@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	// OpenAIIntent is the Copilot intent value for conversation-agent requests.
 	OpenAIIntent = "conversation-agent"
 )
 
@@ -25,6 +26,8 @@ const copilotOpenAIIntent = OpenAIIntent
 // CopilotOptions holds per-call implementation-specific options for the
 // Copilot chat model. Use model.WrapImplSpecificOptFn to pass these at
 // call time.
+//
+//nolint:revive // CopilotOptions is the established public name.
 type CopilotOptions struct {
 	// ReasoningEffort overrides Config.ReasoningEffort for this call.
 	// When empty, the Config default is used.
@@ -681,8 +684,7 @@ func isModelNotAvailableError(err error) bool {
 	return t
 }
 
-// --- Generate ---
-
+// Generate sends chat completion messages and returns a single response message.
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	resolvedModel := m.resolveModel(opts...)
 	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {

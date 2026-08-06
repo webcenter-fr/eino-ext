@@ -61,7 +61,7 @@ func TestExchangeGitHubTokenWithBaseErrorStatus(t *testing.T) {
 
 func TestExchangeGitHubTokenWithBaseMalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 
@@ -304,10 +304,10 @@ func TestExchangeErrorMessages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(`{"error":"some error"}`))
+				_, _ = w.Write([]byte(`{"error":"some error"}`))
 			}))
 			defer srv.Close()
-
+	
 			ctx := context.Background()
 			_, err := exchangeGitHubTokenWithBase(ctx, "gh-token", srv.URL, 5*time.Second)
 			if err == nil {
@@ -373,8 +373,8 @@ func TestResolveCopilotToken_DirectBearer_FineGrainedPAT(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == userURLPath {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"login":"testuser"}`))
-			return
+		_, _ = w.Write([]byte(`{"login":"testuser"}`))
+		return
 		}
 		if r.URL.Path == tokenURLPath {
 			t.Fatal("exchange endpoint should NOT be called for fine-grained PAT")

@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	// MemoryContextMarkerKey is the metadata key for memory context markers.
 	MemoryContextMarkerKey = "__eino_ext_memory_context"
 
 	CategoryFact       = "fact"

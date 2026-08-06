@@ -37,6 +37,8 @@ type copilotEmbedUsage struct {
 
 var _ embedding.Embedder = (*CopilotEmbedder)(nil)
 
+// CopilotEmbedder implements the eino embedding.Embedder interface for
+// the Copilot embeddings API.
 type CopilotEmbedder struct {
 	httpClient *http.Client
 	baseURL    string
@@ -44,11 +46,13 @@ type CopilotEmbedder struct {
 	token      string
 }
 
+// EmbedderConfig configures a Copilot embedder.
 type EmbedderConfig struct {
 	Model         string `validate:"required"`
 	TLSSkipVerify bool   `validate:"omitempty"`
 }
 
+// NewEmbedder creates a Copilot embedder.
 func NewEmbedder(ctx context.Context, cfg *EmbedderConfig, copilotToken, baseURL string, timeout time.Duration) (*CopilotEmbedder, error) {
 	if cfg == nil {
 		return nil, errors.New("copilot: embedder config must not be nil")
@@ -78,6 +82,7 @@ func NewEmbedder(ctx context.Context, cfg *EmbedderConfig, copilotToken, baseURL
 	}, nil
 }
 
+// EmbedStrings generates embeddings for the provided texts.
 func (e *CopilotEmbedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
 	payload, err := json.Marshal(copilotEmbedRequest{
 		Model:          e.model,

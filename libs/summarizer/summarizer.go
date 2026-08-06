@@ -17,6 +17,8 @@ type Summarizer interface {
 
 // SummarizerFunc is an adapter that allows an ordinary function to be used as a
 // [Summarizer].
+//
+//nolint:revive // SummarizerFunc is the established public name.
 type SummarizerFunc func(ctx context.Context, history []*schema.Message, previousSummary string) (string, error)
 
 // Summarize calls the underlying function f.

@@ -31,6 +31,8 @@ type Config struct {
 }
 
 // OpenSearchMemory stores conversations in an OpenSearch index.
+//
+//nolint:revive // OpenSearchMemory is the established public name.
 type OpenSearchMemory struct {
 	mu              sync.Mutex
 	client          opensearchv4.Client
@@ -42,6 +44,8 @@ type OpenSearchMemory struct {
 }
 
 // OpenSearchConversation represents a conversation stored in OpenSearch.
+//
+//nolint:revive // OpenSearchConversation is the established public name.
 type OpenSearchConversation struct {
 	mu sync.Mutex
 

@@ -24,6 +24,7 @@ const (
 	ctxKeySessionID = "memory_session_id"
 )
 
+// Config holds configuration for the MemoryAgent.
 type Config struct {
 	InnerAgent             adk.Agent           `json:"inner_agent" jsonschema:"-" validate:"required"`
 	Store                  MemoryStore         `json:"-" jsonschema:"-"`
@@ -37,6 +38,7 @@ type Config struct {
 	SystemPromptPrefix     string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
 }
 
+// MemoryAgent wraps an inner agent with long-term memory capabilities.
 type MemoryAgent struct {
 	inner      adk.Agent
 	store      MemoryStore

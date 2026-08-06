@@ -10,6 +10,7 @@ import (
 type Plan string
 
 const (
+	// PlanUnknown indicates the Copilot subscription plan could not be determined.
 	PlanUnknown    Plan = "unknown"
 	PlanFree       Plan = "free"
 	PlanIndividual Plan = "individual"

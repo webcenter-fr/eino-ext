@@ -441,7 +441,7 @@ func TestHandlerStreamMidErrorClosesStartedBlocks(t *testing.T) {
 
 func TestHandlerNeededStreamSkippedWithoutSubscribers(t *testing.T) {
 	b := mustBus(t, Config{})
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	h := NewHandler(b)
 	ctx := WithSession(context.Background(), "lonely")
 	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}

@@ -18,8 +18,11 @@ import (
 const (
 	// MetaKeyId is the metadata key for the document identifier.
 	MetaKeyId    = "id"
+	// MetaKeyIndex is the metadata key for the source index name.
 	MetaKeyIndex = "index"
+	// MetaScore is the metadata key for the relevance score.
 	MetaScore    = "score"
+	// MetaVersion is the metadata key for the document version.
 	MetaVersion  = "version"
 
 	// DefaultSourceIDField / DefaultSourceHashField are the metadata keys

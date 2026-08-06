@@ -789,7 +789,7 @@ func TestBuildChatRequestHasMissingFields(t *testing.T) {
 	tokenVal := "test-token"
 	var rawBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&rawBody)
+		_ = json.NewDecoder(r.Body).Decode(&rawBody)
 		resp := copilotChatResponse{
 			ID:    "chat-1",
 			Model: "gpt-4o",

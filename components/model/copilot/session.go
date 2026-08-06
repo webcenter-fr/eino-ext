@@ -81,6 +81,7 @@ func acquireSession(ctx context.Context, baseURL, copilotToken string, modelHint
 	if err != nil {
 		return nil, errors.Wrap(err, "copilot: session request failed")
 	}
+	//nolint:errcheck // defer close in request path, error is irrelevant
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
