@@ -669,7 +669,7 @@ func isModelNotAvailableError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "model not available for integrator")
 }
 
-	func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
+func usageToTokenUsage(u *copilotUsage) *schema.TokenUsage {
 	t := &schema.TokenUsage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
@@ -687,8 +687,21 @@ func isModelNotAvailableError(err error) bool {
 // Generate sends chat completion messages and returns a single response message.
 func (m *CopilotModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	resolvedModel := m.resolveModel(opts...)
-	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
-		return nil, err
+
+	if IsAutoModel(resolvedModel) {
+		selected, err := m.ensureAutoModel(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Inject the resolved model so buildChatRequest/buildResponsesRequest
+		// and useResponsesAPI see the concrete ID, not "auto".
+		opts = append([]model.Option{model.WithModel(selected)}, opts...)
+		resolvedModel = selected
+		// Session token was acquired by ensureAutoModel; skip ensureSessionToken.
+	} else {
+		if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
+			return nil, err
+		}
 	}
 
 	if m.useResponsesAPI(resolvedModel) {

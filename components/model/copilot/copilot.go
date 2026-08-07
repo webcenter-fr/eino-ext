@@ -85,6 +85,10 @@ type CopilotModel struct {
 	sessionMu            *sync.Mutex
 	cancelSessionRefresh context.CancelFunc
 
+	autoModel         *autoModelResolution // nil when auto mode is not in use
+	autoMu            *sync.Mutex          // guards autoModel; shared across WithTools copies
+	cancelAutoRefresh context.CancelFunc
+
 	modelsCache []ModelInfo
 	modelsMu    *sync.RWMutex
 
@@ -195,7 +199,7 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 				lockedToken.set(newToken)
 			})
 		}
-		}
+	}
 
 	httpClient := newHTTPClient(cfg.Timeout, cfg.TLSSkipVerify)
 
@@ -207,16 +211,17 @@ func NewCopilotChatModel(ctx context.Context, cfg *Config) (*CopilotModel, error
 	clientMachineID := newUUID()
 
 	return &CopilotModel{
-		lockedToken:      lockedToken,
-		baseURL:          baseURL,
-		cfg:              cfg,
-		cancelRefresh:    cancelRefresh,
-		httpClient:       httpClient,
-		logger:           logger,
-		sessionToken:     sessionToken,
-		sessionMu:        &sync.Mutex{},
-		modelsMu:         &sync.RWMutex{},
-		clientMachineID:  clientMachineID,
+		lockedToken:     lockedToken,
+		baseURL:         baseURL,
+		cfg:             cfg,
+		cancelRefresh:   cancelRefresh,
+		httpClient:      httpClient,
+		logger:          logger,
+		sessionToken:    sessionToken,
+		sessionMu:       &sync.Mutex{},
+		autoMu:          &sync.Mutex{},
+		modelsMu:        &sync.RWMutex{},
+		clientMachineID: clientMachineID,
 	}, nil
 }
 

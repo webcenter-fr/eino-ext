@@ -19,8 +19,21 @@ import (
 // Stream sends chat completion messages and returns a stream of responses.
 func (m *CopilotModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	resolvedModel := m.resolveModel(opts...)
-	if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
-		return nil, err
+
+	if IsAutoModel(resolvedModel) {
+		selected, err := m.ensureAutoModel(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// Inject the resolved model so buildChatRequest/buildResponsesRequest
+		// and useResponsesAPI see the concrete ID, not "auto".
+		opts = append([]model.Option{model.WithModel(selected)}, opts...)
+		resolvedModel = selected
+		// Session token was acquired by ensureAutoModel; skip ensureSessionToken.
+	} else {
+		if err := m.ensureSessionToken(ctx, resolvedModel); err != nil {
+			return nil, err
+		}
 	}
 
 	if m.useResponsesAPI(resolvedModel) {

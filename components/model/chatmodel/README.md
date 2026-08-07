@@ -39,7 +39,7 @@ Parsing is case-insensitive and trims whitespace.
 | ----------------- | --------------------------------------------------------------- |
 | `Plan`            | provider: `ollama`, `github-copilot`, or `openai`               |
 | `BaseURL`         | provider endpoint URL                                           |
-| `Model`           | model ID                                                        |
+| `Model`           | model ID (use `"auto"` for the `github-copilot` provider to auto-detect the best available model) |
 | `Temperature`     | sampling temperature                                            |
 | `Thinking`        | `ThinkingLevel` (`Off` omits reasoning)                         |
 | `MaxOutputTokens` | output-token cap; `0` leaves the provider default unset         |

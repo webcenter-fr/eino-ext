@@ -139,9 +139,63 @@ chat/models means quota exhausted (the PAT validation still succeeds).
    ```bash
    export GITHUB_TOKEN=github_pat_...
    ```
-   ```go
-   m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{Model: "gpt-4o"})
-   ```
+    ```go
+    m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{Model: "gpt-4o"})
+    ```
+
+## Auto model selection (`ModelAuto`)
+
+When `Config.Model` (or a per-call `model.WithModel`) is set to `ModelAuto`
+(`"auto"`, case-insensitive), the provider defers model selection to the
+Copilot API via `POST /models/session` with **empty `model_hints`**. The API
+returns a `selected_model` suited to the caller's account tier, and the
+provider uses that for the actual chat/responses request.
+
+This is the recommended value for **free-tier** accounts, where the available
+model catalog is smaller and may change over time — `"auto"` always picks a
+tier-available model without code changes.
+
+### Usage
+
+```go
+m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{
+    GitHubToken: os.Getenv("GITHUB_TOKEN"), // github_pat_...
+    Model:       copilot.ModelAuto,
+})
+```
+
+Via the `chatmodel` factory:
+
+```go
+m, err := chatmodel.New(ctx, &chatmodel.Config{
+    Provider: "github-copilot",
+    APIKey:   pat,
+    Model:    "auto",
+})
+```
+
+Per-call override:
+
+```go
+// Use auto for this specific call:
+msg, err := m.Generate(ctx, messages, model.WithModel(copilot.ModelAuto))
+
+// Bypass auto and pick a specific model for one call:
+msg, err := m.Generate(ctx, messages, model.WithModel("gpt-4o"))
+```
+
+### Behavior
+
+- **Case-insensitive match**: `"AUTO"`, `" Auto "` are all accepted. The
+  resolved `selected_model` is sent to the API verbatim (case preserved).
+- **Cached and refreshed**: the resolved model ID and session token are
+  cached on the model. A background goroutine refreshes them before expiry.
+- **Session token reuse**: the session token returned by the auto-mode
+  `/models/session` call is reused for the chat/responses request (the
+  `Copilot-Session-Token` header is sent automatically).
+- **No silent fallback**: if the session endpoint fails (network, 5xx,
+  quota), the error is surfaced directly to the caller. The provider does
+  **not** silently fall back to a hardcoded model.
 
 ## Request headers
 
@@ -271,7 +325,7 @@ m, err := copilot.NewCopilotChatModel(ctx, &copilot.Config{
 | `BaseURL` | `string` | Override Copilot API base URL |
 | `Timeout` | `time.Duration` | API request timeout (≥1s, default 60m) |
 | `TLSSkipVerify` | `bool` | Skip TLS certificate verification |
-| `Model` | `string` | Model ID to use (required at call time; can be overridden via `model.WithModel`) |
+| `Model` | `string` | Model ID to use (required at call time; can be overridden via `model.WithModel`). Set to `copilot.ModelAuto` (`"auto"`) to let the Copilot API select the model automatically. |
 | `Temperature` | `*float32` | Sampling temperature (0 to 2 for standard models; omitted for reasoning models) |
 | `MaxCompletionTokens` | `*int` | Upper bound on generated tokens (sent as `max_tokens` for chat, `max_output_tokens` for responses) |
 | `ReasoningEffort` | `ReasoningEffort` | Reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |

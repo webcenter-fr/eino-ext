@@ -40,12 +40,12 @@ type copilotModelsResponse struct {
 }
 
 type copilotModelData struct {
-	ID                 string                 `json:"id"`
-	Name               string                 `json:"name"`
-	ModelPickerEnabled bool                   `json:"model_picker_enabled"`
-	Version            string                 `json:"version"`
-	SupportedEndpoints []string               `json:"supported_endpoints,omitempty"`
-	Policy             copilotModelPolicy     `json:"policy"`
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name"`
+	ModelPickerEnabled bool                     `json:"model_picker_enabled"`
+	Version            string                   `json:"version"`
+	SupportedEndpoints []string                 `json:"supported_endpoints,omitempty"`
+	Policy             copilotModelPolicy       `json:"policy"`
 	Capabilities       copilotModelCapabilities `json:"capabilities"`
 }
 
@@ -54,22 +54,22 @@ type copilotModelPolicy struct {
 }
 
 type copilotModelCapabilities struct {
-	Family   string              `json:"family"`
-	Limits   copilotModelLimits  `json:"limits"`
+	Family   string               `json:"family"`
+	Limits   copilotModelLimits   `json:"limits"`
 	Supports copilotModelSupports `json:"supports"`
 }
 
 type copilotModelLimits struct {
-	MaxContextWindowTokens int                  `json:"max_context_window_tokens"`
-	MaxOutputTokens        int                  `json:"max_output_tokens"`
-	MaxPromptTokens        int                  `json:"max_prompt_tokens"`
-	Vision                 *copilotModelVision  `json:"vision,omitempty"`
+	MaxContextWindowTokens int                 `json:"max_context_window_tokens"`
+	MaxOutputTokens        int                 `json:"max_output_tokens"`
+	MaxPromptTokens        int                 `json:"max_prompt_tokens"`
+	Vision                 *copilotModelVision `json:"vision,omitempty"`
 }
 
 type copilotModelVision struct {
-	MaxPromptImageSize   int      `json:"max_prompt_image_size"`
-	MaxPromptImages      int      `json:"max_prompt_images"`
-	SupportedMediaTypes  []string `json:"supported_media_types"`
+	MaxPromptImageSize  int      `json:"max_prompt_image_size"`
+	MaxPromptImages     int      `json:"max_prompt_images"`
+	SupportedMediaTypes []string `json:"supported_media_types"`
 }
 
 // flexibleBool handles JSON fields that can be a boolean or the string
@@ -118,6 +118,22 @@ type copilotModelSupports struct {
 	ReasoningEffort   []string     `json:"reasoning_effort,omitempty"`
 	MaxThinkingBudget *int         `json:"max_thinking_budget,omitempty"`
 	MinThinkingBudget *int         `json:"min_thinking_budget,omitempty"`
+}
+
+// ModelAuto is a special Config.Model value that asks the Copilot API to
+// select the model automatically via POST /models/session with empty
+// model_hints. The selected model is returned in the session response's
+// selected_model field and is used for the actual chat/responses request.
+//
+// This is the recommended value for free-tier accounts, where the available
+// model catalog is smaller and may change over time.
+const ModelAuto = "auto"
+
+// IsAutoModel reports whether modelID is the auto-selection sentinel value
+// ("auto", case-insensitive, surrounding whitespace trimmed). It returns
+// false for the empty string.
+func IsAutoModel(modelID string) bool {
+	return strings.EqualFold(strings.TrimSpace(modelID), ModelAuto)
 }
 
 // ListModels fetches available models from GET /models with the
