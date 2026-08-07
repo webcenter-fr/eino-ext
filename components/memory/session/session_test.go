@@ -252,6 +252,15 @@ func TestCondense_AtThresholdAppendsSummary(t *testing.T) {
 	// ~4 chars/token: 1000 chars -> ~250 tokens. Threshold below that triggers.
 	sm := newManager(t, Config{Summarizer: s, CondenseThreshold: 100})
 
+	// Pre-populate the conversation with persisted messages so there is actual
+	// history to summarize. Condense only summarizes persisted messages (not
+	// the pending user), so without this the Condense in turn1 would be a
+	// no-op.
+	pre, _ := sm.BeginTurn("u", "c", schema.UserMessage(strings.Repeat("x", 150)))
+	_ = pre.CommitAssistant(schema.AssistantMessage(strings.Repeat("y", 150), nil))
+
+	// Turn 1: begin with a new user message that pushes the full window
+	// (persisted + pending) past the threshold.
 	turn, _ := sm.BeginTurn("u", "c", schema.UserMessage(strings.Repeat("a", 1000)))
 
 	condensed, err := turn.Condense(context.Background())
@@ -265,13 +274,18 @@ func TestCondense_AtThresholdAppendsSummary(t *testing.T) {
 		t.Fatalf("expected 1 summarizer call, got %d", s.calls)
 	}
 
-	// The window must now start at the persisted anchored summary.
+	// The window must start at the persisted anchored summary, followed by the
+	// pending user message (which was NOT included in the summary).
 	win := turn.Window(0)
-	if len(win) == 0 || !memory.IsSummary(win[0]) {
+	if len(win) < 2 || !memory.IsSummary(win[0]) {
 		t.Fatalf("expected window to start with a summary, got %#v", win)
 	}
 	if win[0].Content != "SUMMARY" {
 		t.Fatalf("unexpected summary content: %q", win[0].Content)
+	}
+	// The pending user message must be in the window, after the summary.
+	if win[len(win)-1].Role != schema.User {
+		t.Fatalf("expected pending user message at end of window, got %#v", win[len(win)-1])
 	}
 
 	_ = turn.CommitAssistant(schema.AssistantMessage("ok", nil))
@@ -284,6 +298,33 @@ func TestCondense_AtThresholdAppendsSummary(t *testing.T) {
 	}
 	if s.lastPrev != "SUMMARY" {
 		t.Fatalf("expected previousSummary to be passed, got %q", s.lastPrev)
+	}
+}
+
+func TestCondense_PendingNotIncludedInSummary(t *testing.T) {
+	s := &countingSummarizer{}
+	sm := newManager(t, Config{Summarizer: s, CondenseThreshold: 100})
+
+	// Persist some history first.
+	pre, _ := sm.BeginTurn("u", "c", schema.UserMessage(strings.Repeat("old", 100)))
+	_ = pre.CommitAssistant(schema.AssistantMessage(strings.Repeat("ans", 100), nil))
+
+	// Now start a new turn. Condense must summarize ONLY the persisted messages
+	// (the "old"/"ans" pair), not the pending user "new-new-new...".
+	turn, _ := sm.BeginTurn("u", "c", schema.UserMessage("new question: "+strings.Repeat("a", 500)))
+	_, err := turn.Condense(context.Background())
+	if err != nil {
+		t.Fatalf("Condense: %v", err)
+	}
+	_ = turn.CommitAssistant(schema.AssistantMessage("answer", nil))
+
+	// The pending user text must never appear in a summary marker.
+	for _, m := range turn.Conversation().GetFullMessages() {
+		if memory.IsSummary(m) {
+			if m.Content == "new question" {
+				t.Fatalf("summary incorrectly includes pending user message text")
+			}
+		}
 	}
 }
 

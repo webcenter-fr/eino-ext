@@ -428,3 +428,20 @@ func (m *CopilotModel) ResolvedAutoModel() (string, bool) {
 	}
 	return m.autoModel.selectedModel, true
 }
+
+// ResolveAutoModel is a standalone helper that calls POST /models/session
+// with empty model hints so the Copilot API selects the default auto model.
+// It can be called at startup (before any CopilotModel is constructed) to
+// resolve the concrete model name for catalog lookups (pricing, context
+// window). baseURL may be empty to use the default Copilot endpoint.
+func ResolveAutoModel(ctx context.Context, baseURL, copilotToken string, timeout time.Duration) (string, error) {
+	if baseURL == "" {
+		baseURL = ResolveBaseURL("")
+	}
+	client := newHTTPClient(timeout, false)
+	sresp, err := acquireAutoSession(ctx, baseURL, copilotToken, client, newUUID())
+	if err != nil {
+		return "", errors.Wrap(err, "copilot: failed to resolve auto model")
+	}
+	return sresp.SelectedModel, nil
+}

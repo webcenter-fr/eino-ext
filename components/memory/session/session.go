@@ -241,6 +241,12 @@ func (t *Turn) Window(budget int) []*schema.Message {
 // reaches the configured token threshold. It is a no-op (returns false) when no
 // Summarizer is configured or the threshold is disabled (<= 0) or not reached.
 //
+// The threshold check includes the pending user message (full window); the
+// summarization itself covers only the persisted history — the pending user is
+// the new, unprocessed turn that the model will see separately. This prevents
+// the model from receiving the current question twice (once in the summary and
+// once explicitly).
+//
 // The produced summary is appended non-destructively (the full log is preserved);
 // subsequent windows start from this new summary. Summarization reuses the
 // injected Summarizer and the marker shared with contextopt
@@ -256,7 +262,15 @@ func (t *Turn) Condense(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	text, err := t.sm.summarizer.Summarize(ctx, window, previousSummaryText(window))
+	// Summarize only persisted messages — the pending user hasn't been
+	// processed yet; including it would duplicate the question in the model
+	// input (once in the summary, once explicitly via Window()).
+	persisted := t.conv.GetWindow(t.sm.windowBudget)
+	if len(persisted) == 0 {
+		return false, nil
+	}
+
+	text, err := t.sm.summarizer.Summarize(ctx, persisted, previousSummaryText(persisted))
 	if err != nil {
 		return false, errors.Wrap(err, "session: summarization failed")
 	}
