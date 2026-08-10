@@ -18,6 +18,11 @@ type SearchResult struct {
 	Description string `json:"description"`
 }
 
+// retrier is an error that signals the operation should be retried.
+type retrier interface {
+	Retryable()
+}
+
 // search performs a web search via SearXNG with retry.
 func search(ctx context.Context, query string, cfg Config) ([]SearchResult, error) {
 	if len(query) > maxQueryLen {
@@ -51,6 +56,10 @@ func searchWithRetry(
 
 		results, err := searxngSearch(ctx, query, cfg, client)
 		if err != nil {
+			var r retrier
+			if !errors.As(err, &r) {
+				return nil, err
+			}
 			lastErr = err
 			continue
 		}

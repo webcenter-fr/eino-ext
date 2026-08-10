@@ -96,6 +96,41 @@ func (s *WebSearchTestSuite) TestSearxngSearchRetryError() {
 	assert.GreaterOrEqual(t, callCount, 3)
 }
 
+func (s *WebSearchTestSuite) TestSearxngSearchNonRetryableError() {
+	t := s.T()
+
+	callCount := 0
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	cfg.MaxRetry = 3 // Should not retry, so this should NOT be used
+	_, err := search(context.Background(), "test query", cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "403")
+	// Only 1 call — non-retryable errors should fail immediately
+	assert.Equal(t, 1, callCount, "non-retryable 403 should fail on first attempt, not retry")
+}
+
+func (s *WebSearchTestSuite) TestSearxngSearchAuthErrorNoRetry() {
+	t := s.T()
+
+	callCount := 0
+	s.searxngMux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	cfg := testSearchConfig(s.searxngServer.URL)
+	cfg.MaxRetry = 3
+	_, err := search(context.Background(), "test query", cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
+	assert.Equal(t, 1, callCount, "non-retryable 401 should fail on first attempt")
+}
+
 func (s *WebSearchTestSuite) TestSearxngSearchMissingURL() {
 	t := s.T()
 

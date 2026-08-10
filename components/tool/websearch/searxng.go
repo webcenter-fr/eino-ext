@@ -22,6 +22,17 @@ type searxngResult struct {
 	Content string `json:"content"`
 }
 
+// retryableError wraps an error to indicate that the operation should be retried.
+type retryableError struct {
+	err error
+}
+
+func (e *retryableError) Error() string { return e.err.Error() }
+func (e *retryableError) Unwrap() error { return e.err }
+
+// Retryable marks this error as safe to retry.
+func (e *retryableError) Retryable() {}
+
 // searxngSearch queries a SearXNG instance and returns parsed results.
 func searxngSearch(ctx context.Context, query string, cfg Config, client *http.Client) ([]SearchResult, error) {
 	u, err := url.Parse(cfg.SearxngURL)
@@ -52,7 +63,7 @@ func searxngSearch(ctx context.Context, query string, cfg Config, client *http.C
 
 	if resp.StatusCode == http.StatusTooManyRequests ||
 		resp.StatusCode == http.StatusServiceUnavailable {
-		return nil, fmt.Errorf("search request received status %d (retryable)", resp.StatusCode)
+		return nil, &retryableError{err: fmt.Errorf("search request received status %d (retryable)", resp.StatusCode)}
 	}
 
 	if resp.StatusCode != http.StatusOK {
