@@ -32,6 +32,9 @@ var _ model.ChatModel = (*CopilotModel)(nil)
 
 const copilotGetType = "GitHubCopilot"
 
+// Extra key used to persist reasoning_opaque across multi-turn conversations.
+const extraKeyReasoningOpaque = "copilot_reasoning_opaque"
+
 // ReasoningEffort controls the reasoning effort level for supported Copilot models.
 type ReasoningEffort string
 

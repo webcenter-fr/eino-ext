@@ -151,7 +151,12 @@ func (h *Handler) maybeEmitAgentSwitched(ctx context.Context, sessionID, agent s
 			return
 		}
 	}
-	h.bus.Publish(ctx, Event{SessionID: sessionID, Agent: agent, Type: TypeAgentSwitched, Data: AgentSwitched{Agent: agent}})
+	payload := AgentSwitched{Agent: agent}
+	if meta, ok := AgentMetaFromContext(ctx); ok {
+		payload.Model = meta.Model
+		payload.Description = meta.Description
+	}
+	h.bus.Publish(ctx, Event{SessionID: sessionID, Agent: agent, Type: TypeAgentSwitched, Data: payload})
 }
 
 // Needed reports whether a timing is worth setting up. Coarse timings are always

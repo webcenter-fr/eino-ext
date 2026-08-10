@@ -154,9 +154,14 @@ type StepFailed struct {
 	Error ErrorData `json:"error"`
 }
 
-// AgentSwitched carries the newly active agent name.
+// AgentSwitched carries the newly active agent's name plus optional display
+// metadata: the model that powers it and a short description of its role.
+// Model and Description are omitted from the wire when empty (name-only
+// callers, or old replay logs) so existing consumers keep working.
 type AgentSwitched struct {
-	Agent string `json:"agent"`
+	Agent       string `json:"agent"`
+	Model       string `json:"model,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // ModelSwitched carries the newly active model reference.

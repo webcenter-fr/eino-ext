@@ -249,7 +249,7 @@ func convertMessage(msg *schema.Message) copilotMessage {
 			m.ReasoningText = msg.ReasoningContent
 		}
 		// Reasoning round-trip: emit reasoning_opaque from Extra if present.
-		if opaque, ok := msg.Extra["copilot_reasoning_opaque"]; ok {
+		if opaque, ok := msg.Extra[extraKeyReasoningOpaque]; ok {
 			if s, ok := opaque.(string); ok && s != "" {
 				m.ReasoningOpaque = s
 			}
@@ -414,7 +414,7 @@ func convertChoiceToMessage(choice copilotChatChoice) *schema.Message {
 		if out.Extra == nil {
 			out.Extra = make(map[string]any)
 		}
-		out.Extra["copilot_reasoning_opaque"] = msg.ReasoningOpaque
+		out.Extra[extraKeyReasoningOpaque] = msg.ReasoningOpaque
 	}
 	for _, tc := range msg.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, schema.ToolCall{

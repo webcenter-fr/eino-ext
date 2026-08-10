@@ -576,7 +576,7 @@ func TestGenerateWithReasoningRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Generate: %v", err)
 	}
-	if msg1.Extra["copilot_reasoning_opaque"] != "opaque-data" {
+	if msg1.Extra[extraKeyReasoningOpaque] != "opaque-data" {
 		t.Errorf("expected opaque-data in Extra, got %v", msg1.Extra)
 	}
 

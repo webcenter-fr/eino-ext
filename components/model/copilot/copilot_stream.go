@@ -155,26 +155,24 @@ func streamEvents(ctx context.Context, body io.Reader, sw *schema.StreamWriter[*
 
 			msg := &schema.Message{Role: schema.Assistant}
 
-			// Emit reasoning first (if present), then process content and
-			// tool_calls in the same iteration. This handles the case where
-			// reasoning_text/reasoning_opaque and content/tool_calls arrive in
-			// the same chunk (the kilocode reference explicitly handles this).
-			if delta.ReasoningText != "" || delta.ReasoningOpaque != "" {
-				reasoningContent := delta.ReasoningText
-				if reasoningContent == "" {
-					reasoningContent = delta.ReasoningOpaque
-				}
-				// Persist opaque for multi-turn round-trip.
-				if delta.ReasoningOpaque != "" {
-					if msg.Extra == nil {
-						msg.Extra = make(map[string]any)
-					}
-					msg.Extra["copilot_reasoning_opaque"] = delta.ReasoningOpaque
-				}
-				sw.Send(&schema.Message{
+			// Only emit human-readable reasoning_text to ReasoningContent.
+			// reasoning_opaque is encrypted/binary content for cross-turn
+			// round-trip only — it is NOT human-readable and must never be
+			// used as the displayed reasoning text.
+			if delta.ReasoningText != "" {
+				reasoningMsg := &schema.Message{
 					Role:             schema.Assistant,
-					ReasoningContent: reasoningContent,
-				}, nil)
+					ReasoningContent: delta.ReasoningText,
+				}
+				// Persist opaque on the reasoning message itself so the
+				// round-trip contract works even when reasoning and content
+				// arrive in separate chunks (the common streaming case).
+				if delta.ReasoningOpaque != "" {
+					reasoningMsg.Extra = map[string]any{
+						extraKeyReasoningOpaque: delta.ReasoningOpaque,
+					}
+				}
+				sw.Send(reasoningMsg, nil)
 			}
 
 			// Process content delta.

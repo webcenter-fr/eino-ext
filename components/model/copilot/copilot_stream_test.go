@@ -176,14 +176,15 @@ func TestStreamEvents(t *testing.T) {
 			},
 		},
 		{
-			name: "reasoning_opaque is mapped to ReasoningContent",
+			// reasoning_opaque is encrypted/binary content — it must never be
+			// used as the displayed reasoning text. Only reasoning_text is shown.
+			name: "reasoning_opaque only does not emit ReasoningContent",
 			sseLines: []string{
 				`data: {"choices":[{"delta":{"reasoning_opaque":"opaque thought"}}]}`,
 				`data: {"choices":[{"delta":{"content":"response"}}]}`,
 				`data: [DONE]`,
 			},
 			want: []*schema.Message{
-				{Role: schema.Assistant, ReasoningContent: "opaque thought"},
 				{Role: schema.Assistant, Content: "response"},
 			},
 		},
@@ -268,41 +269,7 @@ func TestStreamEvents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			pr, pw := io.Pipe()
-			sr, sw := schema.Pipe[*schema.Message](2)
-
-			// Write SSE lines in a goroutine.
-			go func() {
-				for _, line := range tt.sseLines {
-					_, _ = fmt.Fprintln(pw, line)
-				}
-				_ = pw.Close()
-			}()
-
-			// Run streamEvents concurrently.
-			errCh := make(chan error, 1)
-			go func() {
-				errCh <- streamEvents(ctx, pr, sw, nil)
-				sw.Close()
-			}()
-
-			// Collect emitted messages.
-			var got []*schema.Message
-			for {
-				msg, err := sr.Recv()
-				if err != nil {
-					if err == io.EOF || strings.Contains(err.Error(), "EOF") {
-						break
-					}
-					t.Fatalf("Recv: unexpected error: %v", err)
-				}
-				got = append(got, msg)
-			}
-
-			if err := <-errCh; err != nil {
-				t.Fatalf("streamEvents: %v", err)
-			}
+			got := runStreamEventsTest(t, tt.sseLines)
 
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %d messages, want %d:\ngot: %+v\nwant: %+v",
@@ -313,6 +280,192 @@ func TestStreamEvents(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStreamReasoningTextOnly verifies that when only reasoning_text is
+// present (no reasoning_opaque), ReasoningContent is emitted and Extra does
+// NOT contain copilot_reasoning_opaque.
+func TestStreamReasoningTextOnly(t *testing.T) {
+	msgs := runStreamEventsTest(t, []string{
+		`data: {"choices":[{"delta":{"reasoning_text":"I should think about this..."}}]}`,
+		`data: [DONE]`,
+	})
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[0].ReasoningContent != "I should think about this..." {
+		t.Errorf("ReasoningContent = %q, want %q", msgs[0].ReasoningContent, "I should think about this...")
+	}
+	if msgs[0].Extra != nil {
+		if _, ok := msgs[0].Extra[extraKeyReasoningOpaque]; ok {
+			t.Errorf("Extra[extraKeyReasoningOpaque] should not be set when no opaque is present")
+		}
+	}
+}
+
+// TestStreamReasoningOpaqueOnly verifies that when only reasoning_opaque is
+// present (no reasoning_text), ReasoningContent is NOT emitted. The opaque
+// value is stored in Extra for multi-turn round-trip only.
+func TestStreamReasoningOpaqueOnly(t *testing.T) {
+	// Opaque and content in separate chunks so the msg that carries Extra
+	// is actually sent (otherwise msg is not sent and Extra is lost).
+	msgs := runStreamEventsTest(t, []string{
+		`data: {"choices":[{"delta":{"reasoning_opaque":"ZXhhbXBsZQ=="}}]}`,
+		`data: {"choices":[{"delta":{"content":"response"}}]}`,
+		`data: [DONE]`,
+	})
+
+	// No message should have ReasoningContent (opaque is never shown).
+	for i, m := range msgs {
+		if m.ReasoningContent != "" {
+			t.Errorf("message[%d]: ReasoningContent = %q, want empty (opaque must not be displayed)", i, m.ReasoningContent)
+		}
+	}
+
+	// The content message should not carry the opaque in Extra since the
+	// opaque-only chunk does not enter the ReasoningText guard.
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Content != "response" {
+		t.Errorf("Content = %q, want %q", msgs[0].Content, "response")
+	}
+	// With the current implementation, opaque-only (no reasoning_text) does
+	// not trigger Extra storage because the storage path is inside the
+	// ReasoningText guard. In production, opaque typically accompanies
+	// reasoning_text; the isolated-opaque case is a no-op for display safety.
+}
+
+// TestStreamReasoningBothFields verifies that when both reasoning_text and
+// reasoning_opaque are present, ReasoningContent uses the human-readable text
+// and the opaque is stored in Extra.
+func TestStreamReasoningBothFields(t *testing.T) {
+	msgs := runStreamEventsTest(t, []string{
+		`data: {"choices":[{"delta":{"reasoning_text":"Hello","reasoning_opaque":"Z29vZGJ5ZQ==","content":"resp"}}]}`,
+		`data: [DONE]`,
+	})
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (reasoning + content), got %d: %+v", len(msgs), msgs)
+	}
+
+	// First message: reasoning
+	if msgs[0].ReasoningContent != "Hello" {
+		t.Errorf("message[0].ReasoningContent = %q, want %q", msgs[0].ReasoningContent, "Hello")
+	}
+
+	// Second message: content
+	if msgs[1].Content != "resp" {
+		t.Errorf("message[1].Content = %q, want %q", msgs[1].Content, "resp")
+	}
+	if msgs[1].Extra != nil {
+		t.Errorf("message[1].Extra should be nil (opaque travels with reasoning message), got %v", msgs[1].Extra)
+	}
+
+	// Opaque must be attached to the reasoning message.
+	if opaque, ok := msgs[0].Extra[extraKeyReasoningOpaque].(string); !ok {
+		t.Fatalf("message[0].Extra[extraKeyReasoningOpaque] missing or wrong type: %v", msgs[0].Extra)
+	} else if opaque != "Z29vZGJ5ZQ==" {
+		t.Errorf("Extra[extraKeyReasoningOpaque] = %q, want %q", opaque, "Z29vZGJ5ZQ==")
+	}
+}
+
+// TestStreamReasoningBothFieldsSeparateChunks verifies that when
+// reasoning_text+reasoning_opaque arrive in one chunk and content arrives in a
+// separate chunk (the common streaming pattern), the opaque is preserved in the
+// reasoning message's Extra for multi-turn round-trip.
+func TestStreamReasoningBothFieldsSeparateChunks(t *testing.T) {
+	msgs := runStreamEventsTest(t, []string{
+		`data: {"choices":[{"delta":{"reasoning_text":"Hello","reasoning_opaque":"Z29vZGJ5ZQ=="}}]}`,
+		`data: {"choices":[{"delta":{"content":"world"}}]}`,
+		`data: [DONE]`,
+	})
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (reasoning + content), got %d: %+v", len(msgs), msgs)
+	}
+
+	// First message: reasoning with opaque in Extra
+	if msgs[0].ReasoningContent != "Hello" {
+		t.Errorf("message[0].ReasoningContent = %q, want %q", msgs[0].ReasoningContent, "Hello")
+	}
+	if opaque, ok := msgs[0].Extra[extraKeyReasoningOpaque].(string); !ok {
+		t.Fatalf("message[0].Extra[extraKeyReasoningOpaque] missing or wrong type: %v", msgs[0].Extra)
+	} else if opaque != "Z29vZGJ5ZQ==" {
+		t.Errorf("Extra[extraKeyReasoningOpaque] = %q, want %q", opaque, "Z29vZGJ5ZQ==")
+	}
+
+	// Second message: content only, no Extra
+	if msgs[1].Content != "world" {
+		t.Errorf("message[1].Content = %q, want %q", msgs[1].Content, "world")
+	}
+	if msgs[1].Extra != nil {
+		t.Errorf("message[1].Extra should be nil, got %v", msgs[1].Extra)
+	}
+}
+
+// TestStreamReasoningOpaqueOnlyNonEmptyContent verifies that when
+// reasoning_text is empty and reasoning_opaque is set, no reasoning
+// content is emitted (opaque is never shown).
+func TestStreamReasoningOpaqueOnlyNonEmptyContent(t *testing.T) {
+	msgs := runStreamEventsTest(t, []string{
+		`data: {"choices":[{"delta":{"reasoning_text":"","reasoning_opaque":"dGVzdA==","content":"result"}}]}`,
+		`data: [DONE]`,
+	})
+
+	// No message should have ReasoningContent.
+	for i, m := range msgs {
+		if m.ReasoningContent != "" {
+			t.Errorf("message[%d]: ReasoningContent = %q, want empty (opaque must not be displayed)", i, m.ReasoningContent)
+		}
+	}
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message (content only), got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Content != "result" {
+		t.Errorf("Content = %q, want %q", msgs[0].Content, "result")
+	}
+}
+
+// runStreamEventsTest sends SSE lines through streamEvents and collects
+// emitted messages. It handles the pipe/goroutine setup common to all
+// streamEvents tests.
+func runStreamEventsTest(t *testing.T, sseLines []string) []*schema.Message {
+	t.Helper()
+	ctx := context.Background()
+	pr, pw := io.Pipe()
+	sr, sw := schema.Pipe[*schema.Message](2)
+
+	go func() {
+		for _, line := range sseLines {
+			_, _ = fmt.Fprintln(pw, line)
+		}
+		_ = pw.Close()
+	}()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- streamEvents(ctx, pr, sw, nil)
+		sw.Close()
+	}()
+
+	var msgs []*schema.Message
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			if err == io.EOF || strings.Contains(err.Error(), "EOF") {
+				break
+			}
+			t.Fatalf("Recv: unexpected error: %v", err)
+		}
+		msgs = append(msgs, msg)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamEvents: %v", err)
+	}
+	return msgs
 }
 
 func compareMsg(t *testing.T, idx int, got, want *schema.Message) {

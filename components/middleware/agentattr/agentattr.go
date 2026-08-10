@@ -31,6 +31,17 @@ type Config struct {
 	// agent's run (envelope Agent field, merged "agent" key in the SSE data, and
 	// the agent.switched transition event). Required.
 	AgentName string `validate:"required" jsonschema:"description=Name tagged onto activity events produced during this agent's run"`
+	// Model is the display name of the model powering this agent, surfaced
+	// on the agent.switched banner. Optional: empty leaves the banner's
+	// model field blank (backward compatible). Capped at 256 runes to keep
+	// agent.switched events bounded (defense-in-depth against oversized
+	// payloads when a consumer threads untrusted input into this field).
+	Model string `validate:"max=256" jsonschema:"description=Display name of the model powering this agent"`
+	// Description is a short, human-readable summary of what this agent does,
+	// surfaced on the agent.switched banner. Optional for the same reason.
+	// Capped at 256 runes so a single banner line cannot be abused for
+	// resource exhaustion via unbounded SSE event payloads.
+	Description string `validate:"max=256" jsonschema:"description=Short human-readable description of this agent's role"`
 }
 
 // Middleware is an adk.ChatModelAgentMiddleware that tags the activity event
@@ -38,7 +49,9 @@ type Config struct {
 // inherit no-op implementations for the hooks it does not override.
 type Middleware struct {
 	*adk.BaseChatModelAgentMiddleware
-	name string
+	name        string
+	model       string
+	description string
 }
 
 var _ adk.ChatModelAgentMiddleware = (*Middleware)(nil)
@@ -63,40 +76,48 @@ func New(cfg *Config) (*Middleware, error) {
 	return &Middleware{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},
 		name:                         c.AgentName,
+		model:                        c.Model,
+		description:                  c.Description,
 	}, nil
+}
+
+// meta returns the AgentMeta for this middleware so all hooks share a single
+// source of truth for name, model, and description.
+func (m *Middleware) meta() activity.AgentMeta {
+	return activity.AgentMeta{Name: m.name, Model: m.model, Description: m.description}
 }
 
 // BeforeAgent sets the agent name on the context propagated through the agent's
 // run.
 func (m *Middleware) BeforeAgent(ctx context.Context, runCtx *adk.ChatModelAgentContext) (context.Context, *adk.ChatModelAgentContext, error) {
-	return activity.WithAgent(ctx, m.name), runCtx, nil
+	return activity.WithAgentMeta(ctx, m.meta()), runCtx, nil
 }
 
 // BeforeModelRewriteState sets the agent name on the context propagated to the
 // model invocation, so the ChatModel callbacks attribute their events.
 func (m *Middleware) BeforeModelRewriteState(ctx context.Context, state *adk.ChatModelAgentState, _ *adk.ModelContext) (context.Context, *adk.ChatModelAgentState, error) {
-	return activity.WithAgent(ctx, m.name), state, nil
+	return activity.WithAgentMeta(ctx, m.meta()), state, nil
 }
 
 // WrapInvokableToolCall sets the agent name on the context passed to the tool
 // endpoint, so the Tool callbacks attribute their events.
 func (m *Middleware) WrapInvokableToolCall(_ context.Context, endpoint adk.InvokableToolCallEndpoint, _ *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-		return endpoint(activity.WithAgent(ctx, m.name), argumentsInJSON, opts...)
+		return endpoint(activity.WithAgentMeta(ctx, m.meta()), argumentsInJSON, opts...)
 	}, nil
 }
 
 // WrapStreamableToolCall mirrors WrapInvokableToolCall for streaming tools.
 func (m *Middleware) WrapStreamableToolCall(_ context.Context, endpoint adk.StreamableToolCallEndpoint, _ *adk.ToolContext) (adk.StreamableToolCallEndpoint, error) {
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (*schema.StreamReader[string], error) {
-		return endpoint(activity.WithAgent(ctx, m.name), argumentsInJSON, opts...)
+		return endpoint(activity.WithAgentMeta(ctx, m.meta()), argumentsInJSON, opts...)
 	}, nil
 }
 
 // WrapEnhancedInvokableToolCall mirrors WrapInvokableToolCall for enhanced tools.
 func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint adk.EnhancedInvokableToolCallEndpoint, _ *adk.ToolContext) (adk.EnhancedInvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, arg *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
-		return endpoint(activity.WithAgent(ctx, m.name), arg, opts...)
+		return endpoint(activity.WithAgentMeta(ctx, m.meta()), arg, opts...)
 	}, nil
 }
 
@@ -104,6 +125,6 @@ func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint a
 // streaming tools.
 func (m *Middleware) WrapEnhancedStreamableToolCall(_ context.Context, endpoint adk.EnhancedStreamableToolCallEndpoint, _ *adk.ToolContext) (adk.EnhancedStreamableToolCallEndpoint, error) {
 	return func(ctx context.Context, arg *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
-		return endpoint(activity.WithAgent(ctx, m.name), arg, opts...)
+		return endpoint(activity.WithAgentMeta(ctx, m.meta()), arg, opts...)
 	}, nil
 }
