@@ -53,6 +53,7 @@ func clientErrorResults(instance string, err error) checkup.Results {
 		{Component: "prometheus_alert_describe", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_metric_query", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_metric_range", Instance: instance, Status: checkup.StatusError, Error: errStr},
+		{Component: "prometheus_target_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
 	}
 }
 
@@ -93,6 +94,7 @@ func probeInstance(ctx context.Context, client promapi.API, instance string) che
 
 	results = append(results, probeMetricQuery(ctx, client, instance))
 	results = append(results, probeMetricRange(ctx, client, instance))
+	results = append(results, probeTargetList(ctx, client, instance))
 
 	return results
 }
@@ -163,6 +165,25 @@ func probeMetricQuery(ctx context.Context, client promapi.API, instance string) 
 		Instance:  instance,
 		Status:    checkup.StatusOK,
 		Message:   "query 'up' succeeded, RBAC ok",
+	}
+}
+
+func probeTargetList(ctx context.Context, client promapi.API, instance string) checkup.Result {
+	targetsResult, err := client.Targets(ctx)
+	if err != nil {
+		return checkup.Result{
+			Component: "prometheus_target_list",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to list targets").Error(),
+		}
+	}
+	msg := fmt.Sprintf("%d active targets, %d dropped targets, RBAC ok", len(targetsResult.Active), len(targetsResult.Dropped))
+	return checkup.Result{
+		Component: "prometheus_target_list",
+		Instance:  instance,
+		Status:    checkup.StatusOK,
+		Message:   msg,
 	}
 }
 

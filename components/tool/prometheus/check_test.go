@@ -48,8 +48,8 @@ func TestCheckInvalidInstance(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected non-empty results")
 	}
-	if len(results) != 5 {
-		t.Errorf("expected 5 results (one per tool), got %d", len(results))
+	if len(results) != 6 {
+		t.Errorf("expected 6 results (one per tool), got %d", len(results))
 	}
 }
 
@@ -69,8 +69,8 @@ func TestCheckResultStatuses(t *testing.T) {
 
 func TestCheckClientErrorResults(t *testing.T) {
 	r := clientErrorResults("test-instance", context.DeadlineExceeded)
-	if len(r) != 5 {
-		t.Fatalf("expected 5 results, got %d", len(r))
+	if len(r) != 6 {
+		t.Fatalf("expected 6 results, got %d", len(r))
 	}
 	for i, rr := range r {
 		if rr.Instance != "test-instance" {

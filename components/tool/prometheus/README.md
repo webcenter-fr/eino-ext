@@ -41,6 +41,7 @@ configs := prometheus.Configs{
 | `prometheus_metric_range` | Execute a range PromQL query over a time window |
 | `prometheus_alert_list` | List current alerts with lightweight output and pagination |
 | `prometheus_alert_describe` | Get full details of alerts matching a label regex filter |
+| `prometheus_target_list` | List active scrape targets and their health status |
 
 ## Factory Functions
 
@@ -103,6 +104,23 @@ Full details of alerts matching a label regex.
 | `instance` | Yes | Prometheus instance name |
 | `filter` | Yes | Go RE2 regex on alert label JSON (e.g. `HighCPU\|HighMemory`) |
 | `state` | No | Filter by state: `firing`, `pending`, or `inactive` |
+
+### prometheus_target_list
+
+List active scrape targets and their health status. Useful for verifying that
+metrics are being scraped correctly (e.g. no network policy issues, unreachable
+exporters, or misconfigured scrape jobs).
+
+| Parameter | Required | Description |
+|---|---|---|
+| `instance` | Yes | Prometheus instance name |
+| `health` | No | Filter by health: `up`, `down`, or `unknown` |
+| `scrapePool` | No | Filter by exact scrape pool name (e.g. `node/10.0.0.1:9100`) |
+| `filter` | No | Go RE2 regex on target JSON |
+
+Each result contains: `labels`, `scrapePool`, `scrapeUrl`, `health`,
+`lastError`, `lastScrape` (RFC3339), and `lastScrapeDuration` (Go duration
+string). Only active targets are returned; dropped targets are excluded.
 
 ## Output Limiting
 

@@ -16,6 +16,7 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewMetricRangeTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertListTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewTargetListTool(ctx, c) },
 }
 
 func buildTools(ctx context.Context, configs Configs, constructors []toolConstructor) ([]tool.InvokableTool, error) {
