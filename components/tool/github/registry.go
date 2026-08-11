@@ -23,6 +23,9 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoSearchTool(ctx, b) },
 	// Clone repo is the read action. It clone repo on local temporary storage
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoCloneTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileReadTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileSearchTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileListTool(ctx, b) },
 }
 
 // writeConstructors lists all write/destructive GitHub tools.
@@ -48,6 +51,7 @@ var writeConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
 		return newWebhookUpsertTool(ctx, b)
 	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileWriteTool(ctx, b) },
 }
 
 // buildTools creates tools from the given constructors, sharing a single baseTool.
@@ -95,6 +99,7 @@ func WriteToolNames() []string {
 		"github_pr_request_reviewers",
 		"github_repo_settings_update",
 		"github_webhook_upsert",
+		"github_file_write",
 	}
 }
 
@@ -159,4 +164,8 @@ var (
 	_ tool.InvokableTool = (*PRRequestReviewersTool)(nil)
 	_ tool.InvokableTool = (*RepoSettingsUpdateTool)(nil)
 	_ tool.InvokableTool = (*WebhookUpsertTool)(nil)
+	_ tool.InvokableTool = (*FileReadTool)(nil)
+	_ tool.InvokableTool = (*FileSearchTool)(nil)
+	_ tool.InvokableTool = (*FileListTool)(nil)
+	_ tool.InvokableTool = (*FileWriteTool)(nil)
 )

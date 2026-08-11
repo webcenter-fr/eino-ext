@@ -37,6 +37,9 @@ configs := github.Configs{
 | `github_pr_get` | Get pull request details |
 | `github_org_repo_list` | List repositories in an organization |
 | `github_repo_search` | Search repositories by query |
+| `github_file_read` | Read file contents from a cloned repo |
+| `github_file_search` | Grep (regex) within a cloned repo |
+| `github_file_list` | List files/dirs in a cloned repo |
 
 ### Write Tools
 
@@ -54,6 +57,20 @@ configs := github.Configs{
 | `github_pr_request_reviewers` | Request reviewers on a PR |
 | `github_repo_settings_update` | Update repository settings |
 | `github_webhook_upsert` | Create or update a repository webhook |
+| `github_file_write` | Write/create a file, commit, and push |
+
+### File Tools
+
+File tools operate on repositories cloned by `github_repo_clone`. The workflow is:
+
+1. `github_repo_clone` — clone the repo to <CloneDir>/<owner>/<repo>
+2. `github_file_read` / `github_file_search` / `github_file_list` — inspect
+3. `github_branch_create` (optional) — create a working branch
+4. `github_file_write` — modify files, commit, push
+5. `github_pr_create` — open a PR from the pushed branch
+
+All file paths are validated to stay within the clone directory. Symlinks and
+the `.git` directory are always skipped or rejected.
 
 ## Usage
 

@@ -1,12 +1,16 @@
 package github
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/goccy/go-json"
 	ghlib "github.com/google/go-github/v71/github" // aliased to avoid conflict with package name
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
@@ -150,4 +154,175 @@ func stringPtr(s string) *string {
 // boolPtr returns a pointer to the given bool value.
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+const (
+	maxFileReadBytes   = 1 << 20 // 1MB — truncation threshold for file_read.
+	maxFileWriteBytes  = 10 << 20 // 10MB — max content size for file_write.
+	maxSearchFileBytes = 10 << 20 // 10MB — skip files larger than this in file_search.
+)
+
+var commitIdentity = &object.Signature{
+	Name:  "eino-ext",
+	Email: "eino-ext@users.noreply.github.com",
+}
+
+// validateFilePath resolves a relative path under cloneRoot and returns the
+// absolute, cleaned path. It rejects:
+//   - paths that escape cloneRoot after cleaning (contain ".." that resolves
+//     outside the root)
+//   - absolute paths and drive letters
+//   - NUL bytes (which can truncate paths at the OS level)
+//
+// This is a purely lexical check. Callers MUST additionally call
+// resolveSymlinkSafe to verify that no path component is a symlink that
+// resolves outside cloneRoot.
+//
+// relPath may be empty (returns cloneRoot itself) or a relative path with
+// forward slashes.
+func validateFilePath(cloneRoot, relPath string) (string, error) {
+	cleanRoot := filepath.Clean(cloneRoot)
+	if relPath == "" {
+		return cleanRoot, nil
+	}
+	// Reject NUL bytes — on Unix, NUL terminates the path in syscalls, so a
+	// path like "valid\x00../../etc/passwd" would be interpreted as "valid"
+	// by the OS but pass lexical checks.
+	if strings.ContainsRune(relPath, '\x00') {
+		return "", errors.Errorf("path contains a null byte")
+	}
+	// Normalize separators.
+	relPath = filepath.FromSlash(relPath)
+	// Reject absolute paths and drive letters.
+	if filepath.IsAbs(relPath) {
+		return "", errors.Errorf("path must be relative, got absolute path %q", relPath)
+	}
+	joined := filepath.Join(cleanRoot, relPath)
+	cleaned := filepath.Clean(joined)
+	// Must be within cloneRoot.
+	if cleaned != cleanRoot && !strings.HasPrefix(cleaned, cleanRoot+string(filepath.Separator)) {
+		return "", errors.Errorf("path %q escapes clone directory %q", relPath, cloneRoot)
+	}
+	// Reject any remaining ".." segments (defense in depth).
+	if strings.Contains(filepath.ToSlash(cleaned), "/../") || strings.HasSuffix(filepath.ToSlash(cleaned), "/..") {
+		return "", errors.Errorf("path %q contains directory traversal", relPath)
+	}
+	return cleaned, nil
+}
+
+// isWithinPath returns true if path is equal to root or a descendant of root.
+// Both paths are cleaned before comparison.
+func isWithinPath(path, root string) bool {
+	p := filepath.Clean(path)
+	r := filepath.Clean(root)
+	return p == r || strings.HasPrefix(p, r+string(filepath.Separator))
+}
+
+// resolveSymlinkSafe walks each component of fullPath from cloneRoot, rejecting
+// any component that is a symlink. This prevents symlink-based directory
+// traversal where a malicious repo contains a symlink (e.g., "link -> /etc")
+// that would redirect file reads/writes outside the clone directory.
+//
+// If createDirs is true, missing intermediate directories are created (for
+// file_write). If createDirs is false, missing components (including the final
+// one) cause an error for intermediate components; a missing final component is
+// allowed (the caller will get a not-exist error from the subsequent file
+// operation).
+//
+// The returned path is verified to be within cloneRoot.
+func resolveSymlinkSafe(cloneRoot, fullPath string, createDirs bool) (string, error) {
+	cleanRoot := filepath.Clean(cloneRoot)
+	cleanFull := filepath.Clean(fullPath)
+
+	rel, err := filepath.Rel(cleanRoot, cleanFull)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to compute relative path for symlink check")
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." {
+		return cleanRoot, nil
+	}
+	// Defense-in-depth: reject if the relative path escapes upward. validateFilePath
+	// should have already caught this, but double-check.
+	if strings.HasPrefix(rel, "../") || rel == ".." {
+		return "", errors.Errorf("path escapes clone directory")
+	}
+
+	parts := strings.Split(rel, "/")
+	current := cleanRoot
+	for i, part := range parts {
+		next := filepath.Join(current, part)
+		fi, statErr := os.Lstat(next)
+		if statErr != nil {
+			if !os.IsNotExist(statErr) {
+				return "", errors.Wrapf(statErr, "failed to stat path component %q", next)
+			}
+			// Component does not exist.
+			if i < len(parts)-1 {
+				// Intermediate directory missing.
+				if createDirs {
+					if mkErr := os.Mkdir(next, 0o755); mkErr != nil {
+						return "", errors.Wrapf(mkErr, "failed to create directory %q", next)
+					}
+				} else {
+					return "", errors.Wrapf(statErr, "path component %q does not exist", next)
+				}
+			}
+			// Final component missing — OK for both read (caller gets not-exist) and write (caller creates).
+			current = next
+			continue
+		}
+		// Reject symlinks at any level.
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return "", errors.Errorf("symlink at path component %q; symlinks are not allowed", next)
+		}
+		// Intermediate components must be directories.
+		if i < len(parts)-1 && !fi.IsDir() {
+			return "", errors.Errorf("path component %q is not a directory", next)
+		}
+		current = next
+	}
+	return current, nil
+}
+
+// isBinary returns true if the first 8KB of data contain a null byte, which is
+// the standard heuristic for detecting binary files.
+func isBinary(data []byte) bool {
+	n := len(data)
+	if n > 8192 {
+		n = 8192
+	}
+	return bytes.Contains(data[:n], []byte{0})
+}
+
+// ensureCloneExists stats the clone directory and returns a descriptive error
+// if it does not exist, suggesting the user run github_repo_clone first.
+func ensureCloneExists(clonePath_, owner, repo string) error {
+	if _, err := os.Stat(clonePath_); err != nil {
+		if os.IsNotExist(err) {
+			return errors.Wrapf(err, "repository %s/%s is not cloned at %q; run github_repo_clone first", owner, repo, clonePath_)
+		}
+		return errors.Wrapf(err, "failed to stat clone directory %q", clonePath_)
+	}
+	return nil
+}
+
+// rejectDotGitPath returns an error if the path refers to the .git directory at
+// any level. The path is cleaned before checking so that prefixes like "./" or
+// "subdir/../" cannot bypass the check.
+func rejectDotGitPath(path string) error {
+	if path == "" {
+		return nil
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	if cleaned == ".git" || strings.HasPrefix(cleaned, ".git/") {
+		return errors.Errorf("access to .git directory is not allowed")
+	}
+	// Reject if any path component is .git (covers nested .git in submodules).
+	for _, part := range strings.Split(cleaned, "/") {
+		if part == ".git" {
+			return errors.Errorf("access to .git directory is not allowed")
+		}
+	}
+	return nil
 }
