@@ -143,6 +143,88 @@ func (t *ToolTestSuite) TestDashboardDescribe() {
 	})
 }
 
+func (t *ToolTestSuite) TestDataSourceList() {
+	ctx := context.Background()
+
+	listTool, err := NewDataSourceListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	_, err = listTool.Info(ctx)
+	assert.NoError(t.T(), err)
+
+	t.Run("list all", func() {
+		result, err := listTool.InvokableRun(ctx, `{"instance": "test"}`)
+		assert.NoError(t.T(), err)
+
+		var outputs []DataSourceListOutput
+		err = json.Unmarshal([]byte(result), &outputs)
+		assert.NoError(t.T(), err)
+		assert.Len(t.T(), outputs, 2)
+		assert.Equal(t.T(), "ds-prom", outputs[0].UID)
+		assert.Equal(t.T(), "prometheus", outputs[0].Type)
+		assert.True(t.T(), outputs[0].IsDefault)
+		assert.NotContains(t.T(), result, "should-not-leak")
+		assert.NotContains(t.T(), result, "secret-bearer")
+		assert.Contains(t.T(), result, `\u003credacted\u003e`)
+	})
+
+	t.Run("list with filter", func() {
+		result, err := listTool.InvokableRun(ctx, `{"instance": "test", "filter": "loki"}`)
+		assert.NoError(t.T(), err)
+
+		var outputs []DataSourceListOutput
+		err = json.Unmarshal([]byte(result), &outputs)
+		assert.NoError(t.T(), err)
+		assert.Len(t.T(), outputs, 1)
+		assert.Equal(t.T(), "Loki", outputs[0].Name)
+	})
+
+	t.Run("unknown instance", func() {
+		_, err := listTool.InvokableRun(ctx, `{"instance": "invalid"}`)
+		assert.Error(t.T(), err)
+	})
+
+	t.Run("invalid filter regex", func() {
+		_, err := listTool.InvokableRun(ctx, `{"instance": "test", "filter": "(?=...)"}`)
+		assert.Error(t.T(), err)
+	})
+}
+
+func (t *ToolTestSuite) TestDataSourceDescribe() {
+	ctx := context.Background()
+
+	describeTool, err := NewDataSourceDescribeTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	_, err = describeTool.Info(ctx)
+	assert.NoError(t.T(), err)
+
+	t.Run("describe existing", func() {
+		result, err := describeTool.InvokableRun(ctx, `{"instance": "test", "uid": "ds-prom"}`)
+		assert.NoError(t.T(), err)
+		assert.Contains(t.T(), result, `"ds-prom"`)
+		assert.Contains(t.T(), result, `"prometheus"`)
+		assert.Contains(t.T(), result, `"timeInterval"`)
+		assert.Contains(t.T(), result, `"15s"`)
+		assert.NotContains(t.T(), result, "should-not-leak")
+		assert.NotContains(t.T(), result, "secret-bearer")
+		assert.NotContains(t.T(), result, `"secureJsonFields"`)
+		assert.NotContains(t.T(), result, `"password"`)
+		assert.Contains(t.T(), result, `\u003credacted\u003e`)
+	})
+
+	t.Run("nonexistent uid", func() {
+		_, err := describeTool.InvokableRun(ctx, `{"instance": "test", "uid": "nonexistent"}`)
+		assert.Error(t.T(), err)
+		assert.Contains(t.T(), err.Error(), "not found")
+	})
+
+	t.Run("unknown instance", func() {
+		_, err := describeTool.InvokableRun(ctx, `{"instance": "invalid", "uid": "ds-prom"}`)
+		assert.Error(t.T(), err)
+	})
+}
+
 func (t *ToolTestSuite) TestDashboardBuild() {
 	ctx := context.Background()
 

@@ -17,6 +17,8 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewInstanceListTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardSearchTool(ctx, c) },
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDataSourceListTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDataSourceDescribeTool(ctx, c) },
 }
 
 // writeConstructors lists all write/destructive Grafana tools.
@@ -105,4 +107,6 @@ var (
 	_ tool.InvokableTool = (*DashboardSearchTool)(nil)
 	_ tool.InvokableTool = (*DashboardDescribeTool)(nil)
 	_ tool.InvokableTool = (*DashboardBuildTool)(nil)
+	_ tool.InvokableTool = (*DataSourceListTool)(nil)
+	_ tool.InvokableTool = (*DataSourceDescribeTool)(nil)
 )

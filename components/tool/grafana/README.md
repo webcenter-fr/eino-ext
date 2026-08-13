@@ -8,6 +8,7 @@ eino tools for interacting with Grafana instances via the HTTP API (v9+).
 - **Multi-instance** — `Configs map[string]Config`, matching the argocd/kubernetes pattern.
 - **Dashboard protection** — per-instance blocklist (UID, title prefix, folder, tag) prevents modification of protected dashboards.
 - **Safety** — the build tool enforces a dry-run/confirmed gate via `confirm.RequireConfirmation`.
+- **Data source secrets redaction** — data source tools exclude top-level secrets and recursively redact sensitive `jsonData` keys.
 
 ## Configuration
 
@@ -40,6 +41,8 @@ configs := grafana.Configs{
 | `grafana_dashboard_search` | Read | Search dashboards by title, tags, folder, type |
 | `grafana_dashboard_describe` | Read | Get full dashboard details by UID |
 | `grafana_dashboard_build` | Write | Create or update a dashboard (blocklist-enforced) |
+| `grafana_datasource_list` | Read | List all data sources on an instance (secrets redacted) |
+| `grafana_datasource_describe` | Read | Get full data source details by UID (secrets redacted) |
 
 ## Factory Functions
 

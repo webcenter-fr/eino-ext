@@ -222,6 +222,80 @@ type saveDashboardResponse struct {
 	Slug    string `json:"slug"`
 }
 
+// dataSource is a single element of GET /api/datasources and the body of
+// GET /api/datasources/uid/:uid. Sensitive top-level fields (password,
+// basicAuthPassword, secureJsonData) are intentionally NOT declared here so
+// they are dropped during unmarshal and never enter our memory as named fields.
+type dataSource struct {
+	ID               int64           `json:"id"`
+	UID              string          `json:"uid"`
+	OrgID            int64           `json:"orgId"`
+	Name             string          `json:"name"`
+	Type             string          `json:"type"`
+	TypeName         string          `json:"typeName,omitempty"`
+	TypeLogoURL      string          `json:"typeLogoUrl,omitempty"`
+	Access           string          `json:"access"`
+	URL              string          `json:"url"`
+	User             string          `json:"user"`
+	Database         string          `json:"database"`
+	BasicAuth        bool            `json:"basicAuth"`
+	BasicAuthUser    string          `json:"basicAuthUser,omitempty"`
+	WithCredentials  bool            `json:"withCredentials,omitempty"`
+	IsDefault        bool            `json:"isDefault"`
+	JSONData         map[string]any  `json:"jsonData,omitempty"`
+	SecureJSONFields map[string]bool `json:"secureJsonFields,omitempty"` // kept on wire, excluded from output
+	ReadOnly         bool            `json:"readOnly"`
+	Version          int             `json:"version"`
+}
+
+// ─── dataSource output mapping ──────────────────────────────────────────
+
+// toDescribeOutput maps a dataSource to its full (describe) output, redacting
+// sensitive jsonData values. It is the single source of truth for the field
+// mapping; toListOutput projects the lean list view from it.
+func (ds dataSource) toDescribeOutput() DataSourceDescribeOutput {
+	return DataSourceDescribeOutput{
+		ID:              ds.ID,
+		UID:             ds.UID,
+		OrgID:           ds.OrgID,
+		Name:            ds.Name,
+		Type:            ds.Type,
+		TypeName:        ds.TypeName,
+		TypeLogoURL:     ds.TypeLogoURL,
+		Access:          ds.Access,
+		URL:             ds.URL,
+		User:            ds.User,
+		Database:        ds.Database,
+		BasicAuth:       ds.BasicAuth,
+		BasicAuthUser:   ds.BasicAuthUser,
+		WithCredentials: ds.WithCredentials,
+		IsDefault:       ds.IsDefault,
+		JSONData:        redactedJSONData(ds.JSONData),
+		ReadOnly:        ds.ReadOnly,
+		Version:         ds.Version,
+	}
+}
+
+// toListOutput maps a dataSource to its lean (list) output: the describe
+// output minus the extended fields (orgId, typeLogoUrl, user, database,
+// basicAuth, basicAuthUser, withCredentials). jsonData is already redacted.
+func (ds dataSource) toListOutput() DataSourceListOutput {
+	full := ds.toDescribeOutput()
+	return DataSourceListOutput{
+		ID:        full.ID,
+		UID:       full.UID,
+		Name:      full.Name,
+		Type:      full.Type,
+		TypeName:  full.TypeName,
+		URL:       full.URL,
+		Access:    full.Access,
+		IsDefault: full.IsDefault,
+		ReadOnly:  full.ReadOnly,
+		Version:   full.Version,
+		JSONData:  full.JSONData,
+	}
+}
+
 // ─── API Methods ─────────────────────────────────────────────────────────
 
 // SearchDashboards calls GET /api/search with the given query parameters.
@@ -280,6 +354,29 @@ func (c *grafanaClient) SaveDashboard(ctx context.Context, payload []byte) ([]by
 	body, _, err := c.doRequest(ctx, http.MethodPost, "/api/dashboards/db", strings.NewReader(string(payload)))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to save dashboard")
+	}
+	return body, nil
+}
+
+// ListDataSources calls GET /api/datasources and returns the raw JSON array.
+// The endpoint does not support pagination; Grafana caps results at 5000.
+func (c *grafanaClient) ListDataSources(ctx context.Context) ([]byte, error) {
+	body, _, err := c.doRequest(ctx, http.MethodGet, "/api/datasources", nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to list data sources")
+	}
+	return body, nil
+}
+
+// GetDataSource calls GET /api/datasources/uid/:uid and returns the raw body.
+// The uid is path-escaped to prevent path traversal / endpoint injection
+// (e.g. a uid containing ".." or "/" must not alter the request path), mirroring
+// GetDashboard.
+func (c *grafanaClient) GetDataSource(ctx context.Context, uid string) ([]byte, error) {
+	path := "/api/datasources/uid/" + url.PathEscape(uid)
+	body, _, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get data source")
 	}
 	return body, nil
 }

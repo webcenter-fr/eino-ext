@@ -18,6 +18,12 @@ var dashboardSearchOutputGuidance string
 //go:embed prompts/dashboard_describe_output_guidance.md
 var dashboardDescribeOutputGuidance string
 
+//go:embed prompts/datasource_list_output_guidance.md
+var dataSourceListOutputGuidance string
+
+//go:embed prompts/datasource_describe_output_guidance.md
+var dataSourceDescribeOutputGuidance string
+
 func instanceNotFoundError(instance string, known []string) error {
 	return toolutil.NotFoundError("Grafana instance", instance, known)
 }

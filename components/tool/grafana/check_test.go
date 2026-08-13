@@ -48,8 +48,8 @@ func TestCheckInvalidInstance(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected non-empty results")
 	}
-	if len(results) != 4 {
-		t.Errorf("expected 4 results (one per tool), got %d", len(results))
+	if len(results) != 6 {
+		t.Errorf("expected 6 results (one per tool), got %d", len(results))
 	}
 }
 
@@ -69,8 +69,8 @@ func TestCheckResultStatuses(t *testing.T) {
 
 func TestCheckClientErrorResults(t *testing.T) {
 	r := clientErrorResults("test-instance", context.DeadlineExceeded)
-	if len(r) != 4 {
-		t.Fatalf("expected 4 results, got %d", len(r))
+	if len(r) != 6 {
+		t.Fatalf("expected 6 results, got %d", len(r))
 	}
 	for i, rr := range r {
 		if rr.Instance != "test-instance" {
@@ -84,8 +84,8 @@ func TestCheckClientErrorResults(t *testing.T) {
 
 func TestAllComponentNames(t *testing.T) {
 	names := allComponentNames()
-	if len(names) != 4 {
-		t.Fatalf("expected 4 names, got %d", len(names))
+	if len(names) != 6 {
+		t.Fatalf("expected 6 names, got %d", len(names))
 	}
 	seen := make(map[string]bool)
 	for _, name := range names {

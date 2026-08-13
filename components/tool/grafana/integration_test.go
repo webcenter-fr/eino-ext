@@ -180,7 +180,52 @@ func TestIntegrationAllTools(t *testing.T) {
 		})
 	})
 
-	// ─── 4. Dashboard Build (WRITE tests — all run after reads) ──────────
+	// ─── 4. Data Source List (READ — must run before any write tests) ───
+
+	t.Run("datasource_list", func(t *testing.T) {
+		tool, err := NewDataSourceListTool(ctx, configs)
+		require.NoError(t, err)
+
+		result, err := tool.InvokableRun(ctx, `{"instance":"test"}`)
+		require.NoError(t, err)
+
+		var outputs []DataSourceListOutput
+		err = json.Unmarshal([]byte(result), &outputs)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, len(outputs), 1, "should find at least one data source")
+
+		assert.NotContains(t, result, token, "raw token must not appear in data source list output")
+	})
+
+	// ─── 5. Data Source Describe (READ — must run before any write tests) ─
+
+	t.Run("datasource_describe", func(t *testing.T) {
+		listTool, err := NewDataSourceListTool(ctx, configs)
+		require.NoError(t, err)
+
+		listResult, err := listTool.InvokableRun(ctx, `{"instance":"test"}`)
+		require.NoError(t, err)
+
+		var outputs []DataSourceListOutput
+		err = json.Unmarshal([]byte(listResult), &outputs)
+		require.NoError(t, err)
+		require.NotEmpty(t, outputs, "need at least one data source to describe")
+		firstUID := outputs[0].UID
+		require.NotEmpty(t, firstUID, "first data source must have a UID")
+
+		describeTool, err := NewDataSourceDescribeTool(ctx, configs)
+		require.NoError(t, err)
+
+		result, err := describeTool.InvokableRun(ctx, fmt.Sprintf(`{"instance":"test","uid":%q}`, firstUID))
+		require.NoError(t, err)
+		assert.Contains(t, result, `"uid"`)
+		assert.Contains(t, result, `"type"`)
+		assert.NotContains(t, result, `"password"`)
+		assert.NotContains(t, result, `"basicAuthPassword"`)
+		assert.NotContains(t, result, token, "raw token must not appear in data source describe output")
+	})
+
+	// ─── 6. Dashboard Build (WRITE tests — all run after reads) ──────────
 
 	t.Run("dashboard_build", func(t *testing.T) {
 		tool, err := NewDashboardBuildTool(ctx, configs)

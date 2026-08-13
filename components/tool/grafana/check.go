@@ -67,6 +67,8 @@ func allComponentNames() []string {
 		"grafana_dashboard_search",
 		"grafana_dashboard_describe",
 		"grafana_dashboard_build",
+		"grafana_datasource_list",
+		"grafana_datasource_describe",
 	}
 }
 
@@ -110,6 +112,28 @@ func probeInstance(ctx context.Context, client *grafanaClient, instance string) 
 		Status:    checkup.StatusLimited,
 		Message:   "write tool, not probed to avoid side effects",
 	})
+
+	// grafana_datasource_list
+	listResult, firstDSUID, err := probeDataSourceList(ctx, client, instance)
+	results = append(results, listResult)
+
+	if err == nil && firstDSUID != "" {
+		results = append(results, probeDataSourceDescribe(ctx, client, instance, firstDSUID))
+	} else if err == nil {
+		results = append(results, checkup.Result{
+			Component: "grafana_datasource_describe",
+			Instance:  instance,
+			Status:    checkup.StatusLimited,
+			Message:   "no data sources to test describe",
+		})
+	} else {
+		results = append(results, checkup.Result{
+			Component: "grafana_datasource_describe",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     "dependency failed",
+		})
+	}
 
 	return results
 }
@@ -183,5 +207,68 @@ func probeDescribe(ctx context.Context, client *grafanaClient, instance, uid str
 		Instance:  instance,
 		Status:    checkup.StatusOK,
 		Message:   fmt.Sprintf("described dashboard %q, RBAC ok", title),
+	}
+}
+
+func probeDataSourceList(ctx context.Context, client *grafanaClient, instance string) (checkup.Result, string, error) {
+	body, err := client.ListDataSources(ctx)
+	if err != nil {
+		return checkup.Result{
+			Component: "grafana_datasource_list",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to list data sources").Error(),
+		}, "", err
+	}
+
+	var sources []dataSource
+	if err := json.Unmarshal(body, &sources); err != nil {
+		return checkup.Result{
+			Component: "grafana_datasource_list",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to unmarshal data sources").Error(),
+		}, "", err
+	}
+
+	firstUID := ""
+	if len(sources) > 0 {
+		firstUID = sources[0].UID
+	}
+
+	return checkup.Result{
+		Component: "grafana_datasource_list",
+		Instance:  instance,
+		Status:    checkup.StatusOK,
+		Message:   fmt.Sprintf("%d data sources found, RBAC ok", len(sources)),
+	}, firstUID, nil
+}
+
+func probeDataSourceDescribe(ctx context.Context, client *grafanaClient, instance, uid string) checkup.Result {
+	body, err := client.GetDataSource(ctx, uid)
+	if err != nil {
+		return checkup.Result{
+			Component: "grafana_datasource_describe",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to get data source").Error(),
+		}
+	}
+
+	var ds dataSource
+	if err := json.Unmarshal(body, &ds); err != nil {
+		return checkup.Result{
+			Component: "grafana_datasource_describe",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to unmarshal data source").Error(),
+		}
+	}
+
+	return checkup.Result{
+		Component: "grafana_datasource_describe",
+		Instance:  instance,
+		Status:    checkup.StatusOK,
+		Message:   fmt.Sprintf("described data source %q (type %s), RBAC ok", ds.Name, ds.Type),
 	}
 }
