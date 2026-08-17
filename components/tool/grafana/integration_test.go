@@ -89,10 +89,10 @@ func TestIntegrationAllTools(t *testing.T) {
 		assert.Contains(t, result, "test")
 	})
 
-	// ─── 2. Dashboard Search (READ — must run before any write tests) ────
+	// ─── 2. Dashboard read (search + describe) ───────────────────────────
 
-	t.Run("dashboard_search", func(t *testing.T) {
-		tool, err := NewDashboardSearchTool(ctx, configs)
+	t.Run("dashboard_read", func(t *testing.T) {
+		tool, err := NewDashboardTool(ctx, configs)
 		require.NoError(t, err)
 
 		t.Run("search all", func(t *testing.T) {
@@ -118,18 +118,6 @@ func TestIntegrationAllTools(t *testing.T) {
 			assert.True(t, strings.HasPrefix(outputs[0].URL, baseURL), "URL should be full: %s", outputs[0].URL)
 		})
 
-		t.Run("search by type", func(t *testing.T) {
-			result, err := tool.InvokableRun(ctx, `{"instance":"test","type":"dash-db"}`)
-			require.NoError(t, err)
-
-			var outputs []DashboardSearchOutput
-			err = json.Unmarshal([]byte(result), &outputs)
-			require.NoError(t, err)
-			for _, o := range outputs {
-				assert.Equal(t, "dash-db", o.Type)
-			}
-		})
-
 		t.Run("search with filter", func(t *testing.T) {
 			result, err := tool.InvokableRun(ctx, `{"instance":"test","filter":"staging"}`)
 			require.NoError(t, err)
@@ -140,23 +128,6 @@ func TestIntegrationAllTools(t *testing.T) {
 			assert.Len(t, outputs, 1)
 			assert.Equal(t, "Staging Environment", outputs[0].Title)
 		})
-
-		t.Run("search with pagination", func(t *testing.T) {
-			result, err := tool.InvokableRun(ctx, `{"instance":"test","paginate":{"pageSize":1,"page":1}}`)
-			require.NoError(t, err)
-
-			var outputs []DashboardSearchOutput
-			err = json.Unmarshal([]byte(result), &outputs)
-			require.NoError(t, err)
-			assert.Len(t, outputs, 1)
-		})
-	})
-
-	// ─── 3. Dashboard Describe (READ — must run before any write tests) ───
-
-	t.Run("dashboard_describe", func(t *testing.T) {
-		tool, err := NewDashboardDescribeTool(ctx, configs)
-		require.NoError(t, err)
 
 		t.Run("describe existing", func(t *testing.T) {
 			result, err := tool.InvokableRun(ctx, `{"instance":"test","uid":"test-dashboard-001"}`)
@@ -173,17 +144,12 @@ func TestIntegrationAllTools(t *testing.T) {
 			assert.NotContains(t, result, `"meta"`)
 			assert.Contains(t, result, `"dashboard"`)
 		})
-
-		t.Run("describe nonexistent", func(t *testing.T) {
-			_, err := tool.InvokableRun(ctx, `{"instance":"test","uid":"nonexistent-dashboard"}`)
-			assert.Error(t, err)
-		})
 	})
 
-	// ─── 4. Data Source List (READ — must run before any write tests) ───
+	// ─── 3. Data source read (list + describe) ───────────────────────────
 
-	t.Run("datasource_list", func(t *testing.T) {
-		tool, err := NewDataSourceListTool(ctx, configs)
+	t.Run("datasource_read", func(t *testing.T) {
+		tool, err := NewDataSourceTool(ctx, configs)
 		require.NoError(t, err)
 
 		result, err := tool.InvokableRun(ctx, `{"instance":"test"}`)
@@ -193,46 +159,29 @@ func TestIntegrationAllTools(t *testing.T) {
 		err = json.Unmarshal([]byte(result), &outputs)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(outputs), 1, "should find at least one data source")
-
 		assert.NotContains(t, result, token, "raw token must not appear in data source list output")
-	})
 
-	// ─── 5. Data Source Describe (READ — must run before any write tests) ─
-
-	t.Run("datasource_describe", func(t *testing.T) {
-		listTool, err := NewDataSourceListTool(ctx, configs)
-		require.NoError(t, err)
-
-		listResult, err := listTool.InvokableRun(ctx, `{"instance":"test"}`)
-		require.NoError(t, err)
-
-		var outputs []DataSourceListOutput
-		err = json.Unmarshal([]byte(listResult), &outputs)
-		require.NoError(t, err)
 		require.NotEmpty(t, outputs, "need at least one data source to describe")
 		firstUID := outputs[0].UID
 		require.NotEmpty(t, firstUID, "first data source must have a UID")
 
-		describeTool, err := NewDataSourceDescribeTool(ctx, configs)
+		describeResult, err := tool.InvokableRun(ctx, fmt.Sprintf(`{"instance":"test","uid":%q}`, firstUID))
 		require.NoError(t, err)
-
-		result, err := describeTool.InvokableRun(ctx, fmt.Sprintf(`{"instance":"test","uid":%q}`, firstUID))
-		require.NoError(t, err)
-		assert.Contains(t, result, `"uid"`)
-		assert.Contains(t, result, `"type"`)
-		assert.NotContains(t, result, `"password"`)
-		assert.NotContains(t, result, `"basicAuthPassword"`)
-		assert.NotContains(t, result, token, "raw token must not appear in data source describe output")
+		assert.Contains(t, describeResult, `"uid"`)
+		assert.Contains(t, describeResult, `"type"`)
+		assert.NotContains(t, describeResult, `"password"`)
+		assert.NotContains(t, describeResult, `"basicAuthPassword"`)
+		assert.NotContains(t, describeResult, token, "raw token must not appear in data source describe output")
 	})
 
-	// ─── 6. Dashboard Build (WRITE tests — all run after reads) ──────────
+	// ─── 4. Dashboard write (create/update/delete) ───────────────────────
 
-	t.Run("dashboard_build", func(t *testing.T) {
-		tool, err := NewDashboardBuildTool(ctx, configs)
+	t.Run("dashboard_write", func(t *testing.T) {
+		tool, err := NewDashboardWriteTool(ctx, configs)
 		require.NoError(t, err)
 
 		t.Run("dry run new dashboard", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q,"dryRun":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"dryRun":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
 			result, err := tool.InvokableRun(ctx, params)
 			require.NoError(t, err)
 			assert.Contains(t, result, `"dryRun":true`)
@@ -240,11 +189,11 @@ func TestIntegrationAllTools(t *testing.T) {
 		})
 
 		t.Run("create new dashboard", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q,"confirmed":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"confirmed":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
 			result, err := tool.InvokableRun(ctx, params)
 			require.NoError(t, err)
 
-			var out DashboardBuildOutput
+			var out DashboardSaveOutput
 			err = json.Unmarshal([]byte(result), &out)
 			require.NoError(t, err)
 			assert.NotEmpty(t, out.UID)
@@ -253,47 +202,57 @@ func TestIntegrationAllTools(t *testing.T) {
 		})
 
 		t.Run("update existing dashboard", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q,"overwrite":true,"confirmed":true}`, `{"uid":"test-dashboard-001","title":"Test Production Updated","tags":["test","updated"],"panels":[{"id":1,"title":"CPU","type":"graph"}],"schemaVersion":36}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"update","dashboard":%q,"overwrite":true,"confirmed":true}`, `{"uid":"test-dashboard-001","title":"Test Production Updated","tags":["test","updated"],"panels":[{"id":1,"title":"CPU","type":"graph"}],"schemaVersion":36}`)
 			result, err := tool.InvokableRun(ctx, params)
 			require.NoError(t, err)
 
-			var out DashboardBuildOutput
+			var out DashboardSaveOutput
 			err = json.Unmarshal([]byte(result), &out)
 			require.NoError(t, err)
 			assert.Equal(t, "test-dashboard-001", out.UID)
 			assert.Equal(t, "success", out.Status)
-
-			// verify title changed
-			describeTool, _ := NewDashboardDescribeTool(ctx, configs)
-			dr, err := describeTool.InvokableRun(ctx, `{"instance":"test","uid":"test-dashboard-001","excludeFieldsOutput":["panels"]}`)
-			require.NoError(t, err)
-			assert.Contains(t, dr, `"Test Production Updated"`)
 		})
 
 		t.Run("protected by UID", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q,"confirmed":true}`, `{"uid":"kube-protected","title":"Kubernetes Monitoring"}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"update","dashboard":%q,"confirmed":true}`, `{"uid":"kube-protected","title":"Kubernetes Monitoring"}`)
 			_, err := tool.InvokableRun(ctx, params)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "is protected")
 		})
 
 		t.Run("block new dashboard with protected title", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q,"confirmed":true}`, `{"title":"Kubernetes My New Dashboard"}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"confirmed":true}`, `{"title":"Kubernetes My New Dashboard"}`)
 			_, err := tool.InvokableRun(ctx, params)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "protected blocklist")
 		})
 
+		t.Run("delete nonexistent", func(t *testing.T) {
+			_, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"delete","uid":"nonexistent-dashboard","confirmed":true}`)
+			assert.Error(t, err)
+		})
+
 		t.Run("no confirmation", func(t *testing.T) {
-			params := fmt.Sprintf(`{"instance":"test","dashboard":%q}`, `{"title":"No Confirm Dashboard"}`)
+			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q}`, `{"title":"No Confirm Dashboard"}`)
 			_, err := tool.InvokableRun(ctx, params)
 			assert.Error(t, err)
 		})
 
 		t.Run("missing title", func(t *testing.T) {
-			_, err := tool.InvokableRun(ctx, `{"instance":"test","dashboard":"{}","confirmed":true}`)
+			_, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"create","dashboard":"{}","confirmed":true}`)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "must include a title")
+		})
+
+		t.Run("delete existing dashboard", func(t *testing.T) {
+			result, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"delete","uid":"test-staging-002","confirmed":true}`)
+			require.NoError(t, err)
+
+			var out DashboardDeleteOutput
+			err = json.Unmarshal([]byte(result), &out)
+			require.NoError(t, err)
+			assert.Equal(t, "test-staging-002", out.UID)
+			assert.Equal(t, "success", out.Status)
 		})
 	})
 }

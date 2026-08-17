@@ -11,6 +11,11 @@ import (
 
 // ─── baseTool ────────────────────────────────────────────────────────────
 
+// Grafana tool names, shared across constructors, registry and check.
+const (
+	dashboardWriteToolName = "grafana_dashboard_write"
+)
+
 // baseTool holds shared state for all Grafana tools that require API clients.
 type baseTool struct {
 	clients        map[string]*grafanaClient
@@ -58,20 +63,37 @@ func (b *baseTool) protection(instance string) *dashboardProtection {
 	return b.protected[instance]
 }
 
+// fetchDashboard fetches an existing dashboard by UID. Callers distinguish a
+// "dashboard does not exist" (HTTP 404) from other failures via isHTTPStatus.
+func (b *baseTool) fetchDashboard(ctx context.Context, instance, uid string) (dashboardResponse, error) {
+	client, err := b.client(instance)
+	if err != nil {
+		return dashboardResponse{}, err
+	}
+
+	body, err := client.GetDashboard(ctx, uid)
+	if err != nil {
+		return dashboardResponse{}, err
+	}
+
+	var dr dashboardResponse
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return dashboardResponse{}, errors.Wrap(err, "failed to unmarshal dashboard for protection check")
+	}
+
+	return dr, nil
+}
+
 // checkProtected fetches the existing dashboard by UID (if non-empty) and
-// returns an error if it is protected. Used by the build tool before saving.
-// If uid is empty or the dashboard does not exist (404), returns nil (no protection).
+// returns an error if it is protected. Used by the write tool before saving or
+// deleting. If uid is empty or the dashboard does not exist (404), returns nil
+// (no protection).
 func (b *baseTool) checkProtected(ctx context.Context, instance, uid string) error {
 	if uid == "" {
 		return nil
 	}
 
-	client, err := b.client(instance)
-	if err != nil {
-		return err
-	}
-
-	body, err := client.GetDashboard(ctx, uid)
+	dr, err := b.fetchDashboard(ctx, instance, uid)
 	if err != nil {
 		// A 404 means the dashboard does not exist yet; treat as not protected.
 		if isHTTPStatus(err, http.StatusNotFound) {
@@ -80,36 +102,16 @@ func (b *baseTool) checkProtected(ctx context.Context, instance, uid string) err
 		return err
 	}
 
-	var dr dashboardResponse
-	if err := json.Unmarshal(body, &dr); err != nil {
-		return errors.Wrap(err, "failed to unmarshal dashboard for protection check")
-	}
+	return b.checkProtectedDashboard(instance, uid, dr)
+}
 
-	title := ""
-	if dr.Dashboard != nil {
-		if t, ok := dr.Dashboard["title"].(string); ok {
-			title = t
-		}
-	}
-
-	folderUID := dr.Meta.FolderUID
-
-	var tags []string
-	if dr.Dashboard != nil {
-		if rawTags, ok := dr.Dashboard["tags"].([]any); ok {
-			for _, t := range rawTags {
-				if s, ok := t.(string); ok {
-					tags = append(tags, s)
-				}
-			}
-		}
-	}
-
-	prot := b.protection(instance)
-	if prot.isProtected(uid, title, folderUID, tags) {
+// checkProtectedDashboard evaluates an already-fetched dashboard against the
+// instance's protection blocklist and returns an error if it is protected.
+func (b *baseTool) checkProtectedDashboard(instance, uid string, dr dashboardResponse) error {
+	title := dashboardTitle(dr.Dashboard)
+	if b.protection(instance).isProtected(uid, title, dr.Meta.FolderUID, dashboardTags(dr.Dashboard)) {
 		return errors.Errorf("dashboard %q (UID %s) is protected and cannot be modified", title, uid)
 	}
-
 	return nil
 }
 
@@ -126,22 +128,36 @@ func (b *baseTool) checkProtectedModel(instance string, model map[string]any, fo
 	}
 
 	uid, _ := model["uid"].(string)
-	title, _ := model["title"].(string)
+	title := dashboardTitle(model)
 
-	var tags []string
-	if rawTags, ok := model["tags"].([]any); ok {
-		for _, t := range rawTags {
-			if s, ok := t.(string); ok {
-				tags = append(tags, s)
-			}
-		}
-	}
-
-	if prot.isProtected(uid, title, folderUID, tags) {
+	if prot.isProtected(uid, title, folderUID, dashboardTags(model)) {
 		return errors.Errorf("dashboard %q matches the protected blocklist and cannot be created or modified", title)
 	}
 
 	return nil
+}
+
+// dashboardTitle returns the "title" field of a dashboard model as a string,
+// or "" when the field is absent or not a string.
+func dashboardTitle(model map[string]any) string {
+	title, _ := model["title"].(string)
+	return title
+}
+
+// dashboardTags returns the "tags" field of a dashboard model as a []string,
+// ignoring non-string entries. It returns nil when the field is absent.
+func dashboardTags(model map[string]any) []string {
+	rawTags, ok := model["tags"].([]any)
+	if !ok {
+		return nil
+	}
+	tags := make([]string, 0, len(rawTags))
+	for _, t := range rawTags {
+		if s, ok := t.(string); ok {
+			tags = append(tags, s)
+		}
+	}
+	return tags
 }
 
 // ─── dashboardProtection ─────────────────────────────────────────────────

@@ -135,12 +135,12 @@ func TestCheckProtectedModelBlocksNewDashboardWithProtectedTitle(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestDashboardBuildBlocksNewDashboardWithProtectedTitle is an end-to-end test
+// TestDashboardWriteBlocksNewDashboardWithProtectedTitle is an end-to-end test
 // that creating a NEW dashboard (no uid) whose title matches a protected prefix
 // is rejected, closing the previous protection bypass.
-func TestDashboardBuildBlocksNewDashboardWithProtectedTitle(t *testing.T) {
+func TestDashboardWriteBlocksNewDashboardWithProtectedTitle(t *testing.T) {
 	ctx := context.Background()
-	buildTool, err := NewDashboardBuildTool(ctx, Configs{
+	writeTool, err := NewDashboardWriteTool(ctx, Configs{
 		"t": {
 			URL: "http://localhost",
 			ProtectedDashboards: ProtectedDashboardsConfig{
@@ -150,13 +150,47 @@ func TestDashboardBuildBlocksNewDashboardWithProtectedTitle(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	_, err = buildTool.Invoke(ctx, &DashboardBuildParams{
+	_, err = writeTool.Invoke(ctx, &DashboardWriteParams{
 		Instance:  "t",
+		Operation: "create",
 		Dashboard: `{"title": "Kubernetes Evil"}`,
 		Confirmed: true,
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "protected blocklist")
+}
+
+// TestDeleteDashboardPathEscape verifies that a uid containing path-traversal
+// characters is URL-escaped on the wire so it cannot reach a different API
+// endpoint. It mirrors TestGetDashboardPathEscape for the DELETE endpoint.
+func TestDeleteDashboardPathEscape(t *testing.T) {
+	var capturedURI string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURI = r.RequestURI
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"title":"x","message":"deleted","id":1}`))
+	}))
+	defer server.Close()
+
+	c := &grafanaClient{
+		baseURL:    server.URL,
+		httpClient: &http.Client{},
+		timeout:    testTimeout,
+	}
+
+	_, err := c.DeleteDashboard(context.Background(), "../db")
+	assert.NoError(t, err)
+	assert.Equal(t, "/api/dashboards/uid/..%2Fdb", capturedURI,
+		"uid must be path-escaped on the wire to prevent endpoint traversal")
+
+	_, err = c.DeleteDashboard(context.Background(), "foo/bar")
+	assert.NoError(t, err)
+	assert.Equal(t, "/api/dashboards/uid/foo%2Fbar", capturedURI)
+
+	_, err = c.DeleteDashboard(context.Background(), "foo?bar=baz")
+	assert.NoError(t, err)
+	assert.Equal(t, "/api/dashboards/uid/foo%3Fbar=baz", capturedURI)
 }
 
 // TestGetDataSourcePathEscape verifies that a uid containing path-traversal
@@ -377,7 +411,7 @@ func TestDataSourceDescribeRedactsAWSAndHeaderSecrets(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	tool, err := NewDataSourceDescribeTool(ctx, Configs{"t": {URL: server.URL}})
+	tool, err := NewDataSourceTool(ctx, Configs{"t": {URL: server.URL}})
 	assert.NoError(t, err)
 
 	result, err := tool.InvokableRun(ctx, `{"instance":"t","uid":"aws-1"}`)
@@ -434,7 +468,7 @@ func TestDataSourceDescribeExcludesSecrets(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	tool, err := NewDataSourceDescribeTool(ctx, Configs{
+	tool, err := NewDataSourceTool(ctx, Configs{
 		"t": {URL: server.URL},
 	})
 	assert.NoError(t, err)

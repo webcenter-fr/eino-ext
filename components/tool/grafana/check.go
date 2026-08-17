@@ -14,7 +14,7 @@ const grafanaCheckTimeout = 10 * time.Second
 
 // Check probes connectivity and RBAC permissions for all configured Grafana
 // instances. For each instance it tests every read-only tool. The write tool
-// (dashboard build) is not probed to avoid side effects.
+// (dashboard write) is not probed to avoid side effects.
 func Check(ctx context.Context, configs Configs) checkup.Results {
 	if len(configs) == 0 {
 		return checkup.Results{{
@@ -64,211 +64,116 @@ func clientErrorResults(instance string, err error) checkup.Results {
 func allComponentNames() []string {
 	return []string{
 		"grafana_instance_list",
-		"grafana_dashboard_search",
-		"grafana_dashboard_describe",
-		"grafana_dashboard_build",
-		"grafana_datasource_list",
-		"grafana_datasource_describe",
+		"grafana_dashboard",
+		"grafana_dashboard_write",
+		"grafana_datasource",
 	}
 }
 
 func probeInstance(ctx context.Context, client *grafanaClient, instance string) checkup.Results {
-	var results checkup.Results
-
-	// grafana_instance_list always ok
-	results = append(results, checkup.Result{
-		Component: "grafana_instance_list",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-	})
-
-	// grafana_dashboard_search
-	searchResult, firstUID, err := probeSearch(ctx, client, instance)
-	results = append(results, searchResult)
-
-	if err == nil && firstUID != "" {
-		// grafana_dashboard_describe
-		results = append(results, probeDescribe(ctx, client, instance, firstUID))
-	} else if err == nil {
-		results = append(results, checkup.Result{
-			Component: "grafana_dashboard_describe",
+	return checkup.Results{
+		// grafana_instance_list always ok
+		{
+			Component: "grafana_instance_list",
+			Instance:  instance,
+			Status:    checkup.StatusOK,
+		},
+		probeDashboard(ctx, client, instance),
+		// grafana_dashboard_write — limited, no side effects
+		{
+			Component: dashboardWriteToolName,
 			Instance:  instance,
 			Status:    checkup.StatusLimited,
-			Message:   "no dashboards to test describe",
-		})
-	} else {
-		results = append(results, checkup.Result{
-			Component: "grafana_dashboard_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     "dependency failed",
-		})
+			Message:   "write tool, not probed to avoid side effects",
+		},
+		probeDataSource(ctx, client, instance),
 	}
-
-	// grafana_dashboard_build — limited, no side effects
-	results = append(results, checkup.Result{
-		Component: "grafana_dashboard_build",
-		Instance:  instance,
-		Status:    checkup.StatusLimited,
-		Message:   "write tool, not probed to avoid side effects",
-	})
-
-	// grafana_datasource_list
-	listResult, firstDSUID, err := probeDataSourceList(ctx, client, instance)
-	results = append(results, listResult)
-
-	if err == nil && firstDSUID != "" {
-		results = append(results, probeDataSourceDescribe(ctx, client, instance, firstDSUID))
-	} else if err == nil {
-		results = append(results, checkup.Result{
-			Component: "grafana_datasource_describe",
-			Instance:  instance,
-			Status:    checkup.StatusLimited,
-			Message:   "no data sources to test describe",
-		})
-	} else {
-		results = append(results, checkup.Result{
-			Component: "grafana_datasource_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     "dependency failed",
-		})
-	}
-
-	return results
 }
 
-func probeSearch(ctx context.Context, client *grafanaClient, instance string) (checkup.Result, string, error) {
+func probeDashboard(ctx context.Context, client *grafanaClient, instance string) checkup.Result {
 	body, err := client.SearchDashboards(ctx, &searchParams{Limit: 1})
 	if err != nil {
 		return checkup.Result{
-			Component: "grafana_dashboard_search",
+			Component: "grafana_dashboard",
 			Instance:  instance,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to search dashboards").Error(),
-		}, "", err
+		}
 	}
 
 	var hits []searchHit
 	if err := json.Unmarshal(body, &hits); err != nil {
 		return checkup.Result{
-			Component: "grafana_dashboard_search",
+			Component: "grafana_dashboard",
 			Instance:  instance,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to unmarshal search results").Error(),
-		}, "", err
+		}
 	}
 
 	msg := fmt.Sprintf("%d dashboards found, RBAC ok", len(hits))
 
-	firstUID := ""
-	if len(hits) > 0 {
-		firstUID = hits[0].UID
+	// If a dashboard is present, probe the describe path (GET by UID) too.
+	if len(hits) > 0 && hits[0].UID != "" {
+		if _, err := client.GetDashboard(ctx, hits[0].UID); err != nil {
+			return checkup.Result{
+				Component: "grafana_dashboard",
+				Instance:  instance,
+				Status:    checkup.StatusError,
+				Error:     errors.Wrap(err, "failed to get dashboard").Error(),
+			}
+		}
+		msg = fmt.Sprintf("%d dashboards found, describe ok, RBAC ok", len(hits))
 	}
 
 	return checkup.Result{
-		Component: "grafana_dashboard_search",
+		Component: "grafana_dashboard",
 		Instance:  instance,
 		Status:    checkup.StatusOK,
 		Message:   msg,
-	}, firstUID, nil
-}
-
-func probeDescribe(ctx context.Context, client *grafanaClient, instance, uid string) checkup.Result {
-	body, err := client.GetDashboard(ctx, uid)
-	if err != nil {
-		return checkup.Result{
-			Component: "grafana_dashboard_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to get dashboard").Error(),
-		}
-	}
-
-	var dr dashboardResponse
-	if err := json.Unmarshal(body, &dr); err != nil {
-		return checkup.Result{
-			Component: "grafana_dashboard_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to unmarshal dashboard").Error(),
-		}
-	}
-
-	title := ""
-	if dr.Dashboard != nil {
-		if t, ok := dr.Dashboard["title"].(string); ok {
-			title = t
-		}
-	}
-
-	return checkup.Result{
-		Component: "grafana_dashboard_describe",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("described dashboard %q, RBAC ok", title),
 	}
 }
 
-func probeDataSourceList(ctx context.Context, client *grafanaClient, instance string) (checkup.Result, string, error) {
+func probeDataSource(ctx context.Context, client *grafanaClient, instance string) checkup.Result {
 	body, err := client.ListDataSources(ctx)
 	if err != nil {
 		return checkup.Result{
-			Component: "grafana_datasource_list",
+			Component: "grafana_datasource",
 			Instance:  instance,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to list data sources").Error(),
-		}, "", err
+		}
 	}
 
 	var sources []dataSource
 	if err := json.Unmarshal(body, &sources); err != nil {
 		return checkup.Result{
-			Component: "grafana_datasource_list",
+			Component: "grafana_datasource",
 			Instance:  instance,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to unmarshal data sources").Error(),
-		}, "", err
-	}
-
-	firstUID := ""
-	if len(sources) > 0 {
-		firstUID = sources[0].UID
-	}
-
-	return checkup.Result{
-		Component: "grafana_datasource_list",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("%d data sources found, RBAC ok", len(sources)),
-	}, firstUID, nil
-}
-
-func probeDataSourceDescribe(ctx context.Context, client *grafanaClient, instance, uid string) checkup.Result {
-	body, err := client.GetDataSource(ctx, uid)
-	if err != nil {
-		return checkup.Result{
-			Component: "grafana_datasource_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to get data source").Error(),
 		}
 	}
 
-	var ds dataSource
-	if err := json.Unmarshal(body, &ds); err != nil {
-		return checkup.Result{
-			Component: "grafana_datasource_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to unmarshal data source").Error(),
+	msg := fmt.Sprintf("%d data sources found, RBAC ok", len(sources))
+
+	// If a data source is present, probe the describe path (GET by UID) too.
+	if len(sources) > 0 && sources[0].UID != "" {
+		if _, err := client.GetDataSource(ctx, sources[0].UID); err != nil {
+			return checkup.Result{
+				Component: "grafana_datasource",
+				Instance:  instance,
+				Status:    checkup.StatusError,
+				Error:     errors.Wrap(err, "failed to get data source").Error(),
+			}
 		}
+		msg = fmt.Sprintf("%d data sources found, describe ok, RBAC ok", len(sources))
 	}
 
 	return checkup.Result{
-		Component: "grafana_datasource_describe",
+		Component: "grafana_datasource",
 		Instance:  instance,
 		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("described data source %q (type %s), RBAC ok", ds.Name, ds.Type),
+		Message:   msg,
 	}
 }

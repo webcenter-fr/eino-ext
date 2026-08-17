@@ -36,10 +36,10 @@ func TestConfigs_GetConfig(t *testing.T) {
 	t.Run("existing instance", func(t *testing.T) {
 		configs := Configs{
 			"prod": {
-				Address:            "http://prod:9090",
-				Username:           "admin",
-				Password:           "secret",
-				BearerToken:        "token123",
+				Address:       "http://prod:9090",
+				Username:      "admin",
+				Password:      "secret",
+				BearerToken:   "token123",
 				TLSSkipVerify: true,
 			},
 		}
@@ -77,7 +77,7 @@ func TestInstanceNotFoundError(t *testing.T) {
 
 func TestValidateParams(t *testing.T) {
 	t.Run("valid params", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
 		}
 		err := validateParams(params)
@@ -85,18 +85,18 @@ func TestValidateParams(t *testing.T) {
 	})
 
 	t.Run("valid params with state", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
-			State:    "firing",
+			State:    "active",
 		}
 		err := validateParams(params)
 		assert.NoError(t, err)
 	})
 
 	t.Run("valid params with pagination", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
-			Paginate: &AlertListPaginate{
+			Paginate: &AlertPaginate{
 				PageSize: 10,
 			},
 		}
@@ -105,14 +105,14 @@ func TestValidateParams(t *testing.T) {
 	})
 
 	t.Run("missing required instance", func(t *testing.T) {
-		params := &AlertListParams{}
+		params := &AlertParams{}
 		err := validateParams(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid parameters")
 	})
 
 	t.Run("invalid state value", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
 			State:    "invalid-state",
 		}
@@ -121,9 +121,9 @@ func TestValidateParams(t *testing.T) {
 	})
 
 	t.Run("page size below minimum", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
-			Paginate: &AlertListPaginate{
+			Paginate: &AlertPaginate{
 				PageSize: -1,
 			},
 		}
@@ -132,9 +132,9 @@ func TestValidateParams(t *testing.T) {
 	})
 
 	t.Run("page size above maximum", func(t *testing.T) {
-		params := &AlertListParams{
+		params := &AlertParams{
 			Instance: "prod",
-			Paginate: &AlertListPaginate{
+			Paginate: &AlertPaginate{
 				PageSize: 501,
 			},
 		}

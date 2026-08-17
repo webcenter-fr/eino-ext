@@ -32,71 +32,95 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 		client, err := NewClient(baseCtx, cfg)
 		if err != nil {
 			all = append(all, clientErrorResults(instance, err)...)
-			baseCancel()
-			continue
+		} else {
+			all = append(all, probeInstance(baseCtx, client, instance)...)
 		}
 
-		func() {
-			defer baseCancel()
-			all = append(all, probeInstance(baseCtx, client, instance)...)
-		}()
+		// Alertmanager is independent of the Prometheus client: a Prometheus
+		// client failure does not imply Alertmanager is down.
+		if cfg.Alertmanager != nil {
+			amClient, amErr := NewAlertmanagerClient(baseCtx, *cfg.Alertmanager)
+			if amErr != nil {
+				all = append(all, alertmanagerClientErrorResults(instance, amErr)...)
+			} else {
+				all = append(all,
+					probeAlert(baseCtx, amClient, instance),
+					checkup.Result{
+						Component: alertWriteToolName,
+						Instance:  instance,
+						Status:    checkup.StatusLimited,
+						Message:   "write tool, not probed to avoid side effects",
+					},
+				)
+			}
+		} else {
+			all = append(all,
+				checkup.Result{
+					Component: "prometheus_alert",
+					Instance:  instance,
+					Status:    checkup.StatusLimited,
+					Message:   "alertmanager not configured for this instance",
+				},
+				checkup.Result{
+					Component: alertWriteToolName,
+					Instance:  instance,
+					Status:    checkup.StatusLimited,
+					Message:   "alertmanager not configured for this instance",
+				},
+			)
+		}
+
+		baseCancel()
 	}
 
 	return all
+}
+
+// alertmanagerClientErrorResults returns error results for the two Alertmanager
+// components when the Alertmanager client cannot be built.
+func alertmanagerClientErrorResults(instance string, err error) checkup.Results {
+	errStr := err.Error()
+	return checkup.Results{
+		{Component: "prometheus_alert", Instance: instance, Status: checkup.StatusError, Error: errStr},
+		{Component: alertWriteToolName, Instance: instance, Status: checkup.StatusError, Error: errStr},
+	}
+}
+
+// probeAlert performs a real GET /api/v2/alerts (read-only and safe) for the
+// prometheus_alert tool.
+func probeAlert(ctx context.Context, c *alertmanagerClient, instance string) checkup.Result {
+	alerts, err := c.ListAlerts(ctx, &amListAlertsParams{Active: boolPtr(true)})
+	if err != nil {
+		return checkup.Result{
+			Component: "prometheus_alert",
+			Instance:  instance,
+			Status:    checkup.StatusError,
+			Error:     errors.Wrap(err, "failed to list Alertmanager alerts").Error(),
+		}
+	}
+	return checkup.Result{
+		Component: "prometheus_alert",
+		Instance:  instance,
+		Status:    checkup.StatusOK,
+		Message:   fmt.Sprintf("%d alerts found, RBAC ok", len(alerts)),
+	}
 }
 
 func clientErrorResults(instance string, err error) checkup.Results {
 	errStr := err.Error()
 	return checkup.Results{
 		{Component: "prometheus_instance_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
-		{Component: "prometheus_alert_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
-		{Component: "prometheus_alert_describe", Instance: instance, Status: checkup.StatusError, Error: errStr},
-		{Component: "prometheus_metric_query", Instance: instance, Status: checkup.StatusError, Error: errStr},
-		{Component: "prometheus_metric_range", Instance: instance, Status: checkup.StatusError, Error: errStr},
+		{Component: "prometheus_metric", Instance: instance, Status: checkup.StatusError, Error: errStr},
 		{Component: "prometheus_target_list", Instance: instance, Status: checkup.StatusError, Error: errStr},
 	}
 }
 
 func probeInstance(ctx context.Context, client promapi.API, instance string) checkup.Results {
-	var results checkup.Results
-
-	results = append(results, probeInstanceList(instance))
-
-	ar, alerts, err := probeAlertList(ctx, client, instance)
-	results = append(results, ar)
-	if err == nil && len(alerts) > 0 {
-		alertname := string(alerts[0].Labels["alertname"])
-		if alertname == "" {
-			results = append(results, checkup.Result{
-				Component: "prometheus_alert_describe",
-				Instance:  instance,
-				Status:    checkup.StatusLimited,
-				Message:   "first alert has no alertname label",
-			})
-		} else {
-			results = append(results, probeAlertDescribe(instance, alertname, alerts))
-		}
-	} else if err == nil {
-		results = append(results, checkup.Result{
-			Component: "prometheus_alert_describe",
-			Instance:  instance,
-			Status:    checkup.StatusLimited,
-			Message:   "no alerts to test describe",
-		})
-	} else {
-		results = append(results, checkup.Result{
-			Component: "prometheus_alert_describe",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     "dependency failed",
-		})
+	return checkup.Results{
+		probeInstanceList(instance),
+		probeMetric(ctx, client, instance),
+		probeTargetList(ctx, client, instance),
 	}
-
-	results = append(results, probeMetricQuery(ctx, client, instance))
-	results = append(results, probeMetricRange(ctx, client, instance))
-	results = append(results, probeTargetList(ctx, client, instance))
-
-	return results
 }
 
 func probeInstanceList(instance string) checkup.Result {
@@ -107,61 +131,18 @@ func probeInstanceList(instance string) checkup.Result {
 	}
 }
 
-func probeAlertList(ctx context.Context, client promapi.API, instance string) (checkup.Result, []promapi.Alert, error) {
-	alertsResult, err := client.Alerts(ctx)
-	if err != nil {
-		return checkup.Result{
-			Component: "prometheus_alert_list",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to list alerts").Error(),
-		}, nil, err
-	}
-	msg := fmt.Sprintf("%d alerts found, RBAC ok", len(alertsResult.Alerts))
-	return checkup.Result{
-		Component: "prometheus_alert_list",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   msg,
-	}, alertsResult.Alerts, nil
-}
-
-func probeAlertDescribe(instance, alertname string, alerts []promapi.Alert) checkup.Result {
-	found := false
-	for _, a := range alerts {
-		if string(a.Labels["alertname"]) == alertname {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return checkup.Result{
-			Component: "prometheus_alert_describe",
-			Instance:  instance,
-			Status:    checkup.StatusLimited,
-			Message:   fmt.Sprintf("alert %q no longer present", alertname),
-		}
-	}
-	return checkup.Result{
-		Component: "prometheus_alert_describe",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("described alert %q, RBAC ok", alertname),
-	}
-}
-
-func probeMetricQuery(ctx context.Context, client promapi.API, instance string) checkup.Result {
+func probeMetric(ctx context.Context, client promapi.API, instance string) checkup.Result {
 	_, _, err := client.Query(ctx, "up", time.Time{})
 	if err != nil {
 		return checkup.Result{
-			Component: "prometheus_metric_query",
+			Component: "prometheus_metric",
 			Instance:  instance,
 			Status:    checkup.StatusError,
 			Error:     errors.Wrap(err, "failed to execute metric query").Error(),
 		}
 	}
 	return checkup.Result{
-		Component: "prometheus_metric_query",
+		Component: "prometheus_metric",
 		Instance:  instance,
 		Status:    checkup.StatusOK,
 		Message:   "query 'up' succeeded, RBAC ok",
@@ -184,29 +165,5 @@ func probeTargetList(ctx context.Context, client promapi.API, instance string) c
 		Instance:  instance,
 		Status:    checkup.StatusOK,
 		Message:   msg,
-	}
-}
-
-func probeMetricRange(ctx context.Context, client promapi.API, instance string) checkup.Result {
-	now := time.Now()
-	r := promapi.Range{
-		Start: now.Add(-5 * time.Minute),
-		End:   now,
-		Step:  1 * time.Minute,
-	}
-	_, _, err := client.QueryRange(ctx, "up", r)
-	if err != nil {
-		return checkup.Result{
-			Component: "prometheus_metric_range",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to execute range query").Error(),
-		}
-	}
-	return checkup.Result{
-		Component: "prometheus_metric_range",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   "range query 'up' succeeded, RBAC ok",
 	}
 }

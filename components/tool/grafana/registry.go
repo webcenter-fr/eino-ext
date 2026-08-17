@@ -15,15 +15,13 @@ type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 // readOnlyConstructors lists all read-only Grafana tools.
 var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewInstanceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardSearchTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDataSourceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDataSourceDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDataSourceTool(ctx, c) },
 }
 
 // writeConstructors lists all write/destructive Grafana tools.
 var writeConstructors = []toolConstructor{
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardBuildTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewDashboardWriteTool(ctx, c) },
 }
 
 // buildTools creates tools from the given constructors.
@@ -56,7 +54,7 @@ func NewReadOnlyTools(ctx context.Context, configs Configs) ([]tool.InvokableToo
 // WriteToolNames returns the tool names of all Grafana write tools.
 // These names can be passed to the safety middleware's Config.WriteToolNames.
 func WriteToolNames() []string {
-	return []string{"grafana_dashboard_build"}
+	return []string{dashboardWriteToolName}
 }
 
 // ExtractWriteToolNames creates all write tools from the given configs and
@@ -104,9 +102,7 @@ func NewAllToolsWithSafety(ctx context.Context, configs Configs, safetyCfg *safe
 
 var (
 	_ tool.InvokableTool = (*InstanceListTool)(nil)
-	_ tool.InvokableTool = (*DashboardSearchTool)(nil)
-	_ tool.InvokableTool = (*DashboardDescribeTool)(nil)
-	_ tool.InvokableTool = (*DashboardBuildTool)(nil)
-	_ tool.InvokableTool = (*DataSourceListTool)(nil)
-	_ tool.InvokableTool = (*DataSourceDescribeTool)(nil)
+	_ tool.InvokableTool = (*DashboardTool)(nil)
+	_ tool.InvokableTool = (*DashboardWriteTool)(nil)
+	_ tool.InvokableTool = (*DataSourceTool)(nil)
 )

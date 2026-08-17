@@ -15,17 +15,20 @@ import (
 //go:embed prompts/dashboard_search_output_guidance.md
 var dashboardSearchOutputGuidance string
 
-//go:embed prompts/dashboard_describe_output_guidance.md
-var dashboardDescribeOutputGuidance string
-
 //go:embed prompts/datasource_list_output_guidance.md
 var dataSourceListOutputGuidance string
 
-//go:embed prompts/datasource_describe_output_guidance.md
-var dataSourceDescribeOutputGuidance string
-
 func instanceNotFoundError(instance string, known []string) error {
 	return toolutil.NotFoundError("Grafana instance", instance, known)
+}
+
+// marshalJSON marshals v to a JSON string, wrapping any marshal error with msg.
+func marshalJSON(v any, msg string) (string, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return "", errors.Wrap(err, msg)
+	}
+	return string(data), nil
 }
 
 // filterMapMarshal maps each source item to an output value, marshals it,

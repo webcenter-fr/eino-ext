@@ -222,6 +222,13 @@ type saveDashboardResponse struct {
 	Slug    string `json:"slug"`
 }
 
+// deleteDashboardResponse is the DELETE /api/dashboards/uid/:uid response.
+type deleteDashboardResponse struct {
+	Title   string `json:"title"`
+	Message string `json:"message"`
+	ID      int64  `json:"id"`
+}
+
 // dataSource is a single element of GET /api/datasources and the body of
 // GET /api/datasources/uid/:uid. Sensitive top-level fields (password,
 // basicAuthPassword, secureJsonData) are intentionally NOT declared here so
@@ -354,6 +361,16 @@ func (c *grafanaClient) SaveDashboard(ctx context.Context, payload []byte) ([]by
 	body, _, err := c.doRequest(ctx, http.MethodPost, "/api/dashboards/db", strings.NewReader(string(payload)))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to save dashboard")
+	}
+	return body, nil
+}
+
+// DeleteDashboard calls DELETE /api/dashboards/uid/:uid.
+func (c *grafanaClient) DeleteDashboard(ctx context.Context, uid string) ([]byte, error) {
+	path := "/api/dashboards/uid/" + url.PathEscape(uid)
+	body, _, err := c.doRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to delete dashboard")
 	}
 	return body, nil
 }
