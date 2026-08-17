@@ -8,9 +8,9 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/webcenter-fr/eino-ext/callbacks/activity"
@@ -101,8 +101,8 @@ func TestAcceptance_SupervisorSubAgents(t *testing.T) {
 				},
 				ResponseMeta: &schema.ResponseMeta{
 					Usage: &schema.TokenUsage{
-						PromptTokens:        1000,
-						CompletionTokens:    200,
+						PromptTokens:       1000,
+						CompletionTokens:   200,
 						PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 100},
 					},
 				},
@@ -121,15 +121,15 @@ func TestAcceptance_SupervisorSubAgents(t *testing.T) {
 				},
 				ResponseMeta: &schema.ResponseMeta{
 					Usage: &schema.TokenUsage{
-						PromptTokens:        800,
-						CompletionTokens:    150,
+						PromptTokens:       800,
+						CompletionTokens:   150,
 						PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 50},
 					},
 				},
 			},
 			{
-				Role:         schema.Assistant,
-				Content:      "Done",
+				Role:    schema.Assistant,
+				Content: "Done",
 				ResponseMeta: &schema.ResponseMeta{
 					Usage: &schema.TokenUsage{
 						PromptTokens:     500,

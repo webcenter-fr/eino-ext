@@ -41,8 +41,8 @@ func (r *Resolver) Resolve(ctx context.Context, workdir string) ([]Profile, erro
 
 func buildProfile(profileName, image, marker string) Profile {
 	p := Profile{
-		Name:      profileName,
-		BaseImage: image,
+		Name:         profileName,
+		BaseImage:    image,
 		SystemPrompt: buildSystemPrompt(profileName, marker),
 	}
 	switch profileName {

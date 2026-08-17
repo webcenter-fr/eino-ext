@@ -11,7 +11,7 @@ import (
 
 // Snapshot is a point-in-time view of a session's cost tracking state.
 type Snapshot struct {
-	SessionID   string       `json:"sessionID"`
+	SessionID   string        `json:"sessionID"`
 	Duration    time.Duration `json:"duration"`
 	Steps       int           `json:"steps"`
 	Models      []ModelUsage  `json:"models"`
@@ -23,21 +23,21 @@ type Snapshot struct {
 
 // Usage holds aggregate cost, savings, and token counts.
 type Usage struct {
-	Cost     float64         `json:"cost"`
-	Savings  float64         `json:"savings"`
-	Tokens   activity.Tokens `json:"tokens"`
-	Steps    int             `json:"steps"`
+	Cost    float64         `json:"cost"`
+	Savings float64         `json:"savings"`
+	Tokens  activity.Tokens `json:"tokens"`
+	Steps   int             `json:"steps"`
 }
 
 // ModelUsage groups usage by (provider, model).
 type ModelUsage struct {
-	Provider  string  `json:"provider"`
-	Model     string  `json:"model"`
-	Cost      float64 `json:"cost"`
-	Savings   float64 `json:"savings"`
+	Provider  string          `json:"provider"`
+	Model     string          `json:"model"`
+	Cost      float64         `json:"cost"`
+	Savings   float64         `json:"savings"`
 	Tokens    activity.Tokens `json:"tokens"`
-	Steps     int     `json:"steps"`
-	CacheRate float64 `json:"cacheRate"`
+	Steps     int             `json:"steps"`
+	CacheRate float64         `json:"cacheRate"`
 }
 
 type modelKey struct {

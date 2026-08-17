@@ -21,16 +21,16 @@ It returns the created pull request details.
 
 // PRCreateParams defines the parameters for creating a GitHub PR.
 type PRCreateParams struct {
-	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo     string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Title    string `json:"title" validate:"required" jsonschema:"(required) The PR title."`
-	Head     string `json:"head" validate:"required" jsonschema:"(required) The name of the branch where your changes are implemented."`
-	Base     string `json:"base,omitempty" jsonschema:"(optional) The name of the branch you want the changes pulled into. Defaults to the repository default branch."`
-	Body     string `json:"body,omitempty" jsonschema:"(optional) The PR body."`
-	Draft    bool   `json:"draft,omitempty" jsonschema:"(optional) Create as draft PR."`
-	DryRun   bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the PR creation without making changes."`
-	Confirmed bool  `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the PR creation. Set this after the user has approved the dry-run result."`
+	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Title     string `json:"title" validate:"required" jsonschema:"(required) The PR title."`
+	Head      string `json:"head" validate:"required" jsonschema:"(required) The name of the branch where your changes are implemented."`
+	Base      string `json:"base,omitempty" jsonschema:"(optional) The name of the branch you want the changes pulled into. Defaults to the repository default branch."`
+	Body      string `json:"body,omitempty" jsonschema:"(optional) The PR body."`
+	Draft     bool   `json:"draft,omitempty" jsonschema:"(optional) Create as draft PR."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the PR creation without making changes."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the PR creation. Set this after the user has approved the dry-run result."`
 }
 
 // PRCreateTool is an eino tool for creating GitHub PRs.

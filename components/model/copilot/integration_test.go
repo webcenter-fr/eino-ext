@@ -283,7 +283,6 @@ func TestIntegration_Check_GitHubToken(t *testing.T) {
 	}
 }
 
-
 // TestIntegration_ListModels verifies that ListModels returns ≥20 models
 // including gpt-5-mini and at least one Claude model, proving the
 // integration-id header works. When COPILOT_FREE_TIER=1 the assertions
@@ -323,7 +322,7 @@ func TestIntegration_ListModels(t *testing.T) {
 		}
 	}
 
-	models, err := ListModels(context.Background(), token, baseURL, 30 * time.Second)
+	models, err := ListModels(context.Background(), token, baseURL, 30*time.Second)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}

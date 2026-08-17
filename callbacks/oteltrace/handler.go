@@ -351,4 +351,3 @@ func convUsage(u *schema.TokenUsage) *model.TokenUsage {
 		TotalTokens:      u.TotalTokens,
 	}
 }
-

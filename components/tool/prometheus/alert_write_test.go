@@ -520,6 +520,29 @@ func TestAlertWriteGeneratorURLScheme(t *testing.T) {
 	}
 }
 
+func TestAlertWriteDeleteIgnoresGeneratorURL(t *testing.T) {
+	var gotMethod string
+	tool := newWriteTool(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success"}`))
+	})
+
+	result, err := tool.Invoke(context.Background(), &AlertWriteParams{
+		Instance:     "t",
+		Operation:    "delete",
+		Labels:       map[string]string{"alertname": "HighCPU"},
+		GeneratorURL: "javascript:alert(1)",
+		Confirmed:    true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodPost, gotMethod)
+
+	var out AlertWriteOutput
+	require.NoError(t, json.Unmarshal([]byte(result), &out))
+	assert.Equal(t, "deleted", out.Action)
+}
+
 func TestAlertWriteMissingInstance(t *testing.T) {
 	for _, op := range []string{"create", "update", "delete"} {
 		t.Run(op, func(t *testing.T) {
@@ -773,11 +796,11 @@ func TestAlertWriteInputSizeLimits(t *testing.T) {
 			annotations[fmt.Sprintf("a%d", i)] = "v"
 		}
 		_, err := tool.Invoke(context.Background(), &AlertWriteParams{
-			Instance:     "t",
-			Operation:    "create",
-			Labels:       map[string]string{"alertname": "HighCPU"},
-			Annotations:  annotations,
-			Confirmed:    true,
+			Instance:    "t",
+			Operation:   "create",
+			Labels:      map[string]string{"alertname": "HighCPU"},
+			Annotations: annotations,
+			Confirmed:   true,
 		})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid parameters")

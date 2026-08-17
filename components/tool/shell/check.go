@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	daggerlib "github.com/webcenter-fr/eino-ext/libs/toolkit/dagger"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
+	daggerlib "github.com/webcenter-fr/eino-ext/libs/toolkit/dagger"
 )
 
 const checkTimeout = 15 * time.Second

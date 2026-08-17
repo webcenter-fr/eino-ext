@@ -41,15 +41,17 @@ All operations require a 'labels' map that includes the 'alertname' label.
 // deleting an Alertmanager alert. The 'operation' field selects which action is
 // performed; fields apply to operations as documented below.
 type AlertWriteParams struct {
-	Instance     string            `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance (must have Alertmanager configured)."`
-	Operation    string            `json:"operation" validate:"required,oneof=create update delete" jsonschema:"(required) Operation to perform: 'create', 'update', or 'delete'."`
-	Labels       map[string]string `json:"labels" validate:"required,min=1,max=64,dive,keys,required,endkeys,required" jsonschema:"(required) Alert labels as key/value pairs. Must include 'alertname'. For create/delete these are the alert's labels; for update these identify the existing alert to modify."`
-	Annotations  map[string]string `json:"annotations,omitempty" validate:"omitempty,max=64,dive,keys,required,endkeys,required" jsonschema:"(optional) Alert annotations. Used by create and update. For update, omit to keep existing annotations; set to {} or a new map to replace them."`
-	StartsAt     string            `json:"startsAt,omitempty" jsonschema:"(optional) Start time in RFC3339. create: defaults to now. update: omit to keep existing. delete: ignored (resolved alert uses now-1m)."`
-	EndsAt       string            `json:"endsAt,omitempty" jsonschema:"(optional) End time in RFC3339. create: defaults to now+5m, must be in the future. update: omit to keep existing. delete: ignored (resolved alert uses now)."`
-	GeneratorURL string            `json:"generatorURL,omitempty" validate:"omitempty,url" jsonschema:"(optional) URL of the source that generated the alert. create: sets it. update: omit to keep existing. delete: ignored."`
-	DryRun       bool              `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the resolved postableAlert payload without posting."`
-	Confirmed    bool              `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post. Set after reviewing the dry-run."`
+	Instance    string            `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance (must have Alertmanager configured)."`
+	Operation   string            `json:"operation" validate:"required,oneof=create update delete" jsonschema:"(required) Operation to perform: 'create', 'update', or 'delete'."`
+	Labels      map[string]string `json:"labels" validate:"required,min=1,max=64,dive,keys,required,endkeys,required" jsonschema:"(required) Alert labels as key/value pairs. Must include 'alertname'. For create/delete these are the alert's labels; for update these identify the existing alert to modify."`
+	Annotations map[string]string `json:"annotations,omitempty" validate:"omitempty,max=64,dive,keys,required,endkeys,required" jsonschema:"(optional) Alert annotations. Used by create and update. For update, omit to keep existing annotations; set to {} or a new map to replace them."`
+	StartsAt    string            `json:"startsAt,omitempty" jsonschema:"(optional) Start time in RFC3339. create: defaults to now. update: omit to keep existing. delete: ignored (resolved alert uses now-1m)."`
+	EndsAt      string            `json:"endsAt,omitempty" jsonschema:"(optional) End time in RFC3339. create: defaults to now+5m, must be in the future. update: omit to keep existing. delete: ignored (resolved alert uses now)."`
+	// The validate:"omitempty,url" tag is only a first-pass syntactic check; the
+	// authoritative http/https scheme enforcement is the code-level check below.
+	GeneratorURL string `json:"generatorURL,omitempty" validate:"omitempty,url" jsonschema:"(optional) URL of the source that generated the alert. create: sets it. update: omit to keep existing. delete: ignored."`
+	DryRun       bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the resolved postableAlert payload without posting."`
+	Confirmed    bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post. Set after reviewing the dry-run."`
 }
 
 // AlertWriteOutput is the structured output for an Alertmanager
@@ -119,11 +121,25 @@ func coalesceTime(existing time.Time, provided string) (time.Time, error) {
 	if provided == "" {
 		return existing, nil
 	}
-	t, err := time.Parse(time.RFC3339, provided)
+	t, err := parseRFC3339(provided)
 	if err != nil {
 		return time.Time{}, errors.Wrapf(err, "invalid startsAt/endsAt, expected RFC3339")
 	}
 	return t, nil
+}
+
+// validateGeneratorURL enforces that a non-empty generatorURL is an http/https
+// URL. This is the authoritative scheme check; the validate:"omitempty,url" tag
+// only performs a first-pass syntactic check.
+func validateGeneratorURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return errors.Errorf("generatorURL must be an http/https URL")
+	}
+	return nil
 }
 
 // postAlert resolves the client for instance and POSTs a single alert.
@@ -151,15 +167,12 @@ func (t *AlertWriteTool) Invoke(ctx context.Context, params *AlertWriteParams) (
 
 	labelSet := toLabelSet(params.Labels)
 
-	if params.GeneratorURL != "" {
-		u, err := url.Parse(params.GeneratorURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-			return "", errors.Errorf("generatorURL must be an http/https URL")
-		}
-	}
-
 	switch params.Operation {
 	case "create":
+		if err := validateGeneratorURL(params.GeneratorURL); err != nil {
+			return "", err
+		}
+
 		now := time.Now().UTC()
 
 		startsAt, err := coalesceTime(now, params.StartsAt)
@@ -204,6 +217,9 @@ func (t *AlertWriteTool) Invoke(ctx context.Context, params *AlertWriteParams) (
 		}), nil
 
 	case "update":
+		if err := validateGeneratorURL(params.GeneratorURL); err != nil {
+			return "", err
+		}
 		if err := validateMatcherLabelKeys(params.Labels); err != nil {
 			return "", err
 		}

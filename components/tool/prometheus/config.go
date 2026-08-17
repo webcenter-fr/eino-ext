@@ -17,20 +17,13 @@ type Config struct {
 	BearerToken string `json:"-"`
 	// TLSSkipVerify disables TLS certificate verification.
 	TLSSkipVerify bool
-	// MaxSamples is the maximum number of samples returned per query.
-	// Defaults to 10000.
-	MaxSamples int `validate:"omitempty,gte=1,lte=50000" jsonschema:"description=Maximum number of samples returned per query (1-50000, defaults to 10000)"`
-	// MaxTimeRange is the maximum time range for range queries.
-	// Defaults to 7 days. Parsed as a Go duration string.
-	MaxTimeRange string `validate:"omitempty" jsonschema:"description=Maximum time range for range queries (Go duration string, e.g. 168h), defaults to 168h (7 days)"`
-	// MinStep is the minimum step size for range queries.
-	// Defaults to 15s. Parsed as a Go duration string.
-	MinStep string `validate:"omitempty" jsonschema:"description=Minimum step size for range queries (Go duration string, e.g. 15s), defaults to 15s"`
 	// Alertmanager holds optional Alertmanager connection settings for this
 	// instance. When nil, the Alertmanager tools are unavailable for this
 	// instance. Backward compatible: existing Prometheus-only configs are
-	// unchanged.
-	Alertmanager *AlertmanagerConfig `validate:"omitempty" jsonschema:"(optional) Alertmanager connection settings. When set, the Alertmanager tools become available for this instance."`
+	// unchanged. validate:"-" skips the nested struct here so an invalid
+	// Alertmanager config does not fail the Prometheus client (fail-fast
+	// decoupling); it is validated separately by NewAlertmanagerClient.
+	Alertmanager *AlertmanagerConfig `validate:"-" jsonschema:"(optional) Alertmanager connection settings. When set, the Alertmanager tools become available for this instance."`
 }
 
 // AlertmanagerConfig holds the connection configuration for an Alertmanager

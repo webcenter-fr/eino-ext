@@ -3,8 +3,8 @@ package dagger
 import (
 	"context"
 
-	"emperror.dev/errors"
 	"dagger.io/dagger"
+	"emperror.dev/errors"
 
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/egress"
 )

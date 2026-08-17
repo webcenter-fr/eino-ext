@@ -341,17 +341,17 @@ func TestSearchParamsDefaults(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		params     *SearchParams
-		cfg        *SearchConfig
-		wantIndices []string
+		name            string
+		params          *SearchParams
+		cfg             *SearchConfig
+		wantIndices     []string
 		wantQueryString string
 		wantTimeField   string
 		wantSort        string
 		wantMaxResults  int
 	}{
 		{
-			name: "all fields empty => fall back to config defaults",
+			name:   "all fields empty => fall back to config defaults",
 			params: &SearchParams{},
 			cfg: &SearchConfig{
 				DefaultIndex: "logs-*",

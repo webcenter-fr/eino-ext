@@ -307,7 +307,7 @@ func TestExchangeErrorMessages(t *testing.T) {
 				_, _ = w.Write([]byte(`{"error":"some error"}`))
 			}))
 			defer srv.Close()
-	
+
 			ctx := context.Background()
 			_, err := exchangeGitHubTokenWithBase(ctx, "gh-token", srv.URL, 5*time.Second)
 			if err == nil {
@@ -373,8 +373,8 @@ func TestResolveCopilotToken_DirectBearer_FineGrainedPAT(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == userURLPath {
 			w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"login":"testuser"}`))
-		return
+			_, _ = w.Write([]byte(`{"login":"testuser"}`))
+			return
 		}
 		if r.URL.Path == tokenURLPath {
 			t.Fatal("exchange endpoint should NOT be called for fine-grained PAT")
@@ -540,4 +540,3 @@ func TestResolveCopilotToken_UnknownPrefix_Exchanges(t *testing.T) {
 		t.Errorf("expected exchanged-unknown, got %q", resolved.Token)
 	}
 }
-

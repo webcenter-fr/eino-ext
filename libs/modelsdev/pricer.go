@@ -131,4 +131,3 @@ func costBreakdownOf(cost Cost, t activity.Tokens) CostBreakdown {
 		Savings:    savings,
 	}
 }
-

@@ -41,7 +41,7 @@ func TestTransform(t *testing.T) {
 		input          []*schema.Document
 		wantLen        int
 		wantContentIDs []string
-		extraCheck      func(t *testing.T, result []*schema.Document)
+		extraCheck     func(t *testing.T, result []*schema.Document)
 	}{
 		{
 			name:           "empty input",

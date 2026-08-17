@@ -8,8 +8,8 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/prometheus/client_golang/api"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 // authRoundTripper wraps an http.RoundTripper and injects authentication headers.

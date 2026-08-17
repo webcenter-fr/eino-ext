@@ -12,8 +12,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"github.com/cloudwego/eino/components/tool/utils"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 //go:embed prompts/web_fetch.md

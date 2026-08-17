@@ -21,11 +21,11 @@ import (
 )
 
 const (
-	defaultSearchTimeField  = "@timestamp"
-	defaultSearchSort       = "@timestamp:desc"
-	defaultSearchMaxResults = 100
-	pitKeepAlive            = "2m"
-	searchBatchSize         = 500
+	defaultSearchTimeField   = "@timestamp"
+	defaultSearchSort        = "@timestamp:desc"
+	defaultSearchMaxResults  = 100
+	pitKeepAlive             = "2m"
+	searchBatchSize          = 500
 	defaultOpensearchTimeout = 30 * time.Second
 )
 

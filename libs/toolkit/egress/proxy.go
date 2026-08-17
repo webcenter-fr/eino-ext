@@ -12,9 +12,9 @@ import (
 
 // Proxy is an HTTP/HTTPS CONNECT proxy that enforces egress policies.
 type Proxy struct {
-	policy  *Policy
-	server  *http.Server
-	addr    string
+	policy *Policy
+	server *http.Server
+	addr   string
 }
 
 // NewProxy creates a new Proxy with the given egress policy.

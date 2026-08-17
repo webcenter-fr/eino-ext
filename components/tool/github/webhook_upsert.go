@@ -29,17 +29,17 @@ It returns the created or updated webhook details.
 
 // WebhookUpsertParams defines the parameters for upserting a webhook.
 type WebhookUpsertParams struct {
-	Instance     string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner        string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo         string   `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	HookURL      string   `json:"hookUrl" validate:"required,url" jsonschema:"(required) Webhook payload URL."`
-	Secret       string   `json:"secret,omitempty" jsonschema:"(optional) Webhook secret."`
-	ContentType  string   `json:"contentType,omitempty" jsonschema:"(optional) Content type: json or form. Defaults to json."`
-	Events       []string `json:"events,omitempty" jsonschema:"(optional) Event names. Defaults to push."`
-	Active       bool     `json:"active,omitempty" jsonschema:"(optional) Whether the webhook is active. Defaults to true."`
-	HookID       int64    `json:"hookId,omitempty" jsonschema:"(optional) Existing hook ID to update. If not provided, creates a new hook."`
-	DryRun       bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the operation without making changes."`
-	Confirmed    bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`
+	Instance    string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner       string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo        string   `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	HookURL     string   `json:"hookUrl" validate:"required,url" jsonschema:"(required) Webhook payload URL."`
+	Secret      string   `json:"secret,omitempty" jsonschema:"(optional) Webhook secret."`
+	ContentType string   `json:"contentType,omitempty" jsonschema:"(optional) Content type: json or form. Defaults to json."`
+	Events      []string `json:"events,omitempty" jsonschema:"(optional) Event names. Defaults to push."`
+	Active      bool     `json:"active,omitempty" jsonschema:"(optional) Whether the webhook is active. Defaults to true."`
+	HookID      int64    `json:"hookId,omitempty" jsonschema:"(optional) Existing hook ID to update. If not provided, creates a new hook."`
+	DryRun      bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the operation without making changes."`
+	Confirmed   bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set this after the user has approved the dry-run result."`
 }
 
 // WebhookUpsertTool is an eino tool for upserting GitHub webhooks.

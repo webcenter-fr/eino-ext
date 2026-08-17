@@ -26,16 +26,16 @@ It returns the created review comment details.
 
 // PRSuggestChangeParams defines the parameters for suggesting a PR change.
 type PRSuggestChangeParams struct {
-	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner      string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo       string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Number     int    `json:"number" validate:"required" jsonschema:"(required) PR number."`
-	CommitID   string `json:"commitId" validate:"required" jsonschema:"(required) The SHA of the commit to comment on."`
-	FilePath   string `json:"filePath" validate:"required" jsonschema:"(required) The relative path to the file being commented on."`
-	Line       int    `json:"line" validate:"required,gte=0" jsonschema:"(required) The line number in the file to comment on."`
-	Body       string `json:"body" validate:"required" jsonschema:"(required) The suggestion text. Use GitHub suggestion blocks for code changes."`
-	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the suggestion without posting."`
-	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post the suggestion. Set this after the user has approved the dry-run result."`
+	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Number    int    `json:"number" validate:"required" jsonschema:"(required) PR number."`
+	CommitID  string `json:"commitId" validate:"required" jsonschema:"(required) The SHA of the commit to comment on."`
+	FilePath  string `json:"filePath" validate:"required" jsonschema:"(required) The relative path to the file being commented on."`
+	Line      int    `json:"line" validate:"required,gte=0" jsonschema:"(required) The line number in the file to comment on."`
+	Body      string `json:"body" validate:"required" jsonschema:"(required) The suggestion text. Use GitHub suggestion blocks for code changes."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the suggestion without posting."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually post the suggestion. Set this after the user has approved the dry-run result."`
 }
 
 // PRSuggestChangeTool is an eino tool for suggesting PR changes.

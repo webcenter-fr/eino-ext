@@ -154,7 +154,7 @@ func probeRepoSearch(ctx context.Context, client *github.Client, instance string
 
 func probeIssueList(ctx context.Context, client *github.Client, instance, owner, repo string) (checkup.Result, []*github.Issue, error) {
 	issues, _, err := client.Issues.ListByRepo(ctx, owner, repo, &github.IssueListByRepoOptions{
-		State: "all",
+		State:       "all",
 		ListOptions: github.ListOptions{PerPage: 1},
 	})
 	if err != nil {
@@ -194,7 +194,7 @@ func probeIssueGet(ctx context.Context, client *github.Client, instance, owner, 
 
 func probePRList(ctx context.Context, client *github.Client, instance, owner, repo string) (checkup.Result, []*github.PullRequest, error) {
 	prs, _, err := client.PullRequests.List(ctx, owner, repo, &github.PullRequestListOptions{
-		State: "all",
+		State:       "all",
 		ListOptions: github.ListOptions{PerPage: 1},
 	})
 	if err != nil {

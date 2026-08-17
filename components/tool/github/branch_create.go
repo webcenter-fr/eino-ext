@@ -28,14 +28,14 @@ It returns the branch name and commit SHA.
 
 // BranchCreateParams defines the parameters for creating a branch.
 type BranchCreateParams struct {
-	Instance    string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner       string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo        string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	BranchName  string `json:"branchName" validate:"required" jsonschema:"(required) Name of the branch to create."`
-	BaseBranch  string `json:"baseBranch,omitempty" jsonschema:"(optional) Base branch or commit SHA. Defaults to the default branch."`
-	Remote      bool   `json:"remote,omitempty" jsonschema:"(optional) If true, create the branch remotely via the GitHub API instead of locally."`
-	DryRun      bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the branch creation without making changes."`
-	Confirmed   bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the branch creation. Set this after the user has approved the dry-run result."`
+	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner      string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo       string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	BranchName string `json:"branchName" validate:"required" jsonschema:"(required) Name of the branch to create."`
+	BaseBranch string `json:"baseBranch,omitempty" jsonschema:"(optional) Base branch or commit SHA. Defaults to the default branch."`
+	Remote     bool   `json:"remote,omitempty" jsonschema:"(optional) If true, create the branch remotely via the GitHub API instead of locally."`
+	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the branch creation without making changes."`
+	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the branch creation. Set this after the user has approved the dry-run result."`
 }
 
 // BranchCreateTool is an eino tool for creating branches.

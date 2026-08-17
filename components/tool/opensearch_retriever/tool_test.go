@@ -82,9 +82,9 @@ func TestToolInvoke(t *testing.T) {
 				"total": map[string]any{"value": 2},
 				"hits": []map[string]any{
 					{
-						"_id":     "1",
-						"_index":  "test-index",
-						"_score":  0.95,
+						"_id":      "1",
+						"_index":   "test-index",
+						"_score":   0.95,
 						"_version": 1,
 						"_source": map[string]any{
 							"content": "First document content",
@@ -93,9 +93,9 @@ func TestToolInvoke(t *testing.T) {
 						},
 					},
 					{
-						"_id":     "2",
-						"_index":  "test-index",
-						"_score":  0.85,
+						"_id":      "2",
+						"_index":   "test-index",
+						"_score":   0.85,
 						"_version": 1,
 						"_source": map[string]any{
 							"content": "Second document content",
@@ -250,9 +250,9 @@ func TestToolInvokeCustomFormatter(t *testing.T) {
 				"total": map[string]any{"value": 1},
 				"hits": []map[string]any{
 					{
-						"_id":     "1",
-						"_index":  "test-index",
-						"_score":  0.95,
+						"_id":      "1",
+						"_index":   "test-index",
+						"_score":   0.95,
 						"_version": 1,
 						"_source": map[string]any{
 							"content": "document content",
@@ -275,7 +275,7 @@ func TestToolInvokeCustomFormatter(t *testing.T) {
 		Index:       "test-index",
 		ToolName:    "search_docs",
 		Description: "Search documentation",
-		Formatter: &customFormatter{},
+		Formatter:   &customFormatter{},
 	}
 
 	tool, err := NewTool(ctx, cfg)

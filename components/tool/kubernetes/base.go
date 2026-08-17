@@ -15,19 +15,19 @@ import (
 )
 
 const (
-	defaultExecTimeout    = 60 * time.Second
+	defaultExecTimeout      = 60 * time.Second
 	defaultOperationTimeout = 30 * time.Second
 )
 
 // baseTool holds shared client bundles for all Kubernetes tools.
 type baseTool struct {
-	clients               map[string]client.Client
-	clientsets            map[string]*kubernetes.Clientset
-	dynamics              map[string]dynamic.Interface
-	mappers               map[string]*cachedMapper
-	configs               Configs
-	knownClusters         []string
-	disallowedNamespaces  map[string]map[string]bool
+	clients              map[string]client.Client
+	clientsets           map[string]*kubernetes.Clientset
+	dynamics             map[string]dynamic.Interface
+	mappers              map[string]*cachedMapper
+	configs              Configs
+	knownClusters        []string
+	disallowedNamespaces map[string]map[string]bool
 }
 
 // clientset returns the typed Kubernetes clientset for the given cluster name.
@@ -95,7 +95,7 @@ func buildDisallowedNamespaces(configs Configs) map[string]map[string]bool {
 	return result
 }
 
-// parseTimeoutOrDefault parses a duration string, falling back to defaultVal 
+// parseTimeoutOrDefault parses a duration string, falling back to defaultVal
 // on empty input or parse errors.
 func parseTimeoutOrDefault(timeoutStr string, defaultVal time.Duration) time.Duration {
 	if timeoutStr == "" {
@@ -174,5 +174,3 @@ func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 		disallowedNamespaces: buildDisallowedNamespaces(configs),
 	}, nil
 }
-
-

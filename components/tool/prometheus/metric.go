@@ -37,8 +37,8 @@ For range mode, each object represents a single time series with:
   data points.
 
 ** Mode-specific fields **
-- instant mode: 'time' (evaluation time in RFC3339, defaults to now) and
-  'limit' (maximum number of result series, 1-50000).
+- instant mode: 'time' (evaluation time in RFC3339, defaults to now).
+- both modes: 'limit' (maximum number of result series, 1-50000).
 - range mode: 'start', 'end' (RFC3339), and 'step' (Go duration, >= 15s) are
   required; 'maxSamples' (1-10000, default 100) keeps the most recent N samples
   per series.
@@ -48,9 +48,11 @@ PromQL subqueries with a range greater than 7 days are rejected (in both modes)
 to prevent excessive resource consumption on the Prometheus server.
 `
 
-// subqueryLongRange matches PromQL subquery range selectors such as `[8d]`.
-// Compiled once at package init; reused across Invoke calls.
-var subqueryLongRange = regexp.MustCompile(`\[(\d+[smhwdy])\s*\]`)
+// subqueryLongRange matches PromQL subquery range selectors such as `[8d]`
+// and the `range:step` form `[8d:1h]`. Capture group 1 is always the range
+// part (the step, group 2, is irrelevant to the >7 day check). Compiled once
+// at package init; reused across Invoke calls.
+var subqueryLongRange = regexp.MustCompile(`\[(\d+[smhwdy])(?::(\d+[smhwdy]))?\s*\]`)
 
 // MetricParams defines the parameters for a Prometheus metric query. The
 // 'mode' field selects instant vs range; mode-specific fields are documented
@@ -62,7 +64,7 @@ type MetricParams struct {
 	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each result JSON. Keep only results that match. RE2 does NOT support lookahead/lookbehind/backreferences — such patterns return an error."`
 	// instant-mode fields
 	Time  string `json:"time,omitempty" jsonschema:"(optional, instant mode) Evaluation time in RFC3339. Defaults to now. Ignored in range mode."`
-	Limit int    `json:"limit,omitempty" validate:"omitempty,min=1,max=50000" jsonschema:"(optional, instant mode) Max result series (1-50000). Ignored in range mode."`
+	Limit int    `json:"limit,omitempty" validate:"omitempty,min=1,max=50000" jsonschema:"(optional) Max result series (1-50000). Applies to both instant and range modes."`
 	// range-mode fields
 	Start      string `json:"start,omitempty" jsonschema:"(optional, range mode) Start time in RFC3339. Required in range mode."`
 	End        string `json:"end,omitempty" jsonschema:"(optional, range mode) End time in RFC3339. Required in range mode."`
@@ -121,7 +123,7 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 	case "instant":
 		var evalTime time.Time
 		if params.Time != "" {
-			evalTime, err = time.Parse(time.RFC3339, params.Time)
+			evalTime, err = parseRFC3339(params.Time)
 			if err != nil {
 				return "", errors.Wrap(err, "invalid time format, must be RFC3339 (e.g. 2024-01-01T00:00:00Z)")
 			}
@@ -165,12 +167,12 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 			params.MaxSamples = 100
 		}
 
-		start, err := time.Parse(time.RFC3339, params.Start)
+		start, err := parseRFC3339(params.Start)
 		if err != nil {
 			return "", errors.Wrap(err, "invalid start time format, must be RFC3339")
 		}
 
-		end, err := time.Parse(time.RFC3339, params.End)
+		end, err := parseRFC3339(params.End)
 		if err != nil {
 			return "", errors.Wrap(err, "invalid end time format, must be RFC3339")
 		}
@@ -218,6 +220,10 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 				continue
 			}
 			outputs = append(outputs, outputJSON)
+
+			if params.Limit > 0 && len(outputs) >= params.Limit {
+				break
+			}
 		}
 
 		return marshalOutputs(outputs)

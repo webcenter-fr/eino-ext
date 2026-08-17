@@ -36,6 +36,12 @@ func validateParams(v any) error {
 	return validate.Struct(v)
 }
 
+// parseRFC3339 parses an RFC3339 timestamp, accepting both the second-level
+// form (2024-01-01T00:00:00Z) and fractional seconds (2024-01-01T00:00:00.123Z).
+func parseRFC3339(s string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, s)
+}
+
 // AlertPaginate holds pagination state for alert listing (renamed from
 // AlertListPaginate; shared by prometheus_alert).
 type AlertPaginate struct {

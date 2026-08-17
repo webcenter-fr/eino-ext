@@ -157,7 +157,7 @@ func boolPtr(b bool) *bool {
 }
 
 const (
-	maxFileReadBytes   = 1 << 20 // 1MB — truncation threshold for file_read.
+	maxFileReadBytes   = 1 << 20  // 1MB — truncation threshold for file_read.
 	maxFileWriteBytes  = 10 << 20 // 10MB — max content size for file_write.
 	maxSearchFileBytes = 10 << 20 // 10MB — skip files larger than this in file_search.
 )

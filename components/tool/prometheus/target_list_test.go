@@ -35,21 +35,21 @@ func newTargetListToolWithMock(mock v1.API) *TargetListTool {
 func TestTargetListTool(t *testing.T) {
 	now := time.Now().UTC()
 	upTarget := v1.ActiveTarget{
-		Labels:            model.LabelSet{"job": "node", "instance": "10.0.0.1:9100"},
-		ScrapePool:        "node/10.0.0.1:9100",
+		Labels:             model.LabelSet{"job": "node", "instance": "10.0.0.1:9100"},
+		ScrapePool:         "node/10.0.0.1:9100",
 		ScrapeURL:          "http://10.0.0.1:9100/metrics",
 		Health:             v1.HealthGood,
-		LastError:         "",
-		LastScrape:        now,
+		LastError:          "",
+		LastScrape:         now,
 		LastScrapeDuration: 0.0123,
 	}
 	downTarget := v1.ActiveTarget{
-		Labels:            model.LabelSet{"job": "kubelet", "instance": "10.0.0.2:10250"},
-		ScrapePool:        "kubelet/10.0.0.2:10250",
+		Labels:             model.LabelSet{"job": "kubelet", "instance": "10.0.0.2:10250"},
+		ScrapePool:         "kubelet/10.0.0.2:10250",
 		ScrapeURL:          "https://10.0.0.2:10250/metrics",
 		Health:             v1.HealthBad,
-		LastError:         "connection refused",
-		LastScrape:        time.Time{},
+		LastError:          "connection refused",
+		LastScrape:         time.Time{},
 		LastScrapeDuration: 0,
 	}
 
@@ -151,12 +151,12 @@ func TestTargetListToolOutputFields(t *testing.T) {
 	// Verify the formatted string fields render as expected.
 	ts := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 	tgt := v1.ActiveTarget{
-		Labels:            model.LabelSet{"job": "node"},
-		ScrapePool:        "node/x",
+		Labels:             model.LabelSet{"job": "node"},
+		ScrapePool:         "node/x",
 		ScrapeURL:          "http://x/metrics",
 		Health:             v1.HealthGood,
-		LastError:         "",
-		LastScrape:        ts,
+		LastError:          "",
+		LastScrape:         ts,
 		LastScrapeDuration: 1.5,
 	}
 	tool := newTargetListToolWithMock(&mockTargetAPI{
@@ -197,19 +197,19 @@ func TestTargetListToolRedactsScrapeURLCredentials(t *testing.T) {
 	// Scrape URLs with embedded basic-auth credentials must have the userinfo
 	// stripped before being exposed in tool output (CWE-200).
 	credTarget := v1.ActiveTarget{
-		Labels:            model.LabelSet{"job": "node"},
-		ScrapePool:        "node/10.0.0.1:9100",
+		Labels:             model.LabelSet{"job": "node"},
+		ScrapePool:         "node/10.0.0.1:9100",
 		ScrapeURL:          "http://exporter:s3cr3t@10.0.0.1:9100/metrics",
 		Health:             v1.HealthGood,
-		LastScrape:        time.Time{},
+		LastScrape:         time.Time{},
 		LastScrapeDuration: 0,
 	}
 	plainTarget := v1.ActiveTarget{
-		Labels:            model.LabelSet{"job": "kubelet"},
-		ScrapePool:        "kubelet/10.0.0.2:10250",
+		Labels:             model.LabelSet{"job": "kubelet"},
+		ScrapePool:         "kubelet/10.0.0.2:10250",
 		ScrapeURL:          "https://10.0.0.2:10250/metrics?token=keep",
 		Health:             v1.HealthGood,
-		LastScrape:        time.Time{},
+		LastScrape:         time.Time{},
 		LastScrapeDuration: 0,
 	}
 	tool := newTargetListToolWithMock(&mockTargetAPI{

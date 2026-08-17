@@ -20,26 +20,26 @@ It returns a JSON object representing the issue with full details.
 
 // IssueGetParams defines the parameters for getting a GitHub issue.
 type IssueGetParams struct {
-	Instance             string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner                string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo                 string   `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Number               int      `json:"number" validate:"required" jsonschema:"(required) Issue number."`
-	ExcludeFieldsOutput  []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=body labels assignees milestones" jsonschema:"(optional) Fields to exclude: 'body', 'labels', 'assignees', 'milestones'."`
+	Instance            string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner               string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo                string   `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Number              int      `json:"number" validate:"required" jsonschema:"(required) Issue number."`
+	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=body labels assignees milestones" jsonschema:"(optional) Fields to exclude: 'body', 'labels', 'assignees', 'milestones'."`
 }
 
 // IssueGetOutput is the structured output for an issue get.
 type IssueGetOutput struct {
-	Number      int            `json:"number"`
-	Title       string         `json:"title"`
-	State       string         `json:"state"`
-	Author      string         `json:"author"`
-	Body        string         `json:"body,omitempty"`
-	Labels      []string       `json:"labels,omitempty"`
-	Assignees   []string       `json:"assignees,omitempty"`
-	Milestone   string         `json:"milestone,omitempty"`
-	CreatedAt   string         `json:"createdAt"`
-	UpdatedAt   string         `json:"updatedAt"`
-	HTMLURL     string         `json:"htmlURL"`
+	Number    int      `json:"number"`
+	Title     string   `json:"title"`
+	State     string   `json:"state"`
+	Author    string   `json:"author"`
+	Body      string   `json:"body,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
+	Assignees []string `json:"assignees,omitempty"`
+	Milestone string   `json:"milestone,omitempty"`
+	CreatedAt string   `json:"createdAt"`
+	UpdatedAt string   `json:"updatedAt"`
+	HTMLURL   string   `json:"htmlURL"`
 }
 
 // IssueGetTool is an eino tool for getting GitHub issues.

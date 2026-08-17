@@ -58,7 +58,7 @@ func attrValue(spans tracetest.SpanStubs, key string) (string, bool) {
 			if string(a.Key) == key {
 				return a.Value.Emit(), true
 			}
-	}
+		}
 	}
 	return "", false
 }

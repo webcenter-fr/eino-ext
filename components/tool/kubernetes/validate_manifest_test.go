@@ -143,7 +143,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errHostNetwork,
+			wantErr: errHostNetwork,
 		},
 		{
 			name: "hostPID pod",
@@ -158,7 +158,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errHostPID,
+			wantErr: errHostPID,
 		},
 		{
 			name: "hostIPC pod",
@@ -173,7 +173,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errHostIPC,
+			wantErr: errHostIPC,
 		},
 		{
 			name: "privileged container",
@@ -193,7 +193,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errPrivileged,
+			wantErr: errPrivileged,
 		},
 		{
 			name: "SYS_ADMIN capability",
@@ -215,7 +215,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errSYSADMIN,
+			wantErr: errSYSADMIN,
 		},
 		{
 			name: "hostPath volume",
@@ -243,7 +243,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errHostPathVolume,
+			wantErr: errHostPathVolume,
 		},
 		{
 			name: "dangerous volume mount /proc",
@@ -263,13 +263,13 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 					"volumes": []any{
 						map[string]any{
-							"name": "proc-volume",
+							"name":     "proc-volume",
 							"emptyDir": map[string]any{},
 						},
 					},
 				},
 			},
-			wantErr:     errDangerousMount,
+			wantErr: errDangerousMount,
 		},
 		{
 			name: "dangerous volume mount /var/run/docker.sock",
@@ -289,13 +289,13 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 					"volumes": []any{
 						map[string]any{
-							"name": "dockersock",
+							"name":     "dockersock",
 							"emptyDir": map[string]any{},
 						},
 					},
 				},
 			},
-			wantErr:     errDangerousMount,
+			wantErr: errDangerousMount,
 		},
 		{
 			name: "job with privileged container",
@@ -319,7 +319,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errPrivileged,
+			wantErr: errPrivileged,
 		},
 		{
 			name: "cronjob with hostNetwork",
@@ -343,7 +343,7 @@ func TestValidateManifest_PrivilegedPod(t *testing.T) {
 					},
 				},
 			},
-			wantErr:     errHostNetwork,
+			wantErr: errHostNetwork,
 		},
 	}
 

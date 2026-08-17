@@ -441,15 +441,15 @@ func TestStore_EmptyDocsNoRequest(t *testing.T) {
 // indexMgmtRecorder records every index-management call the test server
 // receives: HEAD (exists check), PUT (create), and PUT _mapping (retrofit).
 type indexMgmtRecorder struct {
-	existsChecks    int
-	createCalls     int
-	createBody      map[string]any
-	mappingCalls    int
-	mappingBody     map[string]any
-	apiErr          error
-	existsErr       error
-	indexExists     bool
-	t               *testing.T
+	existsChecks int
+	createCalls  int
+	createBody   map[string]any
+	mappingCalls int
+	mappingBody  map[string]any
+	apiErr       error
+	existsErr    error
+	indexExists  bool
+	t            *testing.T
 }
 
 // indexMgmtServer returns a test server that records index-management calls

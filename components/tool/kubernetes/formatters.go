@@ -5,9 +5,12 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	strimzi "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2"
+	"github.com/goccy/go-json"
+	spark "github.com/kubeflow/spark-operator/api/v1beta2"
+	routev1 "github.com/openshift/api/route/v1"
+	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -16,9 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	routev1 "github.com/openshift/api/route/v1"
-	spark "github.com/kubeflow/spark-operator/api/v1beta2"
 )
 
 type listFormatter func(runtime.Object) json.RawMessage
@@ -415,9 +415,9 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 				Kind      string   `json:"kind"`
 				Versions  []string `json:"versions"`
 			}{
-				Name:    crd.Name,
-				Group:   crd.Spec.Group,
-				Kind:    strings.ToLower(crd.Spec.Names.Plural),
+				Name:     crd.Name,
+				Group:    crd.Spec.Group,
+				Kind:     strings.ToLower(crd.Spec.Names.Plural),
 				Versions: versions,
 			})
 		},

@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"emperror.dev/errors"
 	"dagger.io/dagger"
+	"emperror.dev/errors"
 
 	daggerlib "github.com/webcenter-fr/eino-ext/libs/toolkit/dagger"
 )

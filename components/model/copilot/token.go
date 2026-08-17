@@ -22,10 +22,10 @@ const (
 
 	userAgentHeader = "copilot/1.0.70 (client/github/cli linux v24.16.0) term/unknown"
 
-	gitHubAPIVersion    = "2025-04-01"
-	copilotAPIVersion   = "2026-07-01"
-	integrationID       = "copilot-developer-cli"
-	editorVersion       = "copilot/1.0.70"
+	gitHubAPIVersion  = "2025-04-01"
+	copilotAPIVersion = "2026-07-01"
+	integrationID     = "copilot-developer-cli"
+	editorVersion     = "copilot/1.0.70"
 
 	refreshBufSecs     = 60
 	refreshMinSecs     = 1
@@ -37,9 +37,9 @@ const (
 )
 
 type copilotTokenResponse struct {
-	Token     string                `json:"token"`
-	ExpiresAt int64                 `json:"expires_at"`
-	RefreshIn int                   `json:"refresh_in"`
+	Token     string                 `json:"token"`
+	ExpiresAt int64                  `json:"expires_at"`
+	RefreshIn int                    `json:"refresh_in"`
 	Endpoints *copilotTokenEndpoints `json:"endpoints,omitempty"`
 }
 
@@ -250,7 +250,7 @@ type ResolvedToken struct {
 // Precedence of the returned BaseURL:
 //  1. explicit baseURL, when non-empty (caller override — e.g. a proxy/gateway);
 //  2. ResolveBaseURL(enterpriseURL) fallback (direct-bearer mode);
-//    OR endpoints.api from the token exchange response (exchange mode);
+//     OR endpoints.api from the token exchange response (exchange mode);
 //  3. ResolveBaseURL(enterpriseURL) fallback (exchange mode).
 //
 // When githubToken is empty the function returns an error: it does not read

@@ -21,22 +21,22 @@ It returns the updated repository details.
 
 // RepoSettingsUpdateParams defines the parameters for updating repo settings.
 type RepoSettingsUpdateParams struct {
-	Instance              string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner                 string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo                  string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Description           string `json:"description,omitempty" jsonschema:"(optional) Repository description."`
-	Homepage              string `json:"homepage,omitempty" jsonschema:"(optional) Repository homepage URL."`
-	Private               *bool  `json:"private,omitempty" jsonschema:"(optional) Set repository visibility: true=private, false=public."`
-	HasIssues             *bool  `json:"hasIssues,omitempty" jsonschema:"(optional) Enable/disable issues."`
-	HasProjects           *bool  `json:"hasProjects,omitempty" jsonschema:"(optional) Enable/disable projects."`
-	HasWiki               *bool  `json:"hasWiki,omitempty" jsonschema:"(optional) Enable/disable wiki."`
-	DefaultBranch         string `json:"defaultBranch,omitempty" jsonschema:"(optional) Default branch name."`
-	AllowSquashMerge      *bool  `json:"allowSquashMerge,omitempty" jsonschema:"(optional) Allow squash merging."`
-	AllowMergeCommit      *bool  `json:"allowMergeCommit,omitempty" jsonschema:"(optional) Allow merge commits."`
-	AllowRebaseMerge      *bool  `json:"allowRebaseMerge,omitempty" jsonschema:"(optional) Allow rebase merging."`
-	DeleteBranchOnMerge   *bool  `json:"deleteBranchOnMerge,omitempty" jsonschema:"(optional) Auto-delete head branch after merge."`
-	DryRun                bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the update without making changes."`
-	Confirmed             bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the update. Set this after the user has approved the dry-run result."`
+	Instance            string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner               string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo                string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Description         string `json:"description,omitempty" jsonschema:"(optional) Repository description."`
+	Homepage            string `json:"homepage,omitempty" jsonschema:"(optional) Repository homepage URL."`
+	Private             *bool  `json:"private,omitempty" jsonschema:"(optional) Set repository visibility: true=private, false=public."`
+	HasIssues           *bool  `json:"hasIssues,omitempty" jsonschema:"(optional) Enable/disable issues."`
+	HasProjects         *bool  `json:"hasProjects,omitempty" jsonschema:"(optional) Enable/disable projects."`
+	HasWiki             *bool  `json:"hasWiki,omitempty" jsonschema:"(optional) Enable/disable wiki."`
+	DefaultBranch       string `json:"defaultBranch,omitempty" jsonschema:"(optional) Default branch name."`
+	AllowSquashMerge    *bool  `json:"allowSquashMerge,omitempty" jsonschema:"(optional) Allow squash merging."`
+	AllowMergeCommit    *bool  `json:"allowMergeCommit,omitempty" jsonschema:"(optional) Allow merge commits."`
+	AllowRebaseMerge    *bool  `json:"allowRebaseMerge,omitempty" jsonschema:"(optional) Allow rebase merging."`
+	DeleteBranchOnMerge *bool  `json:"deleteBranchOnMerge,omitempty" jsonschema:"(optional) Auto-delete head branch after merge."`
+	DryRun              bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the update without making changes."`
+	Confirmed           bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the update. Set this after the user has approved the dry-run result."`
 }
 
 // RepoSettingsUpdateTool is an eino tool for updating repo settings.

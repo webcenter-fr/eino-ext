@@ -25,14 +25,14 @@ It returns the created review details.
 
 // PRReviewParams defines the parameters for reviewing a GitHub PR.
 type PRReviewParams struct {
-	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo     string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Number   int    `json:"number" validate:"required" jsonschema:"(required) PR number."`
-	Event    string `json:"event" validate:"required,oneof=APPROVE REQUEST_CHANGES COMMENT" jsonschema:"(required) Review event: APPROVE, REQUEST_CHANGES, or COMMENT."`
-	Body     string `json:"body,omitempty" jsonschema:"(optional) Review comment body."`
-	DryRun   bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the review without submitting."`
-	Confirmed bool  `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually submit the review. Set this after the user has approved the dry-run result."`
+	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Number    int    `json:"number" validate:"required" jsonschema:"(required) PR number."`
+	Event     string `json:"event" validate:"required,oneof=APPROVE REQUEST_CHANGES COMMENT" jsonschema:"(required) Review event: APPROVE, REQUEST_CHANGES, or COMMENT."`
+	Body      string `json:"body,omitempty" jsonschema:"(optional) Review comment body."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the review without submitting."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually submit the review. Set this after the user has approved the dry-run result."`
 }
 
 // PRReviewTool is an eino tool for reviewing GitHub PRs.

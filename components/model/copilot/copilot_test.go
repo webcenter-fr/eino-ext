@@ -269,10 +269,10 @@ func TestCopilotModelBaseURLOverride(t *testing.T) {
 func TestNewCopilotChatModelWithReasoning(t *testing.T) {
 	ctx := context.Background()
 	cfg := &Config{
-		CopilotToken:  "token",
-		BaseURL:       "http://localhost:0",
-		Timeout:       10 * time.Second,
-		Model:         "gpt-4o",
+		CopilotToken:    "token",
+		BaseURL:         "http://localhost:0",
+		Timeout:         10 * time.Second,
+		Model:           "gpt-4o",
 		ReasoningEffort: ReasoningEffortHigh,
 	}
 	m, err := NewCopilotChatModel(ctx, cfg)
@@ -305,8 +305,8 @@ func TestGenerateWithMockServer(t *testing.T) {
 		}
 
 		resp := copilotChatResponse{
-			ID:      "chat-1",
-			Model:   body.Model,
+			ID:    "chat-1",
+			Model: body.Model,
 			Choices: []copilotChatChoice{{
 				Index: 0,
 				Message: copilotMessage{
@@ -364,8 +364,8 @@ func TestGenerateWithToolChoice(t *testing.T) {
 		}
 
 		resp := copilotChatResponse{
-			ID:      "chat-1",
-			Model:   body.Model,
+			ID:    "chat-1",
+			Model: body.Model,
 			Choices: []copilotChatChoice{{
 				Index: 0,
 				Message: copilotMessage{
@@ -598,9 +598,9 @@ func TestUseResponsesAPI(t *testing.T) {
 	//   packages/core/test/plugin/provider-github-copilot.test.ts
 	//   "uses responses for gpt-5 models except gpt-5-mini"
 	tests := []struct {
-		model               string
+		model                string
 		forceChatCompletions bool
-		want                bool
+		want                 bool
 	}{
 		// GPT-5+ models → /responses
 		{model: "gpt-5", forceChatCompletions: false, want: true},

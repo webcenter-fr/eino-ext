@@ -278,7 +278,6 @@ func TestHandlerChatModelStepEndedRealUsageNotEstimated(t *testing.T) {
 	}
 }
 
-
 func TestHandlerChatModelStreaming(t *testing.T) {
 	h, _, ch, ctx := setup(t)
 	info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}

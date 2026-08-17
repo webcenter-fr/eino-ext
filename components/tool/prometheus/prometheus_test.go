@@ -1,9 +1,11 @@
 package prometheus
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigs_GetInstanceNames(t *testing.T) {
@@ -141,4 +143,28 @@ func TestValidateParams(t *testing.T) {
 		err := validateParams(params)
 		assert.Error(t, err)
 	})
+}
+
+// TestAlertmanagerConfigDecoupling verifies that an invalid Alertmanager config
+// (missing required Address) does not fail the Prometheus client build, while
+// the Alertmanager tools still fail for that instance.
+func TestAlertmanagerConfigDecoupling(t *testing.T) {
+	configs := Configs{
+		"prod": {
+			Address:      "http://localhost:9090",
+			Alertmanager: &AlertmanagerConfig{},
+		},
+	}
+
+	metricTool, err := NewMetricTool(context.Background(), configs)
+	require.NoError(t, err)
+	require.NotNil(t, metricTool)
+
+	_, err = NewAlertTool(context.Background(), configs)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid Alertmanager config")
+
+	_, err = NewAlertWriteTool(context.Background(), configs)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid Alertmanager config")
 }

@@ -8,9 +8,9 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 //go:embed prompts/web_search.md

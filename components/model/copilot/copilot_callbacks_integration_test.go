@@ -33,7 +33,9 @@ func (s *spyHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, _ callb
 	return ctx
 }
 
-func (s *spyHandler) OnError(ctx context.Context, _ *callbacks.RunInfo, _ error) context.Context { return ctx }
+func (s *spyHandler) OnError(ctx context.Context, _ *callbacks.RunInfo, _ error) context.Context {
+	return ctx
+}
 
 func (s *spyHandler) OnStartWithStreamInput(ctx context.Context, info *callbacks.RunInfo, in *schema.StreamReader[callbacks.CallbackInput]) context.Context {
 	in.Close()

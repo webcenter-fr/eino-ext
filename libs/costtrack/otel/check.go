@@ -32,19 +32,19 @@ func Check(ctx context.Context, rec *OTelRecorder) checkup.Results {
 	}
 
 	required := map[string]bool{
-		"tokens":            rec.tokens != nil,
-		"cost":              rec.cost != nil,
-		"savings":           rec.savings != nil,
-		"costByComponent":   rec.costByComponent != nil,
-		"tasksTotal":        rec.tasksTotal != nil,
-		"taskCostHist":      rec.taskCostHist != nil,
-		"compactions":       rec.compactions != nil,
-		"realtimeCost":      rec.realtimeCost != nil,
-		"complexityRatio":   rec.complexityRatio != nil,
-		"humanTimeSaved":    rec.humanTimeSaved != nil,
-		"moneySaved":        rec.moneySaved != nil,
-		"fallbackCount":     rec.fallbackCount != nil,
-		"costSaverRuns":     rec.costSaverRuns != nil,
+		"tokens":          rec.tokens != nil,
+		"cost":            rec.cost != nil,
+		"savings":         rec.savings != nil,
+		"costByComponent": rec.costByComponent != nil,
+		"tasksTotal":      rec.tasksTotal != nil,
+		"taskCostHist":    rec.taskCostHist != nil,
+		"compactions":     rec.compactions != nil,
+		"realtimeCost":    rec.realtimeCost != nil,
+		"complexityRatio": rec.complexityRatio != nil,
+		"humanTimeSaved":  rec.humanTimeSaved != nil,
+		"moneySaved":      rec.moneySaved != nil,
+		"fallbackCount":   rec.fallbackCount != nil,
+		"costSaverRuns":   rec.costSaverRuns != nil,
 	}
 
 	for name, ok := range required {

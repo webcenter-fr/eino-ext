@@ -14,7 +14,9 @@ type toolConstructor func(context.Context, *baseTool) (tool.InvokableTool, error
 
 // readOnlyConstructors lists all read-only GitHub tools.
 var readOnlyConstructors = []toolConstructor{
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newInstanceListTool(ctx, b.knownInstances) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newInstanceListTool(ctx, b.knownInstances)
+	},
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newIssueListTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newIssueGetTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newPRListTool(ctx, b) },

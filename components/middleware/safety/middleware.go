@@ -17,7 +17,6 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
-
 // dryRunGuidance is appended to tool outputs during dry-run mode to instruct
 // the LLM to present the preview to the user and request confirmation.
 const dryRunGuidance = "\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true."

@@ -67,6 +67,24 @@ func rangeMatrix() model.Matrix {
 	}
 }
 
+func rangeMatrixMulti() model.Matrix {
+	ts := model.TimeFromUnix(1700000000)
+	return model.Matrix{
+		&model.SampleStream{
+			Metric: model.Metric{"__name__": "up", "job": "node"},
+			Values: []model.SamplePair{{Timestamp: ts, Value: model.SampleValue(1)}},
+		},
+		&model.SampleStream{
+			Metric: model.Metric{"__name__": "up", "job": "kubelet"},
+			Values: []model.SamplePair{{Timestamp: ts, Value: model.SampleValue(2)}},
+		},
+		&model.SampleStream{
+			Metric: model.Metric{"__name__": "up", "job": "api"},
+			Values: []model.SamplePair{{Timestamp: ts, Value: model.SampleValue(3)}},
+		},
+	}
+}
+
 func TestMetricToolInstant(t *testing.T) {
 	t.Run("happy path returns instant outputs", func(t *testing.T) {
 		tool := newMetricToolWithMock(&mockMetricAPI{queryValue: instantVector()})
@@ -153,6 +171,24 @@ func TestMetricToolRange(t *testing.T) {
 		assert.Equal(t, model.SampleValue(3), outputs[0].Values[1].Value)
 	})
 
+	t.Run("range limit caps number of series", func(t *testing.T) {
+		tool := newMetricToolWithMock(&mockMetricAPI{rangeValue: rangeMatrixMulti()})
+		result, err := tool.Invoke(context.Background(), &MetricParams{
+			Instance: "prod",
+			Mode:     "range",
+			Query:    "up",
+			Start:    "2023-11-14T00:00:00Z",
+			End:      "2023-11-14T01:00:00Z",
+			Step:     "15s",
+			Limit:    2,
+		})
+		require.NoError(t, err)
+
+		var outputs []MetricRangeOutput
+		require.NoError(t, json.Unmarshal([]byte(result), &outputs))
+		require.Len(t, outputs, 2)
+	})
+
 	t.Run("step below 15s returns error", func(t *testing.T) {
 		tool := newMetricToolWithMock(&mockMetricAPI{})
 		_, err := tool.Invoke(context.Background(), &MetricParams{
@@ -194,24 +230,66 @@ func TestMetricToolRange(t *testing.T) {
 }
 
 func TestMetricToolSubqueryLimit(t *testing.T) {
-	for _, mode := range []string{"instant", "range"} {
-		t.Run(mode, func(t *testing.T) {
-			tool := newMetricToolWithMock(&mockMetricAPI{})
-			params := &MetricParams{
-				Instance: "prod",
-				Mode:     mode,
-				Query:    "rate(http_requests_total[8d])",
-			}
-			if mode == "range" {
-				params.Start = "2023-11-14T00:00:00Z"
-				params.End = "2023-11-14T01:00:00Z"
-				params.Step = "15s"
-			}
-			_, err := tool.Invoke(context.Background(), params)
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "exceeds 7 day limit")
-		})
+	for _, tc := range []struct {
+		query   string
+		allowed bool
+	}{
+		{query: "rate(http_requests_total[8d])", allowed: false},
+		{query: "rate(http_requests_total[8d:1h])", allowed: false},
+		{query: "rate(http_requests_total[1d:1m])", allowed: true},
+	} {
+		for _, mode := range []string{"instant", "range"} {
+			t.Run(mode+"/"+tc.query, func(t *testing.T) {
+				tool := newMetricToolWithMock(&mockMetricAPI{
+					queryValue: instantVector(),
+					rangeValue: rangeMatrix(),
+				})
+				params := &MetricParams{
+					Instance: "prod",
+					Mode:     mode,
+					Query:    tc.query,
+				}
+				if mode == "range" {
+					params.Start = "2023-11-14T00:00:00Z"
+					params.End = "2023-11-14T01:00:00Z"
+					params.Step = "15s"
+				}
+				_, err := tool.Invoke(context.Background(), params)
+				if tc.allowed {
+					assert.NoError(t, err)
+				} else {
+					assert.Error(t, err)
+					assert.Contains(t, err.Error(), "exceeds 7 day limit")
+				}
+			})
+		}
 	}
+}
+
+func TestMetricToolFractionalSeconds(t *testing.T) {
+	t.Run("instant accepts fractional seconds", func(t *testing.T) {
+		tool := newMetricToolWithMock(&mockMetricAPI{queryValue: instantVector()})
+		_, err := tool.Invoke(context.Background(), &MetricParams{
+			Instance: "prod",
+			Mode:     "instant",
+			Query:    "up",
+			Time:     "2024-01-01T00:00:00.123Z",
+		})
+		assert.NoError(t, err)
+	})
+
+	t.Run("range accepts fractional seconds", func(t *testing.T) {
+		tool := newMetricToolWithMock(&mockMetricAPI{rangeValue: rangeMatrix()})
+		_, err := tool.Invoke(context.Background(), &MetricParams{
+			Instance: "prod",
+			Mode:     "range",
+			Query:    "up",
+			Start:    "2024-01-01T00:00:00.123Z",
+			End:      "2024-01-01T01:00:00.123Z",
+			Step:     "15s",
+		})
+		assert.NoError(t, err)
+	})
 }
 
 func TestMetricToolValidation(t *testing.T) {

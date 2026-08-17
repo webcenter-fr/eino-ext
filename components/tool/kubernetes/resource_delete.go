@@ -10,8 +10,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // blocklistedResources maps (apiGroup, resourcePlural) combinations that must not be
@@ -35,7 +35,7 @@ var blocklistedResources = map[string]map[string]bool{
 	},
 	"admissionregistration.k8s.io": {
 		"validatingwebhookconfigurations": true,
-		"mutatingwebhookconfigurations": true,
+		"mutatingwebhookconfigurations":   true,
 	},
 	"node.k8s.io": {
 		"runtimeclasses": true,

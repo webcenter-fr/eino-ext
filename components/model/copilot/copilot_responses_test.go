@@ -29,8 +29,8 @@ func TestResponsesNonStreaming(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		resp := responsesResponse{
-			ID:        "resp-1",
-			Model:     body.Model,
+			ID:    "resp-1",
+			Model: body.Model,
 			Output: []responsesOutputItem{
 				{
 					Type: "message",

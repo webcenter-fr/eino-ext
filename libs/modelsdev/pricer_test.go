@@ -232,9 +232,9 @@ func TestCatalogPricer_Breakdown_UnknownModel(t *testing.T) {
 func TestCatalogPricer_BackwardCompatible(t *testing.T) {
 	c := testCatalog()
 	tests := []struct {
-		name   string
+		name    string
 		resolve func(string) (string, string, bool)
-		tokens activity.Tokens
+		tokens  activity.Tokens
 	}{
 		{"known model", func(gw string) (string, string, bool) { return "anthropic", "claude-opus-4-5", true }, activity.Tokens{Input: 1_000_000, Output: 1_000_000, Cache: activity.CacheTokens{Read: 500_000, Write: 100_000}}},
 		{"copilot zero", func(gw string) (string, string, bool) { return "github-copilot", "claude-opus-4.5", true }, activity.Tokens{Input: 1_000_000}},

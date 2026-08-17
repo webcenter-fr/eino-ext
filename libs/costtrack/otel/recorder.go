@@ -38,11 +38,11 @@ type OTelRecorder struct {
 	compactions     *otelmetrics.IntCounter
 	realtimeCost    *otelmetrics.Gauge
 
-	complexityRatio     *otelmetrics.Gauge
-	humanTimeSaved      *otelmetrics.Gauge
-	moneySaved          *otelmetrics.Gauge
-	fallbackCount       *otelmetrics.IntCounter
-	costSaverRuns       *otelmetrics.IntCounter
+	complexityRatio *otelmetrics.Gauge
+	humanTimeSaved  *otelmetrics.Gauge
+	moneySaved      *otelmetrics.Gauge
+	fallbackCount   *otelmetrics.IntCounter
+	costSaverRuns   *otelmetrics.IntCounter
 }
 
 var _ costtrack.Recorder = (*OTelRecorder)(nil)
@@ -117,20 +117,20 @@ func NewOTelRecorder(ctx context.Context, cfg *Config) (*OTelRecorder, error) {
 	}
 
 	return &OTelRecorder{
-		scope:            s,
-		tokens:           tokens,
-		cost:             cost,
-		savings:          savings,
-		costByComponent:  costByComponent,
-		tasksTotal:       tasksTotal,
-		taskCostHist:     taskCostHist,
-		compactions:      compactions,
-		realtimeCost:     realtimeCost,
-		complexityRatio:  complexityRatio,
-		humanTimeSaved:   humanTimeSaved,
-		moneySaved:       moneySaved,
-		fallbackCount:    fallbackCount,
-		costSaverRuns:    costSaverRuns,
+		scope:           s,
+		tokens:          tokens,
+		cost:            cost,
+		savings:         savings,
+		costByComponent: costByComponent,
+		tasksTotal:      tasksTotal,
+		taskCostHist:    taskCostHist,
+		compactions:     compactions,
+		realtimeCost:    realtimeCost,
+		complexityRatio: complexityRatio,
+		humanTimeSaved:  humanTimeSaved,
+		moneySaved:      moneySaved,
+		fallbackCount:   fallbackCount,
+		costSaverRuns:   costSaverRuns,
 	}, nil
 }
 

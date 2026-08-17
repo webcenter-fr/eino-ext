@@ -52,14 +52,14 @@ var DefaultImageMap = map[string]string{
 }
 
 var markerToProfile = map[string]string{
-	"go.mod":          "golang",
-	"package.json":    "node",
-	"pyproject.toml":  "python",
+	"go.mod":           "golang",
+	"package.json":     "node",
+	"pyproject.toml":   "python",
 	"requirements.txt": "python",
-	"setup.py":        "python",
-	"pom.xml":         "java",
-	"build.gradle":    "java",
+	"setup.py":         "python",
+	"pom.xml":          "java",
+	"build.gradle":     "java",
 	"build.gradle.kts": "java",
-	"Cargo.toml":      "rust",
-	"composer.json":   "php",
+	"Cargo.toml":       "rust",
+	"composer.json":    "php",
 }

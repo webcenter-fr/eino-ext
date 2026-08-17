@@ -24,21 +24,21 @@ import (
 // from these type definitions.
 
 type responsesRequest struct {
-	Model          string               `json:"model"`
-	Input          []responsesInputItem `json:"input"`
-	MaxOutputTokens *int                `json:"max_output_tokens,omitempty"`
-	Temperature    *float32             `json:"temperature,omitempty"`
-	TopP           *float32             `json:"top_p,omitempty"`
-	Stream         bool                 `json:"stream"`
+	Model           string               `json:"model"`
+	Input           []responsesInputItem `json:"input"`
+	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
+	Temperature     *float32             `json:"temperature,omitempty"`
+	TopP            *float32             `json:"top_p,omitempty"`
+	Stream          bool                 `json:"stream"`
 	// GitHub Copilot's /responses endpoint does not support the `store`
 	// parameter (it rejects any value with a 400 "store is not supported").
 	// Copilot is stateless: reasoning is round-tripped via encrypted_content
 	// rather than server-side stored items, so store is always omitted.
-	Store          bool                 `json:"store,omitempty"`
-	Tools          []responsesTool      `json:"tools,omitempty"`
-	ToolChoice     any                  `json:"tool_choice,omitempty"`
-	Include        []string             `json:"include,omitempty"`
-	Reasoning      *responsesReasoning  `json:"reasoning,omitempty"`
+	Store      bool                `json:"store,omitempty"`
+	Tools      []responsesTool     `json:"tools,omitempty"`
+	ToolChoice any                 `json:"tool_choice,omitempty"`
+	Include    []string            `json:"include,omitempty"`
+	Reasoning  *responsesReasoning `json:"reasoning,omitempty"`
 }
 
 type responsesReasoning struct {
@@ -49,17 +49,17 @@ type responsesReasoning struct {
 // responsesInputItem is a union of input item types. Only the ones eino uses are
 // represented.
 type responsesInputItem struct {
-	Type    string                   `json:"type,omitempty"`
-	Role    string                   `json:"role,omitempty"`
-	Content any                      `json:"content,omitempty"`
-	ID      string                   `json:"id,omitempty"`
-	CallID  string                   `json:"call_id,omitempty"`
-	Name    string                   `json:"name,omitempty"`
-	Arguments string                 `json:"arguments,omitempty"`
-	Output  string                   `json:"output,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Content   any    `json:"content,omitempty"`
+	ID        string `json:"id,omitempty"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Output    string `json:"output,omitempty"`
 
 	// reasoning fields
-	EncryptedContent string            `json:"encrypted_content,omitempty"`
+	EncryptedContent string                 `json:"encrypted_content,omitempty"`
 	Summary          []responsesSummaryPart `json:"summary,omitempty"`
 }
 
@@ -69,41 +69,41 @@ type responsesSummaryPart struct {
 }
 
 type responsesTool struct {
-	Type     string             `json:"type"`
-	Name     string             `json:"name,omitempty"`
+	Type        string          `json:"type"`
+	Name        string          `json:"name,omitempty"`
 	Description string          `json:"description,omitempty"`
-	Parameters json.RawMessage  `json:"parameters,omitempty"`
-	Strict   bool               `json:"strict,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
 }
 
 // responsesOutputItem represents an item in the response output array.
 type responsesOutputItem struct {
-	Type    string `json:"type"`
-	Role    string `json:"role,omitempty"`
-	ID      string `json:"id,omitempty"`
-	Content []responsesContentPart `json:"content,omitempty"`
-	CallID  string `json:"call_id,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	EncryptedContent string            `json:"encrypted_content,omitempty"`
-	Summary   []responsesSummaryPart    `json:"summary,omitempty"`
+	Type             string                 `json:"type"`
+	Role             string                 `json:"role,omitempty"`
+	ID               string                 `json:"id,omitempty"`
+	Content          []responsesContentPart `json:"content,omitempty"`
+	CallID           string                 `json:"call_id,omitempty"`
+	Name             string                 `json:"name,omitempty"`
+	Arguments        string                 `json:"arguments,omitempty"`
+	EncryptedContent string                 `json:"encrypted_content,omitempty"`
+	Summary          []responsesSummaryPart `json:"summary,omitempty"`
 }
 
 type responsesContentPart struct {
-	Type      string                   `json:"type"`
-	Text      string                   `json:"text,omitempty"`
-	LogProbs  interface{}              `json:"logprobs,omitempty"`
-	Annotations []interface{}          `json:"annotations,omitempty"`
+	Type        string        `json:"type"`
+	Text        string        `json:"text,omitempty"`
+	LogProbs    interface{}   `json:"logprobs,omitempty"`
+	Annotations []interface{} `json:"annotations,omitempty"`
 }
 
 type responsesResponse struct {
-	ID         string                `json:"id"`
-	CreatedAt  int64                 `json:"created_at"`
-	Model      string                `json:"model"`
-	Output     []responsesOutputItem `json:"output"`
-	Usage      *responsesUsage       `json:"usage,omitempty"`
+	ID                string                      `json:"id"`
+	CreatedAt         int64                       `json:"created_at"`
+	Model             string                      `json:"model"`
+	Output            []responsesOutputItem       `json:"output"`
+	Usage             *responsesUsage             `json:"usage,omitempty"`
 	IncompleteDetails *responsesIncompleteDetails `json:"incomplete_details,omitempty"`
-	Error      *responsesAPIError    `json:"error,omitempty"`
+	Error             *responsesAPIError          `json:"error,omitempty"`
 }
 
 type responsesIncompleteDetails struct {
@@ -111,11 +111,11 @@ type responsesIncompleteDetails struct {
 }
 
 type responsesUsage struct {
-	InputTokens          int                         `json:"input_tokens"`
-	OutputTokens         int                         `json:"output_tokens"`
-	TotalTokens          int                         `json:"total_tokens"`
-	InputTokensDetails   *responsesInputTokDetails   `json:"input_tokens_details,omitempty"`
-	OutputTokensDetails  *responsesOutputTokDetails  `json:"output_tokens_details,omitempty"`
+	InputTokens         int                        `json:"input_tokens"`
+	OutputTokens        int                        `json:"output_tokens"`
+	TotalTokens         int                        `json:"total_tokens"`
+	InputTokensDetails  *responsesInputTokDetails  `json:"input_tokens_details,omitempty"`
+	OutputTokensDetails *responsesOutputTokDetails `json:"output_tokens_details,omitempty"`
 }
 
 type responsesInputTokDetails struct {
@@ -532,7 +532,7 @@ func (m *CopilotModel) sendResponsesRequestOnce(ctx context.Context, payload []b
 // parseResponsesOutput converts a /responses API response into an eino Message.
 func parseResponsesOutput(r *responsesResponse) (*schema.Message, error) {
 	msg := &schema.Message{
-		Role: schema.Assistant,
+		Role:  schema.Assistant,
 		Extra: make(map[string]any),
 	}
 	if r.ID != "" {

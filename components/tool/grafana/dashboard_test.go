@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/goccy/go-json"
@@ -146,4 +147,49 @@ func TestDashboardToolConstructor(t *testing.T) {
 	info, err := tool.Info(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "grafana_dashboard", info.Name)
+}
+
+func TestDashboardParamsSearchInputLimits(t *testing.T) {
+	t.Run("query over 1024 chars rejected", func(t *testing.T) {
+		err := validateParams(&DashboardParams{Instance: "t", Query: strings.Repeat("q", 1025)})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid parameters")
+	})
+
+	t.Run("filter over 4096 chars rejected", func(t *testing.T) {
+		err := validateParams(&DashboardParams{Instance: "t", Filter: strings.Repeat("f", 4097)})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid parameters")
+	})
+
+	t.Run("too many tags rejected", func(t *testing.T) {
+		tags := make([]string, 65)
+		for i := range tags {
+			tags[i] = "tag"
+		}
+		err := validateParams(&DashboardParams{Instance: "t", Tags: tags})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid parameters")
+	})
+
+	t.Run("too many folder UIDs rejected", func(t *testing.T) {
+		folders := make([]string, 65)
+		for i := range folders {
+			folders[i] = "folder"
+		}
+		err := validateParams(&DashboardParams{Instance: "t", FolderUIDs: folders})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid parameters")
+	})
+
+	t.Run("within limits accepted", func(t *testing.T) {
+		err := validateParams(&DashboardParams{
+			Instance:   "t",
+			Query:      strings.Repeat("q", 1024),
+			Filter:     strings.Repeat("f", 4096),
+			Tags:       make([]string, 64),
+			FolderUIDs: make([]string, 64),
+		})
+		assert.NoError(t, err)
+	})
 }

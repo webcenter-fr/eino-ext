@@ -15,22 +15,40 @@ type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 // readOnlyConstructors lists all read-only ArgoCD tools (list + describe).
 var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewInstanceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewApplicationListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewApplicationDescribeTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewCertificateListTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewApplicationListTool(ctx, c)
+	},
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewApplicationDescribeTool(ctx, c)
+	},
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewCertificateListTool(ctx, c)
+	},
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewClusterListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewClusterDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewClusterDescribeTool(ctx, c)
+	},
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewProjectListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewProjectDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewProjectDescribeTool(ctx, c)
+	},
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewRepositoryListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewRepositoryDescribeTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewRepositoryDescribeTool(ctx, c)
+	},
 }
 
 // writeConstructors lists all write/destructive ArgoCD tools.
 var writeConstructors = []toolConstructor{
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewApplicationCreateTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewApplicationDeleteTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewApplicationSyncTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewApplicationCreateTool(ctx, c)
+	},
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewApplicationDeleteTool(ctx, c)
+	},
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) {
+		return NewApplicationSyncTool(ctx, c)
+	},
 }
 
 // buildTools creates tools from the given constructors.

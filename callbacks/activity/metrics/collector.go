@@ -41,7 +41,7 @@ type Collector struct {
 
 // CostSaverConfig configures the cost saver feature.
 type CostSaverConfig struct {
-	Enabled        bool                                `json:"enabled"`
+	Enabled        bool                               `json:"enabled"`
 	AnalyzerConfig *activity.ComplexityAnalyzerConfig `json:"analyzer_config"`
 }
 

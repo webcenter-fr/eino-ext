@@ -62,16 +62,16 @@ func typedSlice(m map[string]any, key string) []any {
 }
 
 var (
-	errHostNetwork             = errors.New("hostNetwork is not allowed")
-	errHostPID                 = errors.New("hostPID is not allowed")
-	errHostIPC                 = errors.New("hostIPC is not allowed")
-	errPrivileged              = errors.New("privileged containers are not allowed")
-	errSYSADMIN                = errors.New("SYS_ADMIN capability is not allowed")
-	errPrivilegeEscalation     = errors.New("allowPrivilegeEscalation must be false; use true only when explicitly approved")
-	errHostPathVolume          = errors.New("hostPath volumes are not allowed")
-	errDangerousMount          = errors.New("mounting sensitive host path is not allowed")
-	errDangerousSubPath        = errors.New("volume mount subPath traversal is not allowed")
-	errDangerousCapabilityFmt  = "capability %q is not allowed"
+	errHostNetwork            = errors.New("hostNetwork is not allowed")
+	errHostPID                = errors.New("hostPID is not allowed")
+	errHostIPC                = errors.New("hostIPC is not allowed")
+	errPrivileged             = errors.New("privileged containers are not allowed")
+	errSYSADMIN               = errors.New("SYS_ADMIN capability is not allowed")
+	errPrivilegeEscalation    = errors.New("allowPrivilegeEscalation must be false; use true only when explicitly approved")
+	errHostPathVolume         = errors.New("hostPath volumes are not allowed")
+	errDangerousMount         = errors.New("mounting sensitive host path is not allowed")
+	errDangerousSubPath       = errors.New("volume mount subPath traversal is not allowed")
+	errDangerousCapabilityFmt = "capability %q is not allowed"
 )
 
 // dangerousCapabilities lists Linux capabilities that grant a container
@@ -92,12 +92,12 @@ var dangerousCapabilities = map[string]bool{
 }
 
 var sensitiveHostPaths = map[string]bool{
-	"/proc":                 true,
-	"/sys":                  true,
-	"/etc/kubernetes":       true,
-	"/var/run/docker.sock":  true,
-	"/var/run/crio":         true,
-	"/var/run/containerd":   true,
+	"/proc":                true,
+	"/sys":                 true,
+	"/etc/kubernetes":      true,
+	"/var/run/docker.sock": true,
+	"/var/run/crio":        true,
+	"/var/run/containerd":  true,
 }
 
 // validateContainerPaths checks all container lists (containers, initContainers,

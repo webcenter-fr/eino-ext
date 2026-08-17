@@ -17,12 +17,12 @@ import (
 // blocklistedKinds contains Kubernetes resource kinds that must not be created
 // via the dynamic resource tools due to their security impact.
 var blocklistedKinds = map[string]bool{
-	"ClusterRole":        true,
-	"ClusterRoleBinding": true,
-	"Namespace":          true,
-	"NetworkPolicy":      true,
-	"PodSecurityPolicy":  true,
-	"PriorityClass":      true,
+	"ClusterRole":                    true,
+	"ClusterRoleBinding":             true,
+	"Namespace":                      true,
+	"NetworkPolicy":                  true,
+	"PodSecurityPolicy":              true,
+	"PriorityClass":                  true,
 	"ValidatingWebhookConfiguration": true,
 	"MutatingWebhookConfiguration":   true,
 	"RuntimeClass":                   true,

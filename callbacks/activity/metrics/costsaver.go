@@ -9,7 +9,7 @@ import (
 // CostSaverCollector records metrics for LLM-based cost savings analysis.
 // It exposes gauges for complexity ratio, human time saved, and money saved.
 type CostSaverCollector struct {
-	complexityRatio      *prometheus.GaugeVec
+	complexityRatio       *prometheus.GaugeVec
 	humanTimeSavedSeconds *prometheus.GaugeVec
 	moneySavedUSD         *prometheus.GaugeVec
 	fallbackCount         *prometheus.CounterVec

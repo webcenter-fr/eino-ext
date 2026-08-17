@@ -53,7 +53,7 @@ func newTestMiddleware(t *testing.T, enhanceResult string, enhanceErr error, aut
 	}
 	mw, err := NewMiddleware(&Config{
 		Enhancer:      enhancer,
-		AutoAccept:     autoAccept,
+		AutoAccept:    autoAccept,
 		ShouldEnhance: shouldEnhance,
 	})
 	if err != nil {

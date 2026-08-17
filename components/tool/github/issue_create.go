@@ -21,15 +21,15 @@ It returns the created issue details.
 
 // IssueCreateParams defines the parameters for creating a GitHub issue.
 type IssueCreateParams struct {
-	Instance  string   `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner     string   `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo      string   `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Title     string   `json:"title" validate:"required" jsonschema:"(required) The issue title."`
-	Body      string   `json:"body,omitempty" jsonschema:"(optional) The issue body."`
-	Labels    string   `json:"labels,omitempty" jsonschema:"(optional) Comma-separated labels."`
-	Assignee  string   `json:"assignee,omitempty" jsonschema:"(optional) Assignee login."`
-	DryRun    bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the issue creation without making changes."`
-	Confirmed bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the issue creation. Set this after the user has approved the dry-run result."`
+	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Title     string `json:"title" validate:"required" jsonschema:"(required) The issue title."`
+	Body      string `json:"body,omitempty" jsonschema:"(optional) The issue body."`
+	Labels    string `json:"labels,omitempty" jsonschema:"(optional) Comma-separated labels."`
+	Assignee  string `json:"assignee,omitempty" jsonschema:"(optional) Assignee login."`
+	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the issue creation without making changes."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the issue creation. Set this after the user has approved the dry-run result."`
 }
 
 // IssueCreateTool is an eino tool for creating GitHub issues.

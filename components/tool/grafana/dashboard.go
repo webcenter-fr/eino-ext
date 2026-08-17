@@ -36,12 +36,12 @@ type DashboardParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Grafana instance to connect to."`
 	UID      string `json:"uid,omitempty" jsonschema:"(optional) If set, return the full dashboard with this UID (describe mode, single object). If empty, search dashboards (list mode, array)."`
 	// search-mode fields (ignored when UID is set)
-	Query      string             `json:"query,omitempty" jsonschema:"(optional, search mode) Title search query."`
+	Query      string             `json:"query,omitempty" validate:"omitempty,max=1024" jsonschema:"(optional, search mode) Title search query."`
 	Type       string             `json:"type,omitempty" validate:"omitempty,oneof=dash-db dash-folder" jsonschema:"(optional, search mode) Filter by type."`
-	Tags       []string           `json:"tags,omitempty" jsonschema:"(optional, search mode) Filter by tags (ALL must match)."`
-	FolderUIDs []string           `json:"folderUIDs,omitempty" jsonschema:"(optional, search mode) Filter by folder UIDs."`
+	Tags       []string           `json:"tags,omitempty" validate:"omitempty,max=64" jsonschema:"(optional, search mode) Filter by tags (ALL must match)."`
+	FolderUIDs []string           `json:"folderUIDs,omitempty" validate:"omitempty,max=64" jsonschema:"(optional, search mode) Filter by folder UIDs."`
 	Sort       string             `json:"sort,omitempty" validate:"omitempty,oneof=alpha_asc alpha_desc created_asc created_desc updated_asc updated_desc" jsonschema:"(optional, search mode) Sort order."`
-	Filter     string             `json:"filter,omitempty" jsonschema:"(optional, search mode) Go RE2 regex on each dashboard search output JSON."`
+	Filter     string             `json:"filter,omitempty" validate:"omitempty,max=4096" jsonschema:"(optional, search mode) Go RE2 regex on each dashboard search output JSON."`
 	Paginate   *DashboardPaginate `json:"paginate,omitempty" jsonschema:"(optional, search mode) Pagination."`
 	// describe-mode fields (ignored when UID is empty)
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=meta panels templating time annotations schemaVersion version" jsonschema:"(optional, describe mode) Fields to exclude from the dashboard output."`

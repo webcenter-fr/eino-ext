@@ -24,10 +24,10 @@ type Phase string
 
 // Known lifecycle phases.
 const (
-	PhaseRead     Phase = "read"      // Read-only tool call (list, describe, log)
-	PhaseDryRun   Phase = "dry-run"   // Write tool dry-run simulation
-	PhaseExecute  Phase = "execute"   // Write tool actual execution
-	PhaseRejected Phase = "rejected"  // Denied by gate or policy
+	PhaseRead     Phase = "read"     // Read-only tool call (list, describe, log)
+	PhaseDryRun   Phase = "dry-run"  // Write tool dry-run simulation
+	PhaseExecute  Phase = "execute"  // Write tool actual execution
+	PhaseRejected Phase = "rejected" // Denied by gate or policy
 )
 
 // MutabilityLevel marks whether a tool is read-only or write/mutative.

@@ -4,9 +4,9 @@ import "testing"
 
 func TestDetectPlan(t *testing.T) {
 	tests := []struct {
-		name     string
-		baseURL  string
-		want     Plan
+		name    string
+		baseURL string
+		want    Plan
 	}{
 		{
 			name:    "business",

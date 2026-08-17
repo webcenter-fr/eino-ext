@@ -25,17 +25,17 @@ It returns the created release details.
 
 // ReleaseCreateParams defines the parameters for creating a GitHub release.
 type ReleaseCreateParams struct {
-	Instance       string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner          string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo           string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	TagName        string `json:"tagName" validate:"required" jsonschema:"(required) Tag to create the release from."`
+	Instance        string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner           string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo            string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	TagName         string `json:"tagName" validate:"required" jsonschema:"(required) Tag to create the release from."`
 	TargetCommitish string `json:"targetCommitish,omitempty" jsonschema:"(optional) Commitish value that determines where the Git tag is created from. Defaults to the default branch."`
-	Name           string `json:"name,omitempty" jsonschema:"(optional) Release name. Defaults to tag name."`
-	Body           string `json:"body,omitempty" jsonschema:"(optional) Release body/notes."`
-	Draft          bool   `json:"draft,omitempty" jsonschema:"(optional) Mark as draft release."`
-	Prerelease     bool   `json:"prerelease,omitempty" jsonschema:"(optional) Mark as pre-release."`
-	DryRun         bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the release creation without making changes."`
-	Confirmed      bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the release creation. Set this after the user has approved the dry-run result."`
+	Name            string `json:"name,omitempty" jsonschema:"(optional) Release name. Defaults to tag name."`
+	Body            string `json:"body,omitempty" jsonschema:"(optional) Release body/notes."`
+	Draft           bool   `json:"draft,omitempty" jsonschema:"(optional) Mark as draft release."`
+	Prerelease      bool   `json:"prerelease,omitempty" jsonschema:"(optional) Mark as pre-release."`
+	DryRun          bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, simulate the release creation without making changes."`
+	Confirmed       bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the release creation. Set this after the user has approved the dry-run result."`
 }
 
 // ReleaseCreateTool is an eino tool for creating GitHub releases.

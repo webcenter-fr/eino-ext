@@ -10,8 +10,8 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -151,7 +151,7 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 			}
 			unstructured.RemoveNestedField(applied.Object, "metadata", "managedFields")
 			dryRunResult := map[string]any{
-				"dryRun":        true,
+				"dryRun":       true,
 				"wouldApplyTo": applied.Object,
 			}
 			if ownership.IsManaged {

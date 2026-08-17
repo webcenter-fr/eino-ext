@@ -10,7 +10,7 @@ import (
 )
 
 func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int   { return &i }
+func intPtr(i int) *int    { return &i }
 
 func TestListModelsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,10 +65,10 @@ func TestListModelsSuccess(t *testing.T) {
 							MaxPromptTokens:        200000,
 						},
 						Supports: copilotModelSupports{
-							ToolCalls:        true,
-							Streaming:        true,
-							AdaptiveThinking: flexibleBool{Set: true, Value: true},
-							ReasoningEffort:  []string{"low", "medium", "high"},
+							ToolCalls:         true,
+							Streaming:         true,
+							AdaptiveThinking:  flexibleBool{Set: true, Value: true},
+							ReasoningEffort:   []string{"low", "medium", "high"},
 							MaxThinkingBudget: intPtr(32000),
 						},
 					},
