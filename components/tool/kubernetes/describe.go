@@ -11,6 +11,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // DescribeParams defines the parameters for describing a Kubernetes resource.
@@ -24,10 +25,26 @@ type DescribeParams struct {
 
 type describeOutput struct {
 	metav1.TypeMeta `json:",inline"`
-	Metadata        *metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec            any                `json:"spec,omitempty"`
-	Status          any                `json:"status,omitempty"`
-	Data            any                `json:"data,omitempty"`
+	Metadata        any `json:"metadata,omitempty"`
+	Spec            any `json:"spec,omitempty"`
+	Status          any `json:"status,omitempty"`
+	Data            any `json:"data,omitempty"`
+}
+
+// unstructuredMetadata builds a *metav1.ObjectMeta from an unstructured
+// resource. Shared by the raw describe path and the curated describe
+// formatters so the metadata block is consistent across all kinds.
+func unstructuredMetadata(o *unstructured.Unstructured) *metav1.ObjectMeta {
+	return &metav1.ObjectMeta{
+		Name:              o.GetName(),
+		Namespace:         o.GetNamespace(),
+		Labels:            o.GetLabels(),
+		Annotations:       o.GetAnnotations(),
+		OwnerReferences:   o.GetOwnerReferences(),
+		ResourceVersion:   o.GetResourceVersion(),
+		CreationTimestamp: o.GetCreationTimestamp(),
+		DeletionTimestamp: o.GetDeletionTimestamp(),
+	}
 }
 
 func (o *describeOutput) applyFieldExclusions(excludeFields []string) error {
@@ -100,35 +117,32 @@ func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (stri
 		}
 	}
 
-	output := describeOutput{
+	if entry, ok := formatterRegistry[resolved.GVK]; ok && entry.describe != nil {
+		return marshalDescribeOutput(entry.describe(o), params.ExcludeFieldsOutput)
+	}
+
+	return marshalDescribeOutput(describeOutput{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       o.GetKind(),
 			APIVersion: o.GetAPIVersion(),
 		},
-		Metadata: &metav1.ObjectMeta{
-			Name:              o.GetName(),
-			Namespace:         o.GetNamespace(),
-			Labels:            o.GetLabels(),
-			Annotations:       o.GetAnnotations(),
-			OwnerReferences:   o.GetOwnerReferences(),
-			ResourceVersion:   o.GetResourceVersion(),
-			CreationTimestamp: o.GetCreationTimestamp(),
-			DeletionTimestamp: o.GetDeletionTimestamp(),
-		},
-		Spec:   o.Object["spec"],
-		Status: o.Object["status"],
-		Data:   o.Object["data"],
-	}
+		Metadata: unstructuredMetadata(o),
+		Spec:     o.Object["spec"],
+		Status:   o.Object["status"],
+		Data:     o.Object["data"],
+	}, params.ExcludeFieldsOutput)
+}
 
-	if err := output.applyFieldExclusions(params.ExcludeFieldsOutput); err != nil {
+// marshalDescribeOutput applies field exclusions and marshals a describeOutput
+// to JSON. Shared by the curated and raw describe paths.
+func marshalDescribeOutput(output describeOutput, excludeFields []string) (string, error) {
+	if err := output.applyFieldExclusions(excludeFields); err != nil {
 		return "", err
 	}
-
 	data, err := json.Marshal(output)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to marshal output")
 	}
-
 	return string(data), nil
 }
 

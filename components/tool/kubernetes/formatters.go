@@ -23,9 +23,14 @@ import (
 
 type listFormatter func(runtime.Object) json.RawMessage
 
+// describeFormatter produces a curated describeOutput for a single resource.
+// When nil, DescribeTool falls back to the raw metadata/spec/status/data dump.
+type describeFormatter func(*unstructured.Unstructured) describeOutput
+
 type formatterEntry struct {
-	newObj func() runtime.Object
-	format listFormatter
+	newObj   func() runtime.Object // nil for unstructured-only kinds
+	format   listFormatter         // list view (required)
+	describe describeFormatter     // optional curated describe view
 }
 
 var formatterRegistry = initFormatterRegistry()
@@ -622,30 +627,25 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		},
 	}
 
+	registerMonitoringFormatters(reg)
+
 	return reg
 }
 
 func defaultListFormatter(u *unstructured.Unstructured) json.RawMessage {
-	name := u.GetName()
-	namespace := u.GetNamespace()
-
 	var status string
-	if u.Object["status"] != nil {
-		if conditions, ok := u.Object["status"].(map[string]any)["conditions"]; ok {
-			if conds, ok := conditions.([]any); ok {
-				for _, c := range conds {
-					if cm, ok := c.(map[string]any); ok {
-						if cm["type"] == "Ready" {
-							if cm["status"] == "True" {
-								status = "Ready"
-							} else {
-								status = "Not Ready"
-							}
-							break
-						}
-					}
-				}
+	for _, c := range uSlice(uStatus(u), "conditions") {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if uString(cm, "type") == "Ready" {
+			if uString(cm, "status") == "True" {
+				status = "Ready"
+			} else {
+				status = "Not Ready"
 			}
+			break
 		}
 	}
 
@@ -654,8 +654,8 @@ func defaultListFormatter(u *unstructured.Unstructured) json.RawMessage {
 		Namespace string `json:"namespace"`
 		Status    string `json:"status,omitempty"`
 	}{
-		Name:      name,
-		Namespace: namespace,
+		Name:      u.GetName(),
+		Namespace: u.GetNamespace(),
 		Status:    status,
 	})
 }
@@ -683,6 +683,10 @@ func formatListItem(u *unstructured.Unstructured) json.RawMessage {
 		return defaultListFormatter(u)
 	}
 
+	if entry.newObj == nil {
+		// Unstructured-only formatter (e.g. monitoring CRDs without typed deps).
+		return entry.format(u)
+	}
 	dst := entry.newObj()
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, dst); err != nil {
 		return defaultListFormatter(u)

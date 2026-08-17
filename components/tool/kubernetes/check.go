@@ -93,7 +93,7 @@ func probeCluster(ctx context.Context, cfg *rest.Config, cluster string) checkup
 		Component: "kubernetes_list",
 		Instance:  cluster,
 		Status:    checkup.StatusLimited,
-		Message:   "CRD-only kinds (kafka, olm, ocp, spark) tested with dedicated env",
+		Message:   "CRD-only kinds (kafka, olm, ocp, spark, monitoring.coreos.com) tested with dedicated env",
 	})
 
 	results = append(results, checkup.Result{
