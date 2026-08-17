@@ -1,23 +1,22 @@
-package prometheus
+package alertmanager
 
 import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
 
 const alertDescription = `
 ** General Purpose **
-It lists alerts from the Alertmanager associated with a Prometheus instance.
+It lists alerts from an Alertmanager instance.
 Supports listing all alerts, fetching a single alert by its Alertmanager
 fingerprint, and filtering by Alertmanager state or Alertmanager matchers.
 
@@ -38,10 +37,9 @@ When 'fingerprint' is set, it takes precedence over 'alertFilter' and 'state',
 which are ignored in that case.
 `
 
-// AlertParams defines the parameters for reading alerts from Alertmanager
-// (renamed from AlertmanagerAlertListParams). Fields identical.
+// AlertParams defines the parameters for reading alerts from Alertmanager.
 type AlertParams struct {
-	Instance    string         `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query (must have Alertmanager configured)."`
+	Instance    string         `json:"instance" validate:"required" jsonschema:"(required) The Alertmanager instance to query."`
 	Fingerprint string         `json:"fingerprint,omitempty" jsonschema:"(optional) If set, return only the alert with this fingerprint. Takes precedence over AlertFilter/State."`
 	Filter      string         `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each alert JSON. Keep only alerts that match."`
 	State       string         `json:"state,omitempty" validate:"omitempty,oneof=active unprocessed suppressed" jsonschema:"(optional) Filter by Alertmanager alert state: 'active', 'unprocessed', or 'suppressed'."`
@@ -49,23 +47,21 @@ type AlertParams struct {
 	Paginate    *AlertPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
-// AlertOutput is the structured output for an Alertmanager alert
-// (renamed from AlertmanagerAlertListOutput). Fields identical.
+// AlertOutput is the structured output for an Alertmanager alert.
 type AlertOutput struct {
-	Labels      model.LabelSet `json:"labels"`
-	Annotations model.LabelSet `json:"annotations"`
-	State       string         `json:"state"`
-	StartsAt    string         `json:"startsAt"`
-	EndsAt      string         `json:"endsAt"`
-	Fingerprint string         `json:"fingerprint"`
-	SilencedBy  []string       `json:"silencedBy"`
-	Receivers   []string       `json:"receivers"`
+	Labels      models.LabelSet `json:"labels"`
+	Annotations models.LabelSet `json:"annotations"`
+	State       string          `json:"state"`
+	StartsAt    string          `json:"startsAt"`
+	EndsAt      string          `json:"endsAt"`
+	Fingerprint string          `json:"fingerprint"`
+	SilencedBy  []string        `json:"silencedBy"`
+	Receivers   []string        `json:"receivers"`
 }
 
-// AlertTool is the eino tool for reading Alertmanager alerts
-// (renamed from AlertmanagerAlertListTool). Embeds alertmanagerBaseTool only.
+// AlertTool is the eino tool for reading Alertmanager alerts.
 type AlertTool struct {
-	*alertmanagerBaseTool
+	*baseTool
 	tool.InvokableTool
 }
 
@@ -83,12 +79,12 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 		return "", errors.Wrap(err, "error when compile regex")
 	}
 
-	c, err := t.amClient(params.Instance)
+	c, err := t.client(params.Instance)
 	if err != nil {
 		return "", err
 	}
 
-	p := &amListAlertsParams{
+	p := &listAlertsParams{
 		Active:    boolPtr(true),
 		Silenced:  boolPtr(false),
 		Inhibited: boolPtr(false),
@@ -118,17 +114,17 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 	}
 
 	if params.Fingerprint != "" {
-		filtered := make([]gettableAlert, 0, 1)
+		filtered := make([]*models.GettableAlert, 0, 1)
 		for _, a := range alerts {
-			if a.Fingerprint == params.Fingerprint {
+			if a.Fingerprint != nil && *a.Fingerprint == params.Fingerprint {
 				filtered = append(filtered, a)
 			}
 		}
 		alerts = filtered
 	} else if params.State != "" {
-		filtered := make([]gettableAlert, 0, len(alerts))
+		filtered := make([]*models.GettableAlert, 0, len(alerts))
 		for _, a := range alerts {
-			if a.Status.State == params.State {
+			if a.Status != nil && a.Status.State != nil && *a.Status.State == params.State {
 				filtered = append(filtered, a)
 			}
 		}
@@ -146,11 +142,11 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 		output := AlertOutput{
 			Labels:      a.Labels,
 			Annotations: a.Annotations,
-			State:       a.Status.State,
-			StartsAt:    a.StartsAt.Format(time.RFC3339),
-			EndsAt:      a.EndsAt.Format(time.RFC3339),
-			Fingerprint: a.Fingerprint,
-			SilencedBy:  a.Status.SilencedBy,
+			State:       alertStatusState(a.Status),
+			StartsAt:    ptrDateTimeFormat(a.StartsAt),
+			EndsAt:      ptrDateTimeFormat(a.EndsAt),
+			Fingerprint: ptrString(a.Fingerprint),
+			SilencedBy:  alertStatusSilencedBy(a.Status),
 			Receivers:   receiverNames(a.Receivers),
 		}
 
@@ -170,13 +166,13 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 
 // NewAlertTool creates a new AlertTool.
 func NewAlertTool(ctx context.Context, configs Configs) (*AlertTool, error) {
-	base, err := newAlertmanagerBaseTool(ctx, configs)
+	base, err := newBaseTool(ctx, configs)
 	if err != nil {
 		return nil, err
 	}
 
-	listTool := &AlertTool{alertmanagerBaseTool: base}
-	t, err := utils.InferTool("prometheus_alert", fmt.Sprintf("%s\n%s", alertDescription, listOutputGuidance), listTool.Invoke)
+	listTool := &AlertTool{baseTool: base}
+	t, err := utils.InferTool(alertToolName, fmt.Sprintf("%s\n%s", alertDescription, listOutputGuidance), listTool.Invoke)
 	if err != nil {
 		return nil, err
 	}

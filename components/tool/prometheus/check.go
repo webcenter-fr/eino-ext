@@ -36,74 +36,10 @@ func Check(ctx context.Context, configs Configs) checkup.Results {
 			all = append(all, probeInstance(baseCtx, client, instance)...)
 		}
 
-		// Alertmanager is independent of the Prometheus client: a Prometheus
-		// client failure does not imply Alertmanager is down.
-		if cfg.Alertmanager != nil {
-			amClient, amErr := NewAlertmanagerClient(baseCtx, *cfg.Alertmanager)
-			if amErr != nil {
-				all = append(all, alertmanagerClientErrorResults(instance, amErr)...)
-			} else {
-				all = append(all,
-					probeAlert(baseCtx, amClient, instance),
-					checkup.Result{
-						Component: alertWriteToolName,
-						Instance:  instance,
-						Status:    checkup.StatusLimited,
-						Message:   "write tool, not probed to avoid side effects",
-					},
-				)
-			}
-		} else {
-			all = append(all,
-				checkup.Result{
-					Component: "prometheus_alert",
-					Instance:  instance,
-					Status:    checkup.StatusLimited,
-					Message:   "alertmanager not configured for this instance",
-				},
-				checkup.Result{
-					Component: alertWriteToolName,
-					Instance:  instance,
-					Status:    checkup.StatusLimited,
-					Message:   "alertmanager not configured for this instance",
-				},
-			)
-		}
-
 		baseCancel()
 	}
 
 	return all
-}
-
-// alertmanagerClientErrorResults returns error results for the two Alertmanager
-// components when the Alertmanager client cannot be built.
-func alertmanagerClientErrorResults(instance string, err error) checkup.Results {
-	errStr := err.Error()
-	return checkup.Results{
-		{Component: "prometheus_alert", Instance: instance, Status: checkup.StatusError, Error: errStr},
-		{Component: alertWriteToolName, Instance: instance, Status: checkup.StatusError, Error: errStr},
-	}
-}
-
-// probeAlert performs a real GET /api/v2/alerts (read-only and safe) for the
-// prometheus_alert tool.
-func probeAlert(ctx context.Context, c *alertmanagerClient, instance string) checkup.Result {
-	alerts, err := c.ListAlerts(ctx, &amListAlertsParams{Active: boolPtr(true)})
-	if err != nil {
-		return checkup.Result{
-			Component: "prometheus_alert",
-			Instance:  instance,
-			Status:    checkup.StatusError,
-			Error:     errors.Wrap(err, "failed to list Alertmanager alerts").Error(),
-		}
-	}
-	return checkup.Result{
-		Component: "prometheus_alert",
-		Instance:  instance,
-		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("%d alerts found, RBAC ok", len(alerts)),
-	}
 }
 
 func clientErrorResults(instance string, err error) checkup.Results {

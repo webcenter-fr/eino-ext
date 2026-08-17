@@ -1,62 +1,65 @@
-package prometheus
+package alertmanager
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/cloudwego/eino/components/tool"
+
 	"github.com/webcenter-fr/eino-ext/components/middleware/safety"
 )
 
+// toolConstructor is a function that creates a single Alertmanager tool from configs.
 type toolConstructor func(context.Context, Configs) (tool.InvokableTool, error)
 
+// readOnlyConstructors lists all read-only Alertmanager tools.
 var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewInstanceListTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewMetricTool(ctx, c) },
-	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewTargetListTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertTool(ctx, c) },
+	func(ctx context.Context, c Configs) (tool.InvokableTool, error) { return NewAlertWriteTool(ctx, c) },
 }
 
-// writeConstructors lists all write/destructive Prometheus tools.
+// writeConstructors lists all write/destructive Alertmanager tools.
 var writeConstructors = []toolConstructor{}
 
+// buildTools creates tools from the given constructors.
 func buildTools(ctx context.Context, configs Configs, constructors []toolConstructor) ([]tool.InvokableTool, error) {
 	tools := make([]tool.InvokableTool, 0, len(constructors))
 	for i, fn := range constructors {
 		t, err := fn(ctx, configs)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create prometheus tool %d: %w", i, err)
+			return nil, fmt.Errorf("failed to create alertmanager tool %d: %w", i, err)
 		}
 		tools = append(tools, t)
 	}
 	return tools, nil
 }
 
-// NewAllTools creates all Prometheus tools (read + write).
+// NewAllTools creates all Alertmanager tools (read + write) for the given
+// configurations and returns them as a flat slice ready to be registered with
+// an eino ToolsNode.
 func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, error) {
-	all := make([]toolConstructor, 0, len(readOnlyConstructors)+len(writeConstructors))
-	all = append(all, readOnlyConstructors...)
-	all = append(all, writeConstructors...)
-	return buildTools(ctx, configs, all)
+	return buildTools(ctx, configs, append(readOnlyConstructors, writeConstructors...))
 }
 
-// NewReadOnlyTools creates only the read-only Prometheus tools. Prometheus
-// currently exposes no write tools, so this returns the same set as
-// NewAllTools; it is kept for API symmetry with other components.
+// NewReadOnlyTools creates only the read-only Alertmanager tools and returns
+// them as a flat slice ready to be registered with an eino ToolsNode. Write
+// operations (alert write) are excluded.
 func NewReadOnlyTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, error) {
 	return buildTools(ctx, configs, readOnlyConstructors)
 }
 
-// WriteToolNames returns the names of all Prometheus write tools.
-// Prometheus currently exposes no write tools; retained for API stability and
-// safety-middleware wiring. These names can be passed to the safety
-// middleware's Config.WriteToolNames.
+// WriteToolNames returns the tool names of all Alertmanager write tools.
+// These names can be passed to the safety middleware's Config.WriteToolNames.
+// The component has no mutating tools, so this returns an empty slice.
 func WriteToolNames() []string {
 	return []string{}
 }
 
 // ExtractWriteToolNames creates all write tools from the given configs and
 // extracts their tool names via Info(). Use this when the write tool set may
-// change. For the standard set, prefer the lighter WriteToolNames().
+// change. For the standard set, prefer the lighter WriteToolNames(). The
+// component has no write tools, so this returns an empty slice with no error.
 func ExtractWriteToolNames(ctx context.Context, configs Configs) ([]string, error) {
 	tools, err := buildTools(ctx, configs, writeConstructors)
 	if err != nil {
@@ -73,27 +76,32 @@ func ExtractWriteToolNames(ctx context.Context, configs Configs) ([]string, erro
 	return names, nil
 }
 
-// NewAllToolsWithSafety creates all Prometheus tools with safety middleware.
+// NewAllToolsWithSafety creates all Alertmanager tools (read + write) and
+// returns them together with a pre-configured safety middleware. The
+// middleware's WriteToolNames are auto-populated from the known write tools.
 func NewAllToolsWithSafety(ctx context.Context, configs Configs, safetyCfg *safety.Config) ([]tool.InvokableTool, *safety.Middleware, error) {
 	tools, err := NewAllTools(ctx, configs)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	if safetyCfg == nil {
 		safetyCfg = &safety.Config{}
 	}
 	if len(safetyCfg.WriteToolNames) == 0 {
 		safetyCfg.WriteToolNames = WriteToolNames()
 	}
+
 	mw, err := safety.New(safetyCfg)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return tools, mw, nil
 }
 
 var (
 	_ tool.InvokableTool = (*InstanceListTool)(nil)
-	_ tool.InvokableTool = (*MetricTool)(nil)
-	_ tool.InvokableTool = (*TargetListTool)(nil)
+	_ tool.InvokableTool = (*AlertTool)(nil)
+	_ tool.InvokableTool = (*AlertWriteTool)(nil)
 )

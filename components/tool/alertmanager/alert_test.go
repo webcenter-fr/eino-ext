@@ -1,9 +1,10 @@
-package prometheus
+package alertmanager
 
 import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/goccy/go-json"
@@ -41,7 +42,7 @@ func newAlertTool(t *testing.T, handler http.HandlerFunc) *AlertTool {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	tool, err := NewAlertTool(context.Background(), Configs{
-		"t": {Alertmanager: &AlertmanagerConfig{Address: server.URL}},
+		"t": {Address: server.URL},
 	})
 	require.NoError(t, err)
 	return tool
@@ -100,9 +101,9 @@ func TestAlertFingerprint(t *testing.T) {
 }
 
 func TestAlertFingerprintPrecedence(t *testing.T) {
-	var gotQuery string
+	var gotQuery url.Values
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
+		gotQuery = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(amTwoAlertsJSON))
 	})
@@ -121,16 +122,17 @@ func TestAlertFingerprintPrecedence(t *testing.T) {
 	require.Len(t, outputs, 1)
 	assert.Equal(t, "fp1", outputs[0].Fingerprint)
 
-	assert.Contains(t, gotQuery, "active=true")
-	assert.Contains(t, gotQuery, "silenced=true")
-	assert.Contains(t, gotQuery, "inhibited=true")
-	assert.NotContains(t, gotQuery, "filter=")
+	assert.Equal(t, "true", gotQuery.Get("active"))
+	assert.Equal(t, "true", gotQuery.Get("silenced"))
+	assert.Equal(t, "true", gotQuery.Get("inhibited"))
+	_, hasFilter := gotQuery["filter"]
+	assert.False(t, hasFilter)
 }
 
 func TestAlertDefaultQueryParams(t *testing.T) {
-	var gotQuery string
+	var gotQuery url.Values
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
+		gotQuery = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(amTwoAlertsJSON))
 	})
@@ -141,15 +143,15 @@ func TestAlertDefaultQueryParams(t *testing.T) {
 	// Default listing must be active + unprocessed only: silenced and inhibited
 	// are explicitly excluded (Alertmanager's server default for both is true,
 	// so relying on omission would leak suppressed alerts).
-	assert.Contains(t, gotQuery, "active=true")
-	assert.Contains(t, gotQuery, "silenced=false")
-	assert.Contains(t, gotQuery, "inhibited=false")
+	assert.Equal(t, "true", gotQuery.Get("active"))
+	assert.Equal(t, "false", gotQuery.Get("silenced"))
+	assert.Equal(t, "false", gotQuery.Get("inhibited"))
 }
 
 func TestAlertSuppressedQueryParams(t *testing.T) {
-	var gotQuery string
+	var gotQuery url.Values
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
+		gotQuery = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(amTwoAlertsJSON))
 	})
@@ -158,9 +160,9 @@ func TestAlertSuppressedQueryParams(t *testing.T) {
 	require.NoError(t, err)
 
 	// Suppressed = silenced OR inhibited, so both categories must be requested.
-	assert.Contains(t, gotQuery, "active=true")
-	assert.Contains(t, gotQuery, "silenced=true")
-	assert.Contains(t, gotQuery, "inhibited=true")
+	assert.Equal(t, "true", gotQuery.Get("active"))
+	assert.Equal(t, "true", gotQuery.Get("silenced"))
+	assert.Equal(t, "true", gotQuery.Get("inhibited"))
 }
 
 func TestAlertStateFilter(t *testing.T) {
@@ -179,9 +181,9 @@ func TestAlertStateFilter(t *testing.T) {
 }
 
 func TestAlertFilterPassedToAPI(t *testing.T) {
-	var gotQuery string
+	var gotQuery url.Values
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
+		gotQuery = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(amTwoAlertsJSON))
 	})
@@ -192,8 +194,7 @@ func TestAlertFilterPassedToAPI(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Contains(t, gotQuery, "filter=alertname%3D%22HighCPU%22")
-	assert.Contains(t, gotQuery, "filter=severity%3D%22critical%22")
+	assert.Equal(t, []string{`alertname="HighCPU"`, `severity="critical"`}, gotQuery["filter"])
 }
 
 func TestAlertRegexFilter(t *testing.T) {
@@ -300,12 +301,42 @@ func TestAlertInvalidState(t *testing.T) {
 func TestAlertAPIError(t *testing.T) {
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":"boom"}`))
+		_, _ = w.Write([]byte(`"boom"`))
 	})
 
 	_, err := tool.Invoke(context.Background(), &AlertParams{Instance: "t"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list Alertmanager alerts")
+	assert.Contains(t, err.Error(), "getAlertsInternalServerError")
+}
+
+func TestAlertNilStatus(t *testing.T) {
+	// An alert whose JSON omits the (optional-in-practice) "status" field must
+	// not panic the output loop. The official model's GettableAlert.Status is a
+	// *AlertStatus pointer, so a nil Status must be tolerated.
+	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"labels":{"alertname":"NoStatus"},
+			"annotations":{},
+			"generatorURL":"http://gen/1",
+			"startsAt":"2026-08-17T10:00:00Z",
+			"updatedAt":"2026-08-17T10:01:00Z",
+			"endsAt":"2026-08-17T10:30:00Z",
+			"fingerprint":"fp-nostatus",
+			"receivers":[{"name":"slack"}]
+		}]`))
+	})
+
+	result, err := tool.Invoke(context.Background(), &AlertParams{Instance: "t"})
+	require.NoError(t, err)
+
+	var outputs []AlertOutput
+	require.NoError(t, json.Unmarshal([]byte(result), &outputs))
+	require.Len(t, outputs, 1)
+	assert.Equal(t, "", outputs[0].State)
+	assert.Empty(t, outputs[0].SilencedBy)
+	assert.Equal(t, "fp-nostatus", outputs[0].Fingerprint)
 }
 
 func TestAlertConstructor(t *testing.T) {
@@ -315,5 +346,5 @@ func TestAlertConstructor(t *testing.T) {
 
 	info, err := tool.Info(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, "prometheus_alert", info.Name)
+	assert.Equal(t, "alertmanager_alert", info.Name)
 }

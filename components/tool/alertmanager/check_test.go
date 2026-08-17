@@ -1,8 +1,12 @@
-package prometheus
+package alertmanager
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/checkup"
 )
@@ -16,8 +20,8 @@ func TestCheckEmptyConfigs(t *testing.T) {
 	if results[0].Status != checkup.StatusError {
 		t.Errorf("expected status error, got %s", results[0].Status)
 	}
-	if results[0].Component != "prometheus" {
-		t.Errorf("expected component prometheus, got %s", results[0].Component)
+	if results[0].Component != "alertmanager" {
+		t.Errorf("expected component alertmanager, got %s", results[0].Component)
 	}
 }
 
@@ -41,15 +45,29 @@ func TestCheckInvalidInstance(t *testing.T) {
 		t.Fatal("expected non-empty results")
 	}
 	if len(results) != 3 {
-		t.Fatalf("expected 3 results (3 prometheus tools), got %d", len(results))
+		t.Fatalf("expected 3 results, got %d", len(results))
 	}
 
+	expected := map[string]bool{
+		"alertmanager_instance_list": false,
+		"alertmanager_alert":         false,
+		"alertmanager_alert_write":   false,
+	}
 	for _, r := range results {
 		if r.Instance != "bad" {
 			t.Errorf("expected instance 'bad', got %s", r.Instance)
 		}
 		if r.Status != checkup.StatusError {
 			t.Errorf("expected error result for %s, got %s", r.Component, r.Status)
+		}
+		if _, ok := expected[r.Component]; !ok {
+			t.Errorf("unexpected component %s", r.Component)
+		}
+		expected[r.Component] = true
+	}
+	for name, seen := range expected {
+		if !seen {
+			t.Errorf("missing result for %s", name)
 		}
 	}
 }
@@ -80,5 +98,48 @@ func TestCheckClientErrorResults(t *testing.T) {
 		if rr.Status != checkup.StatusError {
 			t.Errorf("result %d: expected status error, got %q", i, rr.Status)
 		}
+	}
+}
+
+func TestAllComponentNames(t *testing.T) {
+	names := allComponentNames()
+	if len(names) != 3 {
+		t.Fatalf("expected 3 names, got %d", len(names))
+	}
+	seen := make(map[string]bool)
+	for _, name := range names {
+		if seen[name] {
+			t.Errorf("duplicate name: %s", name)
+		}
+		seen[name] = true
+	}
+}
+
+func TestProbeInstanceWriteToolStatus(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	c, err := NewClient(ctx, Config{Address: server.URL})
+	require.NoError(t, err)
+
+	results := probeInstance(ctx, c, "t")
+	var write checkup.Result
+	for _, r := range results {
+		if r.Component == alertWriteToolName {
+			write = r
+		}
+	}
+	if write.Component == "" {
+		t.Fatal("expected a result for alertmanager_alert_write")
+	}
+	if write.Status != checkup.StatusOK {
+		t.Errorf("expected StatusOK, got %q", write.Status)
+	}
+	if write.Message != "guidance tool, no external call required" {
+		t.Errorf("unexpected message %q", write.Message)
 	}
 }

@@ -1,11 +1,9 @@
 package prometheus
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConfigs_GetInstanceNames(t *testing.T) {
@@ -79,92 +77,44 @@ func TestInstanceNotFoundError(t *testing.T) {
 
 func TestValidateParams(t *testing.T) {
 	t.Run("valid params", func(t *testing.T) {
-		params := &AlertParams{
+		params := &TargetListParams{
 			Instance: "prod",
 		}
 		err := validateParams(params)
 		assert.NoError(t, err)
 	})
 
-	t.Run("valid params with state", func(t *testing.T) {
-		params := &AlertParams{
+	t.Run("valid params with health", func(t *testing.T) {
+		params := &TargetListParams{
 			Instance: "prod",
-			State:    "active",
+			Health:   "up",
 		}
 		err := validateParams(params)
 		assert.NoError(t, err)
 	})
 
-	t.Run("valid params with pagination", func(t *testing.T) {
-		params := &AlertParams{
+	t.Run("valid params with filter", func(t *testing.T) {
+		params := &TargetListParams{
 			Instance: "prod",
-			Paginate: &AlertPaginate{
-				PageSize: 10,
-			},
+			Filter:   "node.*",
 		}
 		err := validateParams(params)
 		assert.NoError(t, err)
 	})
 
 	t.Run("missing required instance", func(t *testing.T) {
-		params := &AlertParams{}
+		params := &TargetListParams{}
 		err := validateParams(params)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid parameters")
 	})
 
-	t.Run("invalid state value", func(t *testing.T) {
-		params := &AlertParams{
+	t.Run("invalid health value", func(t *testing.T) {
+		params := &TargetListParams{
 			Instance: "prod",
-			State:    "invalid-state",
+			Health:   "broken",
 		}
 		err := validateParams(params)
 		assert.Error(t, err)
 	})
-
-	t.Run("page size below minimum", func(t *testing.T) {
-		params := &AlertParams{
-			Instance: "prod",
-			Paginate: &AlertPaginate{
-				PageSize: -1,
-			},
-		}
-		err := validateParams(params)
-		assert.Error(t, err)
-	})
-
-	t.Run("page size above maximum", func(t *testing.T) {
-		params := &AlertParams{
-			Instance: "prod",
-			Paginate: &AlertPaginate{
-				PageSize: 501,
-			},
-		}
-		err := validateParams(params)
-		assert.Error(t, err)
-	})
-}
-
-// TestAlertmanagerConfigDecoupling verifies that an invalid Alertmanager config
-// (missing required Address) does not fail the Prometheus client build, while
-// the Alertmanager tools still fail for that instance.
-func TestAlertmanagerConfigDecoupling(t *testing.T) {
-	configs := Configs{
-		"prod": {
-			Address:      "http://localhost:9090",
-			Alertmanager: &AlertmanagerConfig{},
-		},
-	}
-
-	metricTool, err := NewMetricTool(context.Background(), configs)
-	require.NoError(t, err)
-	require.NotNil(t, metricTool)
-
-	_, err = NewAlertTool(context.Background(), configs)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Alertmanager config")
-
-	_, err = NewAlertWriteTool(context.Background(), configs)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Alertmanager config")
 }
