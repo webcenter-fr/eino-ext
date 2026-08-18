@@ -58,7 +58,7 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 
 	// Validate StartLine/EndLine
 	if params.StartLine > 0 && params.EndLine > 0 && params.StartLine > params.EndLine {
-		return "", errors.Errorf("startLine (%d) must be <= endLine (%d)", params.StartLine, params.EndLine)
+		return "", errors.Errorf("parameter 'startLine' (%d) must be <= 'endLine' (%d); swap or correct the values and retry", params.StartLine, params.EndLine)
 	}
 
 	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)

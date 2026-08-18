@@ -91,17 +91,17 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 	switch params.Operation {
 	case "create", "update":
 		if params.Dashboard == "" {
-			return "", errors.Errorf("dashboard is required for %s", params.Operation)
+			return "", errors.Errorf("parameter 'dashboard' is required for operation %q; provide the full dashboard model JSON (including 'title') and retry", params.Operation)
 		}
 
 		var dashboardModel map[string]any
 		if err := json.Unmarshal([]byte(params.Dashboard), &dashboardModel); err != nil {
-			return "", errors.Wrap(err, "invalid dashboard JSON")
+			return "", errors.Wrap(err, "parameter 'dashboard' is not valid JSON; fix the dashboard model and retry")
 		}
 
 		title, _ := dashboardModel["title"].(string)
 		if title == "" {
-			return "", errors.Errorf("dashboard model must include a title")
+			return "", errors.New("parameter 'dashboard' is missing a 'title' field; add a non-empty 'title' to the dashboard model and retry")
 		}
 
 		// Determine the target uid: for update prefer params.UID, else the
@@ -171,7 +171,7 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 
 	case "delete":
 		if params.UID == "" {
-			return "", errors.New("uid is required for delete")
+			return "", errors.New("parameter 'uid' is required for delete; provide the dashboard UID to delete and retry")
 		}
 
 		// Fetch the existing dashboard first to (a) confirm it exists and

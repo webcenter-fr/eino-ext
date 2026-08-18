@@ -48,6 +48,7 @@ func unstructuredMetadata(o *unstructured.Unstructured) *metav1.ObjectMeta {
 }
 
 func (o *describeOutput) applyFieldExclusions(excludeFields []string) error {
+	allowed := []string{"metadata", "spec", "status", "data"}
 	for _, excludeField := range excludeFields {
 		switch excludeField {
 		case "metadata":
@@ -59,7 +60,8 @@ func (o *describeOutput) applyFieldExclusions(excludeFields []string) error {
 		case "data":
 			o.Data = nil
 		default:
-			return errors.Errorf("invalid exclude field: %s", excludeField)
+			return errors.Errorf("parameter 'excludeFieldsOutput' has invalid value %q; allowed values are: %s. Remove or fix it and retry",
+				excludeField, strings.Join(allowed, ", "))
 		}
 	}
 	return nil

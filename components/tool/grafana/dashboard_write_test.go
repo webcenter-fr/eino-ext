@@ -76,7 +76,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 			Confirmed: true,
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "must include a title")
+		assert.Contains(t, err.Error(), "missing a 'title'")
 	})
 
 	t.Run("missing dashboard", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 			Confirmed: true,
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "dashboard is required")
+		assert.Contains(t, err.Error(), "dashboard' is required")
 	})
 
 	t.Run("invalid json", func(t *testing.T) {
@@ -97,7 +97,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 			Confirmed: true,
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid dashboard JSON")
+		assert.Contains(t, err.Error(), "not valid JSON")
 	})
 
 	t.Run("unknown instance", func(t *testing.T) {
@@ -300,7 +300,7 @@ func TestDashboardWriteToolDelete(t *testing.T) {
 			Confirmed: true,
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "uid is required for delete")
+		assert.Contains(t, err.Error(), "uid' is required for delete")
 	})
 }
 

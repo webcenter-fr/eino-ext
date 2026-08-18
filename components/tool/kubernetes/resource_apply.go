@@ -83,17 +83,17 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 	// Parse the manifest JSON into an unstructured object.
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(params.Manifest), &obj.Object); err != nil {
-		return "", errors.Wrap(err, "invalid manifest JSON")
+		return "", errors.Wrap(err, "parameter 'manifest' is not valid JSON; fix the manifest and retry")
 	}
 
 	// Validate required manifest fields.
-	if obj.GetAPIVersion() == "" || obj.GetKind() == "" || obj.GetName() == "" {
-		return "", errors.New("manifest must include apiVersion, kind, and metadata.name")
+	if missing := missingManifestFields(obj); len(missing) > 0 {
+		return "", errors.Errorf("parameter 'manifest' is missing required field(s): %s; add them and retry", joinFields(missing))
 	}
 
 	// Verify resolved GVK matches manifest GVK.
 	if obj.GetKind() != resolved.GVK.Kind {
-		return "", errors.Errorf("resolved kind %q does not match manifest kind %q", resolved.GVK.Kind, obj.GetKind())
+		return "", errors.Errorf("parameter 'kind' %q does not match the manifest's kind %q; align them and retry", resolved.GVK.Kind, obj.GetKind())
 	}
 
 	// Block apply of security-sensitive resource kinds.

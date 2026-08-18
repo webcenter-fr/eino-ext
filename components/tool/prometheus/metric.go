@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"emperror.dev/errors"
@@ -161,7 +162,17 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 
 	case "range":
 		if params.Start == "" || params.End == "" || params.Step == "" {
-			return "", errors.New("start, end, and step are required in range mode")
+			missing := make([]string, 0, 3)
+			if params.Start == "" {
+				missing = append(missing, "start")
+			}
+			if params.End == "" {
+				missing = append(missing, "end")
+			}
+			if params.Step == "" {
+				missing = append(missing, "step")
+			}
+			return "", errors.Errorf("parameter(s) %s required in range mode (mode='range'); provide them as RFC3339 timestamps (start, end) and a Go duration (step, e.g. '15s') and retry", strings.Join(missing, ", "))
 		}
 		if params.MaxSamples == 0 {
 			params.MaxSamples = 100
@@ -169,23 +180,23 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 
 		start, err := parseRFC3339(params.Start)
 		if err != nil {
-			return "", errors.Wrap(err, "invalid start time format, must be RFC3339")
+			return "", errors.Wrap(err, "parameter 'start' is not a valid RFC3339 timestamp (e.g. 2024-01-01T00:00:00Z); fix it and retry")
 		}
 
 		end, err := parseRFC3339(params.End)
 		if err != nil {
-			return "", errors.Wrap(err, "invalid end time format, must be RFC3339")
+			return "", errors.Wrap(err, "parameter 'end' is not a valid RFC3339 timestamp (e.g. 2024-01-01T00:00:00Z); fix it and retry")
 		}
 
 		step, err := time.ParseDuration(params.Step)
 		if err != nil {
-			return "", errors.Wrap(err, "invalid step format, must be a Go duration string (e.g. '15s', '1m', '1h')")
+			return "", errors.Wrap(err, "parameter 'step' is not a valid Go duration string (e.g. '15s', '1m', '1h'); fix it and retry")
 		}
 		if step < 15*time.Second {
-			return "", errors.New("step must be at least 15 seconds to avoid excessive load")
+			return "", errors.New("parameter 'step' must be at least 15 seconds (e.g. '15s') to avoid excessive load; increase it and retry")
 		}
 		if end.Sub(start) > 7*24*time.Hour {
-			return "", errors.New("time window must not exceed 7 days to avoid excessive load")
+			return "", errors.New("the time window (end - start) must not exceed 7 days to avoid excessive load; narrow the range and retry")
 		}
 
 		value, _, err := c.QueryRange(ctx, params.Query, promapi.Range{

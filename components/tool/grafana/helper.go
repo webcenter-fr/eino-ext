@@ -3,6 +3,7 @@ package grafana
 import (
 	_ "embed"
 	"regexp"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/goccy/go-json"
@@ -56,7 +57,8 @@ func applyExcludes(excludeFields []string, setters map[string]func()) error {
 	for _, field := range excludeFields {
 		setter, ok := setters[field]
 		if !ok {
-			return errors.Errorf("invalid exclude field: %s", field)
+			return errors.Errorf("parameter 'excludeFieldsOutput' has invalid value %q; allowed values are: %s. Remove or fix it and retry",
+				field, strings.Join(toolutil.SortedKeys(setters), ", "))
 		}
 		setter()
 	}

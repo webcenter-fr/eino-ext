@@ -200,7 +200,7 @@ func TestMetricToolRange(t *testing.T) {
 			Step:     "5s",
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "step must be at least 15 seconds")
+		assert.Contains(t, err.Error(), "step' must be at least 15 seconds")
 	})
 
 	t.Run("window over 7 days returns error", func(t *testing.T) {
@@ -214,7 +214,7 @@ func TestMetricToolRange(t *testing.T) {
 			Step:     "1m",
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "time window must not exceed 7 days")
+		assert.Contains(t, err.Error(), "must not exceed 7 days")
 	})
 
 	t.Run("missing start returns code-level error", func(t *testing.T) {
@@ -225,7 +225,7 @@ func TestMetricToolRange(t *testing.T) {
 			Query:    "up",
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "start, end, and step are required in range mode")
+		assert.Contains(t, err.Error(), "required in range mode")
 	})
 }
 

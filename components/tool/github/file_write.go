@@ -86,7 +86,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 	}
 
 	if len(params.Content) > maxFileWriteBytes {
-		return "", errors.Errorf("content size %d exceeds maximum %d bytes", len(params.Content), maxFileWriteBytes)
+		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), maxFileWriteBytes)
 	}
 
 	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)

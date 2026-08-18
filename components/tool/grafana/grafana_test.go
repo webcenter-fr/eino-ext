@@ -284,13 +284,13 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "create", "dashboard": %q, "confirmed": true}`, dashboardJSON)
 		_, err := writeTool.InvokableRun(ctx, paramsJSON)
 		assert.Error(t.T(), err)
-		assert.Contains(t.T(), err.Error(), "must include a title")
+		assert.Contains(t.T(), err.Error(), "missing a 'title'")
 	})
 
 	t.Run("invalid json", func() {
 		_, err := writeTool.InvokableRun(ctx, `{"instance": "test", "operation": "create", "dashboard": "not json", "confirmed": true}`)
 		assert.Error(t.T(), err)
-		assert.Contains(t.T(), err.Error(), "invalid dashboard JSON")
+		assert.Contains(t.T(), err.Error(), "not valid JSON")
 	})
 
 	t.Run("unknown instance", func() {
