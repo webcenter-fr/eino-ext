@@ -200,9 +200,11 @@ func (r *Retriever) buildSearchBody(query string, topK int, vectors [][]float64)
 
 	if r.config.Embedding == nil {
 		queryPart = map[string]any{
-			"query_string": map[string]any{
-				"query":            query,
-				"default_operator": "AND",
+			"match": map[string]any{
+				r.config.ContentField: map[string]any{
+					"query":    query,
+					"operator": "and",
+				},
 			},
 		}
 	} else {
