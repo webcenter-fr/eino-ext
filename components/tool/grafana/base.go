@@ -78,7 +78,7 @@ func (b *baseTool) fetchDashboard(ctx context.Context, instance, uid string) (da
 
 	var dr dashboardResponse
 	if err := json.Unmarshal(body, &dr); err != nil {
-		return dashboardResponse{}, errors.Wrap(err, "failed to unmarshal dashboard for protection check")
+		return dashboardResponse{}, errors.Wrap(err, "failed to unmarshal dashboard")
 	}
 
 	return dr, nil

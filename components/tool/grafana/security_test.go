@@ -441,6 +441,28 @@ func TestDataSourceDescribeRedactsAWSAndHeaderSecrets(t *testing.T) {
 	assert.Contains(t, result, `"apiKey":"\u003credacted\u003e"`)
 }
 
+// TestDoRequestResponseBodyCap verifies that a successful response body larger
+// than maxResponseBodyLen is rejected with an error instead of being read into
+// memory unbounded.
+func TestDoRequestResponseBodyCap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, maxResponseBodyLen+1))
+	}))
+	defer server.Close()
+
+	c := &grafanaClient{
+		baseURL:    server.URL,
+		httpClient: &http.Client{},
+		timeout:    testTimeout,
+	}
+
+	_, _, err := c.doRequest(context.Background(), http.MethodGet, "/large", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "response body exceeds")
+}
+
 // TestDataSourceDescribeExcludesSecrets verifies end-to-end that a describe
 // response containing secrets produces output with those secrets excluded or
 // redacted.

@@ -41,6 +41,8 @@ configs := grafana.Configs{
 | `grafana_dashboard` | Read | Search dashboards (uid empty) or get full details by UID (uid set) |
 | `grafana_dashboard_write` | Write | Create, update, or delete a dashboard (blocklist-enforced) |
 | `grafana_datasource` | Read | List data sources (uid empty) or get full details by UID (uid set; secrets redacted). Read-only — no write tool |
+| `grafana_query` | Read | Execute a PromQL/LogQL query and return cardinality + sample series |
+| `grafana_dashboard_validate` | Read | Validate a saved dashboard's panels by executing their Prometheus/Loki queries |
 
 ## Factory Functions
 
@@ -59,6 +61,9 @@ tools, mw, err := grafana.NewAllToolsWithSafety(ctx, configs, &safety.Config{
 // Write tool names for safety middleware
 names := grafana.WriteToolNames() // ["grafana_dashboard_write"]
 ```
+
+`grafana_query` and `grafana_dashboard_validate` are read-only tools and are
+included automatically in both `NewAllTools` and `NewReadOnlyTools`.
 
 ## Dashboard Protection
 
@@ -139,6 +144,49 @@ empty to list. **Read-only** — data source writes are not in LLM scope.
 Sensitive fields (`password`, `basicAuthPassword`, `secureJsonFields`,
 `secureJsonData`) are excluded, and sensitive `jsonData` keys are recursively
 redacted.
+
+### grafana_query
+
+Executes a single PromQL (Prometheus) or LogQL (Loki) query against a datasource
+by UID via Grafana's datasource proxy, and returns a cardinality-focused
+summary. The datasource type is resolved automatically from the UID.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `instance` | Yes | Grafana instance name |
+| `datasourceUID` | Yes | UID of the Prometheus or Loki datasource to query |
+| `expr` | Yes | The PromQL or LogQL expression to execute |
+| `queryType` | No | `instant` (default) or `range` |
+| `time` | No | Anchor time: `now` (default), `now-1h`, RFC3339, or Unix seconds |
+| `start` | No | (range) Start time. Defaults to `time-1h` |
+| `stepSeconds` | No | (range) Step size in seconds (default 60) |
+| `maxSeries` | No | Cap on series returned in `series` (default 20); `seriesCount` is the true total |
+
+Output: `datasourceUid`, `datasourceType`, `expr`, `queryType`, `resultType`,
+`seriesCount`, `truncated`, `series[]` (label sets + a sample value/line), and
+`hints[]`. An empty result (`seriesCount=0`) is a normal result, not an error.
+Loki log lines are returned verbatim (truncated to 256 characters) and may
+contain sensitive data from the operator's own logs.
+
+### grafana_dashboard_validate
+
+Fetches a saved dashboard by UID and validates every panel by executing its
+Prometheus/Loki queries (instant queries, default `now`). Returns per-panel and
+per-query verdicts: `ok`, `no-data`, `too-many-series`, `error`, or `skipped`,
+plus a roll-up `summary`.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `instance` | Yes | Grafana instance name |
+| `uid` | Yes | UID of the saved dashboard to validate |
+| `panelID` | No | Validate only this panel by id |
+| `time` | No | Instant-query anchor time (default `now`) |
+| `maxSeriesPerPanel` | No | Panels with more series are flagged `too-many-series` (default 20) |
+| `maxPanels` | No | Cap on panels to validate (default 50); excess panels are skipped |
+| `maxSeriesSample` | No | Sample label sets per query (default 5; 0 disables sample labels) |
+
+Use this after creating or updating a dashboard to confirm its panels return
+data. Non-Prometheus/Loki panels are reported as `skipped` with a reason.
 
 ## Usage Example
 

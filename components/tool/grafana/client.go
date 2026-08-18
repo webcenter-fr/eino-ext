@@ -93,6 +93,10 @@ func BuildClients(ctx context.Context, configs Configs) (map[string]*grafanaClie
 // from being leaked verbatim through error chains.
 const maxErrorBodyLen = 512
 
+// maxResponseBodyLen caps how many bytes of a successful response body are read
+// into memory. Prevents a broad range query from exhausting memory.
+const maxResponseBodyLen = 10 << 20 // 10 MiB
+
 // httpError is a typed error carrying the HTTP status code so callers can
 // branch on it (e.g. 404 → not found) without parsing the error string.
 type httpError struct {
@@ -141,9 +145,12 @@ func (c *grafanaClient) doRequest(ctx context.Context, method, path string, body
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyLen+1))
 	if err != nil {
 		return nil, resp.StatusCode, errors.Wrap(err, "failed to read response body")
+	}
+	if len(respBody) > maxResponseBodyLen {
+		return nil, resp.StatusCode, errors.Errorf("response body exceeds %d bytes", maxResponseBodyLen)
 	}
 
 	if resp.StatusCode >= 400 {
