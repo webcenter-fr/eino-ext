@@ -311,13 +311,18 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		return nil, errors.Wrap(err, "failed to create SPDY executor")
 	}
 
+	// execCtx must outlive this function: InvokeAsStream returns the stream
+	// reader to the caller and the SPDY connection (DNS/TLS/upgrade) is set up
+	// asynchronously in the goroutine below. Canceling here would abort the
+	// in-flight request ("...lookup ...: operation was canceled"), so cancel
+	// is deferred to the goroutine that owns execCtx.
 	execCtx, cancel := withTimeout(ctx, defaultExecTimeout)
-	defer cancel()
 
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 
 	go func() {
+		defer cancel()
 		execErr := exec.StreamWithContext(execCtx, remotecommand.StreamOptions{
 			Stdin:  nil,
 			Stdout: stdoutW,
@@ -348,7 +353,7 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 			}
 		}
 		if scanErr := scannerStdout.Err(); scanErr != nil {
-			sw.Send("", errors.Wrap(scanErr, "error reading pod log stream"))
+			sw.Send("", errors.Wrap(scanErr, "error reading pod exec stream"))
 		}
 
 		stderrScanner := bufio.NewScanner(stderrR)
