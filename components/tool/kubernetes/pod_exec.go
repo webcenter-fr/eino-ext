@@ -216,7 +216,7 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 		return "", errors.Wrap(err, "failed to create SPDY executor")
 	}
 
-	ctx, cancel := withTimeout(ctx, defaultExecTimeout)
+	ctx, cancel := withTimeout(ctx, t.base.getExecTimeout(params.Cluster))
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
@@ -316,7 +316,7 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 	// asynchronously in the goroutine below. Canceling here would abort the
 	// in-flight request ("...lookup ...: operation was canceled"), so cancel
 	// is deferred to the goroutine that owns execCtx.
-	execCtx, cancel := withTimeout(ctx, defaultExecTimeout)
+	execCtx, cancel := withTimeout(ctx, t.base.getExecTimeout(params.Cluster))
 
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
@@ -343,11 +343,16 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 	go func() {
 		defer sw.Close()
 
+		// Stream one chunk per output line, with the line separator
+		// preserved. Downstream consumers (eino's stream concat, safety
+		// middleware audit collection) concatenate chunks without inserting
+		// separators, so a trailing "\n" on every chunk is what keeps
+		// multi-line output readable for the LLM and in the audit trail.
 		scannerStdout := bufio.NewScanner(stdoutR)
 		for scannerStdout.Scan() {
 			line := scannerStdout.Text()
 			if re == nil || re.MatchString(line) {
-				if closed := sw.Send(line, nil); closed {
+				if closed := sw.Send(line+"\n", nil); closed {
 					return
 				}
 			}
@@ -358,7 +363,7 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 
 		stderrScanner := bufio.NewScanner(stderrR)
 		for stderrScanner.Scan() {
-			if closed := sw.Send(stderrScanner.Text(), nil); closed {
+			if closed := sw.Send(stderrScanner.Text()+"\n", nil); closed {
 				return
 			}
 		}

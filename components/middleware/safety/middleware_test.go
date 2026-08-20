@@ -498,3 +498,135 @@ func TestWrapStreamableToolCallWriteDryRun(t *testing.T) {
 		t.Fatalf("expected PhaseDryRun, got %q", event.Phase)
 	}
 }
+
+// TestWrapStreamableToolCallStreamError asserts that a non-EOF error carried
+// inside the tool stream is audited AND surfaced as a final chunk, instead of
+// closing the wrapped stream empty (which upstream eino concat turns into the
+// confusing "stream reader is empty, concat fail" node error).
+func TestWrapStreamableToolCallStreamError(t *testing.T) {
+	channelSink := safety.NewChannelSink(10)
+	defer channelSink.Close()
+
+	m, err := New(&Config{
+		WriteToolNames: []string{"write_tool"},
+		AuditSink:      channelSink,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	endpoint := func(ctx context.Context, _ string, _ ...tool.Option) (*schema.StreamReader[string], error) {
+		sr, sw := schema.Pipe[string](3)
+		go func() {
+			defer sw.Close()
+			sw.Send("chunk1", nil)
+			sw.Send("", errors.New("boom"))
+		}()
+		return sr, nil
+	}
+
+	wrapped, err := m.WrapStreamableToolCall(context.Background(), endpoint, &adk.ToolContext{
+		Name:   "write_tool",
+		CallID: "call-stream-err",
+	})
+	if err != nil {
+		t.Fatalf("WrapStreamableToolCall: %v", err)
+	}
+
+	sr, err := wrapped(context.Background(), `{"confirmed":true}`)
+	if err != nil {
+		t.Fatalf("wrapped endpoint: %v", err)
+	}
+	defer sr.Close()
+
+	var chunks []string
+	for {
+		chunk, recvErr := sr.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("Recv: %v", recvErr)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) != 2 || chunks[0] != "chunk1" {
+		t.Fatalf("expected [chunk1 <error text>], got %v", chunks)
+	}
+	if !strings.Contains(chunks[1], "tool call failed:") || !strings.Contains(chunks[1], "boom") {
+		t.Fatalf("expected error text chunk, got %q", chunks[1])
+	}
+
+	event := <-channelSink.Events()
+	if event.Error != "boom" {
+		t.Fatalf("expected audited error 'boom', got %q", event.Error)
+	}
+}
+
+// TestWrapEnhancedStreamableToolCallStreamError is the enhanced variant of
+// TestWrapStreamableToolCallStreamError.
+func TestWrapEnhancedStreamableToolCallStreamError(t *testing.T) {
+	channelSink := safety.NewChannelSink(10)
+	defer channelSink.Close()
+
+	m, err := New(&Config{
+		WriteToolNames: []string{"write_tool"},
+		AuditSink:      channelSink,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	endpoint := func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+		sr, sw := schema.Pipe[*schema.ToolResult](3)
+		go func() {
+			defer sw.Close()
+			var zero *schema.ToolResult
+			sw.Send(zero, errors.New("boom-enhanced"))
+		}()
+		return sr, nil
+	}
+
+	wrapped, err := m.WrapEnhancedStreamableToolCall(context.Background(), endpoint, &adk.ToolContext{
+		Name:   "write_tool",
+		CallID: "call-stream-err-enhanced",
+	})
+	if err != nil {
+		t.Fatalf("WrapEnhancedStreamableToolCall: %v", err)
+	}
+
+	sr, err := wrapped(context.Background(), &schema.ToolArgument{Text: `{"confirmed":true}`})
+	if err != nil {
+		t.Fatalf("wrapped endpoint: %v", err)
+	}
+	defer sr.Close()
+
+	var texts []string
+	for {
+		chunk, recvErr := sr.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("Recv: %v", recvErr)
+		}
+		for _, part := range chunk.Parts {
+			if part.Type == schema.ToolPartTypeText {
+				texts = append(texts, part.Text)
+			}
+		}
+	}
+
+	if len(texts) != 1 {
+		t.Fatalf("expected 1 text part, got %v", texts)
+	}
+	if !strings.Contains(texts[0], "tool call failed:") || !strings.Contains(texts[0], "boom-enhanced") {
+		t.Fatalf("expected error text part, got %q", texts[0])
+	}
+
+	event := <-channelSink.Events()
+	if event.Error != "boom-enhanced" {
+		t.Fatalf("expected audited error 'boom-enhanced', got %q", event.Error)
+	}
+}

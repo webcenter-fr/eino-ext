@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -317,6 +318,12 @@ func wrapStreamAudit(
 						Error:      err.Error(),
 						PolicyPass: true,
 					})
+					// Surface the error as a final chunk so the agent sees the
+					// failure as tool output text and can react. Without this
+					// the wrapped stream closes empty and upstream
+					// concatenation fails with "stream reader is empty, concat
+					// fail" instead of the real error.
+					sw.Send(fmt.Sprintf("tool call failed: %s", err), nil)
 				}
 				return
 			}
@@ -375,6 +382,17 @@ func wrapEnhancedStreamAudit(
 						Error:      err.Error(),
 						PolicyPass: true,
 					})
+					// Surface the error as a final result chunk so the agent
+					// sees the failure as tool output text and can react.
+					// Without this the wrapped stream closes empty and
+					// upstream concatenation fails with "stream reader is
+					// empty, concat fail" instead of the real error.
+					sw.Send(&schema.ToolResult{
+						Parts: []schema.ToolOutputPart{{
+							Type: schema.ToolPartTypeText,
+							Text: fmt.Sprintf("tool call failed: %s", err),
+						}},
+					}, nil)
 				}
 				return
 			}

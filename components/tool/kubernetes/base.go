@@ -15,7 +15,12 @@ import (
 )
 
 const (
-	defaultExecTimeout      = 60 * time.Second
+	// defaultExecTimeout is the fallback timeout for pod exec operations when
+	// the cluster config does not set DefaultTimeout. Executed commands are
+	// gated behind the dry-run/confirm protocol, but they can legitimately run
+	// long (JVM-based CLIs such as kafka-topics.sh, slow filesystems, large
+	// outputs), so the ceiling is generous.
+	defaultExecTimeout      = 300 * time.Second
 	defaultOperationTimeout = 30 * time.Second
 )
 
@@ -119,6 +124,19 @@ func (b *baseTool) getDefaultTimeout(cluster string) time.Duration {
 		return defaultOperationTimeout
 	}
 	return parseTimeoutOrDefault(config.DefaultTimeout, defaultOperationTimeout)
+}
+
+// getExecTimeout returns the per-cluster configured default timeout for pod
+// exec operations, or the package-level default.
+func (b *baseTool) getExecTimeout(cluster string) time.Duration {
+	config := b.configs.GetConfig(cluster)
+	if config == nil {
+		return defaultExecTimeout
+	}
+	if config.DefaultTimeout == "" {
+		return defaultExecTimeout
+	}
+	return parseTimeoutOrDefault(config.DefaultTimeout, defaultExecTimeout)
 }
 
 // dynamicClient returns the dynamic client for the given cluster name.
