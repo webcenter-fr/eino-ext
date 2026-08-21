@@ -3,6 +3,7 @@ package promptenhance
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -351,4 +352,127 @@ func TestMiddleware_ResumeUnknownAction(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown action")
 	}
+}
+
+// assertOriginalUntouched checks the shared non-mutation invariant: the
+// middleware replaced the message with a marked clone while leaving the
+// caller-owned original's pointer, content, and marker state untouched.
+func assertOriginalUntouched(t *testing.T, orig, clone *schema.Message) {
+	t.Helper()
+	if clone == orig {
+		t.Fatal("expected state message to be replaced by a clone")
+	}
+	if orig.Content != "original draft" {
+		t.Fatalf("original content mutated: %q", orig.Content)
+	}
+	if isEnhanced(orig) {
+		t.Fatal("original was marked enhanced")
+	}
+	if !isEnhanced(clone) {
+		t.Fatal("clone not marked enhanced")
+	}
+}
+
+func TestMiddleware_AutoAccept_DoesNotMutateOriginal(t *testing.T) {
+	mw := newTestMiddleware(t, "enhanced version", nil, true, nil)
+
+	orig := user("original draft")
+	orig.Extra = map[string]any{"custom": "value"}
+
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{orig}}
+
+	_, _, err := mw.BeforeModelRewriteState(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertOriginalUntouched(t, orig, state.Messages[0])
+	if _, ok := orig.Extra[enhancedMarkerKey]; ok {
+		t.Fatal("enhanced marker leaked to original Extra")
+	}
+	if orig.Extra["custom"] != "value" {
+		t.Fatal("original custom Extra entry missing")
+	}
+	if state.Messages[0].Content != "enhanced version" {
+		t.Fatalf("content: %q", state.Messages[0].Content)
+	}
+}
+
+func TestMiddleware_PassesConversationContext(t *testing.T) {
+	var captured []*schema.Message
+	mock := &fakeModel{
+		generateFunc: func(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+			captured = input
+			return &schema.Message{Role: schema.Assistant, Content: "rewritten last"}, nil
+		},
+	}
+	enhancer, err := libspromptenhance.NewEnhancer(context.Background(), &libspromptenhance.Config{Model: mock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mw, err := NewMiddleware(&Config{Enhancer: enhancer, AutoAccept: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{
+		user("first message"),
+		assistant("reply text"),
+		user("last message"),
+	}}
+
+	_, _, err = mw.BeforeModelRewriteState(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := captured[len(captured)-1].Content
+	for _, want := range []string{"first message", "reply text", "<context>", "<draft>last message</draft>"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("captured content %q does not contain %q", content, want)
+		}
+	}
+}
+
+func TestMiddleware_EmptyEnhancedIsNoOp(t *testing.T) {
+	mock := &fakeModel{
+		generateFunc: func(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+			return &schema.Message{Role: schema.Assistant, Content: ""}, nil
+		},
+	}
+	enhancer, err := libspromptenhance.NewEnhancer(context.Background(), &libspromptenhance.Config{Model: mock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mw, err := NewMiddleware(&Config{Enhancer: enhancer, AutoAccept: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	orig := user("original draft")
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{orig}}
+
+	_, _, err = mw.BeforeModelRewriteState(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertOriginalUntouched(t, orig, state.Messages[0])
+	if state.Messages[0].Content != "original draft" {
+		t.Fatalf("content: %q", state.Messages[0].Content)
+	}
+}
+
+func TestMiddleware_ShouldEnhanceFalse_DoesNotMutateOriginal(t *testing.T) {
+	mw := newTestMiddleware(t, "", nil, false, func(ctx context.Context) bool { return false })
+
+	orig := user("original draft")
+	state := &adk.ChatModelAgentState{Messages: []*schema.Message{orig}}
+
+	_, _, err := mw.BeforeModelRewriteState(context.Background(), state, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertOriginalUntouched(t, orig, state.Messages[0])
 }

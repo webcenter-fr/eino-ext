@@ -2,6 +2,7 @@ package promptenhance
 
 import (
 	"context"
+	"maps"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/adk"
@@ -56,41 +57,45 @@ func (m *Middleware) BeforeModelRewriteState(
 		return ctx, state, nil
 	}
 
-	lastUser := findLastUserMessage(state.Messages)
-	if lastUser == nil {
+	idx := findLastUserMessageIndex(state.Messages)
+	if idx < 0 {
 		return ctx, state, nil
 	}
 
+	lastUser := state.Messages[idx]
 	if isEnhanced(lastUser) {
 		return ctx, state, nil
 	}
 
+	history := state.Messages[:idx]
+
 	choice := getChoiceFromCtx(ctx)
 	if choice != nil {
-		return m.applyResume(ctx, state, choice, lastUser)
+		return m.applyResume(ctx, state, choice, idx, history)
 	}
 
 	if m.shouldEnhance != nil && !m.shouldEnhance(ctx) {
-		markEnhanced(lastUser)
+		markSkipped(state, idx)
 		return ctx, state, nil
 	}
 
-	enhanced, err := m.enhancer.Enhance(ctx, lastUser.Content)
+	enhanced, err := m.enhancer.EnhanceInContext(ctx, history, lastUser.Content)
 	if err != nil {
 		return ctx, state, errors.Wrap(err, "promptenhance: enhancement failed")
 	}
 
-	if enhanced == lastUser.Content {
-		markEnhanced(lastUser)
+	if enhanced == "" || enhanced == lastUser.Content {
+		markSkipped(state, idx)
 		return ctx, state, nil
 	}
 
 	if m.autoAccept {
-		lastUser.Content = enhanced
-		markEnhanced(lastUser)
+		applyEnhanced(state, idx, enhanced)
 		return ctx, state, nil
 	}
 
+	// Interrupt path: DO NOT mutate state.Messages (preserves the invariant
+	// asserted by TestMiddleware_BeforeModelRewriteState_FirstCall).
 	return ctx, state, &InterruptError{
 		InterruptInfo: InterruptInfo{
 			Original: lastUser.Content,
@@ -103,36 +108,82 @@ func (m *Middleware) applyResume(
 	ctx context.Context,
 	state *adk.ChatModelAgentState,
 	choice *Choice,
-	lastUser *schema.Message,
+	idx int,
+	history []*schema.Message,
 ) (context.Context, *adk.ChatModelAgentState, error) {
 	switch choice.Action {
 	case "original", "skip_always":
+		markSkipped(state, idx)
 	case "enhanced":
-		enhanced, err := m.enhancer.Enhance(ctx, lastUser.Content)
+		enhanced, err := m.enhancer.EnhanceInContext(ctx, history, state.Messages[idx].Content)
 		if err != nil {
 			return ctx, state, errors.Wrap(err, "promptenhance: re-enhancement failed")
 		}
-		lastUser.Content = enhanced
+		if enhanced == "" {
+			markSkipped(state, idx)
+			return ctx, state, nil
+		}
+		applyEnhanced(state, idx, enhanced)
 	case "modified":
 		if choice.Text == "" {
 			return ctx, state, errors.New("promptenhance: modified action requires text")
 		}
-		lastUser.Content = choice.Text
+		applyEnhanced(state, idx, choice.Text)
 	default:
 		return ctx, state, errors.Errorf("promptenhance: unknown action %q", choice.Action)
 	}
 
-	markEnhanced(lastUser)
 	return ctx, state, nil
 }
 
-func findLastUserMessage(msgs []*schema.Message) *schema.Message {
+// cloneMessage returns a shallow copy of m with a freshly-allocated Extra map,
+// so that marker mutations applied to the clone never leak back to the
+// caller-owned original. Other reference fields (ToolCalls, MultiContent,
+// ReasoningContent, ResponseMeta) are shallow-copied: user messages have nil
+// ToolCalls and none of these fields are mutated by this middleware, so a deep
+// copy of them is unnecessary.
+func cloneMessage(m *schema.Message) *schema.Message {
+	if m == nil {
+		return nil
+	}
+	c := *m
+	c.Extra = maps.Clone(m.Extra)
+	return &c
+}
+
+// replaceMessage swaps state.Messages[idx] for a clone marked enhanced and
+// returns the clone, leaving the caller's original pointer untouched. It is a
+// no-op (returning nil) when the target message is nil.
+func replaceMessage(state *adk.ChatModelAgentState, idx int) *schema.Message {
+	c := cloneMessage(state.Messages[idx])
+	if c == nil {
+		return nil
+	}
+	markEnhanced(c)
+	state.Messages[idx] = c
+	return c
+}
+
+// applyEnhanced replaces state.Messages[idx] with a clone carrying content.
+func applyEnhanced(state *adk.ChatModelAgentState, idx int, content string) {
+	if c := replaceMessage(state, idx); c != nil {
+		c.Content = content
+	}
+}
+
+// markSkipped replaces state.Messages[idx] with a marked clone whose content is
+// unchanged, so the original is untouched while the skip stays idempotent.
+func markSkipped(state *adk.ChatModelAgentState, idx int) {
+	replaceMessage(state, idx)
+}
+
+func findLastUserMessageIndex(msgs []*schema.Message) int {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i] != nil && msgs[i].Role == schema.User {
-			return msgs[i]
+			return i
 		}
 	}
-	return nil
+	return -1
 }
 
 func isEnhanced(msg *schema.Message) bool {

@@ -65,6 +65,28 @@ for event := range events {
 | `modified` | Use the user's custom edit (in `Text` field) |
 | `skip_always` | Keep the original; consumer persists preference for `ShouldEnhance` |
 
+## Conversation context & history integrity
+
+Before enhancing, the middleware passes the prior conversation to the enhancer
+via `EnhanceInContext`, so terse follow-ups ("re run the command") are resolved
+against the recent transcript. The token/cost implication is bounded by
+`MaxContextMessages` (default 6) on the `libs/promptenhance.Config`.
+
+The middleware **never mutates the caller's message objects**: every branch that
+marks or alters a message replaces `state.Messages[idx]` with a clone, so the
+user's original text is preserved in persisted history while the model sees an
+enhanced clone.
+
+## Security considerations
+
+- Conversation history (including tool outputs) is sent to the enhancer model
+  on every turn; ensure that provider is authorized for the data in your
+  history. See the `libs/promptenhance` README for the full security notes.
+- The enhanced output is fed back to the supervisor in the user-message
+  position. Prompt-injection content in history or tool outputs can influence
+  the enhancer and therefore the supervisor; treat the enhancer's output as
+  untrusted and apply independent guardrails downstream.
+
 ## Configuration
 
 | Field | Required | Description |
