@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/indexer"
@@ -23,9 +26,21 @@ import (
 
 var _ memoryagent.MemoryStore = (*Store)(nil)
 
+// metaKeyScore is the metadata key carrying the lexical relevance score of a
+// retrieved memory. It mirrors the "_score" key that
+// components/retriever/opensearch sets on OpenSearch hits, so both memory
+// backends expose the score under the same name.
+const metaKeyScore = "_score"
+
 // Config holds configuration for the JSONL-backed memory store.
 type Config struct {
 	Dir string `json:"dir" validate:"required" jsonschema:"description=Directory for the memories.jsonl file,default=/tmp/eino/memory-agent"`
+
+	// MinScore, when non-nil, drops retrieved memories whose lexical relevance
+	// score is below this threshold (score >= MinScore is kept). nil means "no
+	// threshold". A value of 0 behaves like nil, because non-matching entries
+	// are always dropped. Mirrors agent/memory/opensearch.Config.MinScore.
+	MinScore *float64 `json:"min_score,omitempty" validate:"omitempty,gte=0" jsonschema:"description=Optional minimum relevance score for retrieved memories"`
 }
 
 // Store is a JSONL-file-backed implementation of MemoryStore.
@@ -34,6 +49,10 @@ type Store struct {
 	dir     string
 	entries map[string]*memoryagent.Entry
 	order   []string
+
+	// minScore is an owned copy of Config.MinScore (nil when unset), so a
+	// caller mutating its own float64 after NewStore cannot race with Retrieve.
+	minScore *float64
 }
 
 // NewStore creates a new JSONL-backed Store from the given configuration.
@@ -50,6 +69,11 @@ func NewStore(cfg Config) (*Store, error) {
 	s := &Store{
 		dir:     cfg.Dir,
 		entries: make(map[string]*memoryagent.Entry),
+	}
+	if cfg.MinScore != nil {
+		// Copy the value: the store must not alias caller-owned memory.
+		minScore := *cfg.MinScore
+		s.minScore = &minScore
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -122,7 +146,22 @@ func (s *Store) Store(_ context.Context, docs []*schema.Document, _ ...indexer.O
 	return ids, nil
 }
 
-// Retrieve searches in-memory entries matching the query.
+// Retrieve returns the memories most relevant to the query, ranked by a lexical
+// term-overlap score (see scoreEntry). Matching is lexical, not semantic: a
+// paraphrase that shares no term with a memory will not be found.
+//
+// Behavior:
+//   - Empty store: nil, nil.
+//   - Blank query (empty or whitespace only): every entry in insertion order,
+//     bounded by TopK (preserves the historical "list everything" behavior).
+//   - Query that tokenizes to nothing (only stopwords, punctuation, or
+//     single-rune tokens): nil, nil — never "everything".
+//   - Otherwise: entries with a non-zero score (and >= MinScore when
+//     configured), sorted by score desc, then UpdatedAt desc, CreatedAt desc,
+//     insertion index asc, truncated to TopK. Each returned document carries
+//     its score under the "_score" metadata key.
+//
+// TopK semantics are unchanged: a nil, zero, or negative TopK means "no limit".
 func (s *Store) Retrieve(_ context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -137,21 +176,189 @@ func (s *Store) Retrieve(_ context.Context, query string, opts ...retriever.Opti
 		topK = *retOpts.TopK
 	}
 
-	queryLower := strings.ToLower(strings.TrimSpace(query))
-	var docs []*schema.Document
-	for _, id := range s.order {
+	// Blank query: list-like behavior, insertion order, bounded by topK.
+	if strings.TrimSpace(query) == "" {
+		docs := make([]*schema.Document, 0, topK)
+		for _, id := range s.order {
+			entry, ok := s.entries[id]
+			if !ok {
+				continue
+			}
+			docs = append(docs, entry.ToDocument())
+			if len(docs) >= topK {
+				break
+			}
+		}
+		return docs, nil
+	}
+
+	queryTerms := tokenize(query)
+	if len(queryTerms) == 0 {
+		// Nothing discriminative to match on: returning every memory would be
+		// worse than returning none.
+		return nil, nil
+	}
+
+	// Deduplicate the query terms once, up front. scoreEntry runs once per
+	// entry; rebuilding a term set sized len(queryTerms) inside it would cost
+	// O(entries x queryTerms) time and allocations for a single call — a CPU
+	// and memory amplification vector when an oversized query (Retrieve is a
+	// public API and the agent's MaxQueryChars defaults to 0/unbounded) hits a
+	// large store (CWE-400). Building the set here keeps the per-entry cost
+	// proportional to the entry's own content, matching the complexity of the
+	// previous substring scan.
+	querySet := make(map[string]struct{}, len(queryTerms))
+	for _, term := range queryTerms {
+		querySet[term] = struct{}{}
+	}
+
+	type scoredEntry struct {
+		entry *memoryagent.Entry
+		score float64
+		index int
+	}
+
+	matches := make([]scoredEntry, 0, len(s.order))
+	for i, id := range s.order {
 		entry, ok := s.entries[id]
 		if !ok {
 			continue
 		}
-		if query == "" || strings.Contains(strings.ToLower(entry.Content), queryLower) {
-			docs = append(docs, entry.ToDocument())
+		score := scoreEntry(querySet, entry.Content)
+		if score <= 0 {
+			continue
 		}
-		if topK > 0 && len(docs) >= topK {
-			break
+		if s.minScore != nil && score < *s.minScore {
+			continue
 		}
+		matches = append(matches, scoredEntry{entry: entry, score: score, index: i})
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	// Fully deterministic ranking: relevance, then recency, then insertion order.
+	sort.SliceStable(matches, func(i, j int) bool {
+		a, b := matches[i], matches[j]
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		if !a.entry.UpdatedAt.Equal(b.entry.UpdatedAt) {
+			return a.entry.UpdatedAt.After(b.entry.UpdatedAt)
+		}
+		if !a.entry.CreatedAt.Equal(b.entry.CreatedAt) {
+			return a.entry.CreatedAt.After(b.entry.CreatedAt)
+		}
+		return a.index < b.index
+	})
+
+	if len(matches) > topK {
+		matches = matches[:topK]
+	}
+
+	docs := make([]*schema.Document, 0, len(matches))
+	for _, m := range matches {
+		doc := m.entry.ToDocument()
+		// ToDocument always initializes MetaData, so this is safe.
+		doc.MetaData[metaKeyScore] = m.score
+		docs = append(docs, doc)
 	}
 	return docs, nil
+}
+
+// stopwords are query/content tokens that carry no discriminative signal.
+// Without this filter a natural-language query would match every memory through
+// words like "the" or "de". The list is a deliberately small English/French
+// heuristic, not a linguistic model; extend it only with words that can never
+// be meaningful content in a memory.
+var stopwords = map[string]struct{}{
+	// English
+	"an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "been": {},
+	"but": {}, "by": {}, "can": {}, "did": {}, "do": {}, "does": {}, "for": {},
+	"from": {}, "had": {}, "has": {}, "have": {}, "if": {}, "in": {}, "into": {},
+	"is": {}, "it": {}, "its": {}, "me": {}, "my": {}, "not": {}, "of": {},
+	"on": {}, "or": {}, "our": {}, "please": {}, "should": {}, "than": {},
+	"that": {}, "the": {}, "their": {}, "them": {}, "then": {}, "there": {},
+	"these": {}, "they": {}, "this": {}, "to": {}, "was": {}, "were": {},
+	"what": {}, "when": {}, "where": {}, "which": {}, "will": {}, "with": {},
+	"would": {}, "you": {}, "your": {},
+	// French
+	"au": {}, "aux": {}, "avec": {}, "ce": {}, "ces": {}, "cette": {},
+	"dans": {}, "de": {}, "des": {}, "du": {}, "elle": {}, "en": {}, "est": {},
+	"et": {}, "il": {}, "ils": {}, "je": {}, "la": {}, "le": {}, "les": {},
+	"leur": {}, "ma": {}, "mais": {}, "mon": {}, "ne": {}, "nous": {},
+	"ou": {}, "par": {}, "pas": {}, "plus": {}, "pour": {}, "que": {},
+	"qui": {}, "sa": {}, "se": {}, "ses": {}, "son": {}, "sont": {}, "sur": {},
+	"tu": {}, "un": {}, "une": {}, "votre": {}, "vous": {},
+}
+
+// isStopword reports whether w is a known stopword.
+func isStopword(w string) bool {
+	_, ok := stopwords[w]
+	return ok
+}
+
+// tokenize lowercases s, splits it on every rune that is neither a letter nor a
+// digit, then drops single-rune tokens and stopwords. Digits are kept so
+// identifiers such as "ran37hpd2" survive, and unicode.IsLetter keeps accented
+// letters ("préférences") intact. Returns nil when nothing meaningful remains.
+func tokenize(s string) []string {
+	s = strings.ToLower(s)
+	words := strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	var result []string
+	for _, w := range words {
+		// utf8.RuneCountInString counts runes without allocating, unlike
+		// len([]rune(w)).
+		if utf8.RuneCountInString(w) >= 2 && !isStopword(w) {
+			result = append(result, w)
+		}
+	}
+	return result
+}
+
+// scoreEntry returns the lexical relevance of content for the given query terms:
+//
+//	score = matched + matched/distinctContentTerms
+//
+// where matched is the number of distinct query terms present in the tokenized
+// content, i.e. the size of the intersection between queryTerms and the
+// content's distinct tokens. The second term is a coverage bonus in (0, 1] that
+// favors short, focused memories over long ones matching the same number of
+// terms. Because the bonus is always > 0 and <= 1, an entry matching n+1 terms
+// always outranks one matching n terms (max score for n is exactly n+1, min
+// score for n+1 is strictly greater than n+1). Returns 0 when nothing matches,
+// so callers can treat 0 as "not relevant".
+//
+// The caller must pass the query terms as a pre-deduplicated set built once per
+// query (see Retrieve): the per-entry cost of this function is then proportional
+// to the content's own token count only, never to the query length.
+func scoreEntry(queryTerms map[string]struct{}, content string) float64 {
+	contentTokens := tokenize(content)
+	if len(queryTerms) == 0 || len(contentTokens) == 0 {
+		return 0
+	}
+
+	contentSet := make(map[string]struct{}, len(contentTokens))
+	for _, token := range contentTokens {
+		contentSet[token] = struct{}{}
+	}
+
+	// matched = |contentSet ∩ queryTerms|: identical to iterating the distinct
+	// query terms and counting those present in contentSet, but bounded by the
+	// content's distinct-term count instead of the query's.
+	matched := 0
+	for token := range contentSet {
+		if _, ok := queryTerms[token]; ok {
+			matched++
+		}
+	}
+	if matched == 0 {
+		return 0
+	}
+
+	return float64(matched) + float64(matched)/float64(len(contentSet))
 }
 
 // Delete removes a document from the store by ID.
