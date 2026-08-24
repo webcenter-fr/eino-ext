@@ -16,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -37,7 +38,13 @@ type Config struct {
 	MaintenanceInterval    time.Duration       `json:"maintenance_interval" validate:"gte=0" jsonschema:"description=Background maintenance tick interval, 0 disables"`
 	MaxAge                 time.Duration       `json:"max_age" validate:"gte=0" jsonschema:"description=Max age before cleanup during maintenance, 0 disables"`
 	MaxMemoriesPerRetrieve int                 `json:"max_memories_per_retrieve" validate:"gte=0" jsonschema:"description=Max memories injected per turn,default=5"`
-	SystemPromptPrefix     string              `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
+
+	// MaxQueryChars, when > 0, truncates the retrieval query to at most this many
+	// characters. With OR semantics, very long queries can dilute BM25 ranking;
+	// capping keeps the query focused on the most recent user intent.
+	MaxQueryChars int `validate:"omitempty,gte=0,max=65536" jsonschema:"description=Max characters for the retrieval query, 0 disables"`
+
+	SystemPromptPrefix string `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
 }
 
 // Agent wraps an inner agent with long-term memory capabilities.
@@ -55,6 +62,7 @@ type Agent struct {
 
 	autoExtract            bool
 	maxMemoriesPerRetrieve int
+	maxQueryChars          int
 	systemPromptPrefix     string
 }
 
@@ -88,6 +96,7 @@ func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
 		sessionID:              cfg.SessionID,
 		autoExtract:            cfg.AutoExtract,
 		maxMemoriesPerRetrieve: cfg.MaxMemoriesPerRetrieve,
+		maxQueryChars:          cfg.MaxQueryChars,
 		systemPromptPrefix:     cfg.SystemPromptPrefix,
 	}, nil
 }
@@ -199,7 +208,8 @@ func (a *Agent) buildQuery(messages []*schema.Message) string {
 	for i, j := 0, len(userContents)-1; i < j; i, j = i+1, j-1 {
 		userContents[i], userContents[j] = userContents[j], userContents[i]
 	}
-	return strings.Join(userContents, "\n")
+	result := strings.Join(userContents, "\n")
+	return strutil.Truncate(result, a.maxQueryChars, "")
 }
 
 func (a *Agent) formatMemories(docs []*schema.Document) *schema.Message {

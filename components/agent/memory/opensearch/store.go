@@ -27,18 +27,36 @@ import (
 
 // Config holds configuration for the OpenSearch-backed memory store.
 type Config struct {
-	URLs           []string           `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
-	Username       string             `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
-	Password       string             `validate:"omitempty" jsonschema:"description=Password for basic authentication"`
-	TLSSkipVerify  bool               `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
-	IndexName      string             `validate:"omitempty" jsonschema:"description=OpenSearch index name,default=eino_agent_memory"`
-	Embedding      embedding.Embedder `validate:"-" jsonschema:"-"`
-	VectorField    string             `validate:"omitempty" jsonschema:"description=knn_vector field name,default=vector"`
-	ContentField   string             `validate:"omitempty" jsonschema:"description=Text field for document content,default=content"`
-	Hybrid         bool               `validate:"omitempty" jsonschema:"description=Combine kNN with BM25 on ContentField"`
-	K              int                `validate:"omitempty" jsonschema:"description=Number of nearest neighbors for kNN"`
-	BatchSize      int                `validate:"omitempty,gte=1" jsonschema:"description=Max documents per bulk request,default=100"`
-	SearchPipeline string             `validate:"omitempty" jsonschema:"description=Optional search pipeline name"`
+	URLs          []string           `validate:"required,min=1" jsonschema:"description=OpenSearch cluster URLs"`
+	Username      string             `validate:"omitempty" jsonschema:"description=Username for basic authentication"`
+	Password      string             `validate:"omitempty" jsonschema:"description=Password for basic authentication"`
+	TLSSkipVerify bool               `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+	IndexName     string             `validate:"omitempty" jsonschema:"description=OpenSearch index name,default=eino_agent_memory"`
+	Embedding     embedding.Embedder `validate:"-" jsonschema:"-"`
+	VectorField   string             `validate:"omitempty" jsonschema:"description=knn_vector field name,default=vector"`
+	ContentField  string             `validate:"omitempty" jsonschema:"description=Text field for document content,default=content"`
+	Hybrid        bool               `validate:"omitempty" jsonschema:"description=Combine kNN with BM25 on ContentField"`
+	K             int                `validate:"omitempty" jsonschema:"description=Number of nearest neighbors for kNN"`
+
+	// VectorDimension is the dimension of the knn_vector field created when the
+	// index is auto-created. Defaults to 384 for backward compatibility. Changing
+	// this on an existing index requires deleting and recreating the index.
+	VectorDimension int `validate:"omitempty,gte=1" jsonschema:"description=knn_vector dimension,default=384"`
+
+	BatchSize      int    `validate:"omitempty,gte=1" jsonschema:"description=Max documents per bulk request,default=100"`
+	SearchPipeline string `validate:"omitempty" jsonschema:"description=Optional search pipeline name"`
+
+	// Operator is the BM25 match operator forwarded to the retriever ("or" or "and").
+	// Defaults to "or". See retriever/opensearch.Config.Operator.
+	Operator string `validate:"omitempty,oneof=or and" jsonschema:"description=BM25 match operator: or (default) or and"`
+
+	// MinimumShouldMatch is forwarded to the retriever's BM25 match query.
+	// See retriever/opensearch.Config.MinimumShouldMatch.
+	MinimumShouldMatch string `validate:"omitempty,max=128" jsonschema:"description=Optional minimum_should_match for the BM25 match query"`
+
+	// MinScore is forwarded to the retriever as the search body's min_score.
+	// See retriever/opensearch.Config.MinScore.
+	MinScore *float64 `validate:"omitempty" jsonschema:"description=Optional min_score threshold for search results"`
 }
 
 // Store is an OpenSearch-backed implementation of MemoryStore.
@@ -73,8 +91,15 @@ func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 	if cfg.BatchSize == 0 {
 		cfg.BatchSize = 100
 	}
+	if cfg.VectorDimension == 0 {
+		cfg.VectorDimension = 384
+	}
 	if err := validate.Struct(cfg); err != nil {
 		return nil, err
+	}
+
+	if cfg.MinScore != nil && *cfg.MinScore < 0 {
+		return nil, errors.New("MinScore must be >= 0")
 	}
 
 	client, err := osclient.New(ctx, osclient.Config{
@@ -89,6 +114,12 @@ func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 
 	if err := ensureIndex(ctx, client, cfg); err != nil {
 		return nil, err
+	}
+
+	if cfg.Embedding != nil {
+		if err := validateVectorDimension(ctx, client, cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	idx, err := indexeropensearch.NewIndexer(ctx, &indexeropensearch.Config{
@@ -107,17 +138,20 @@ func NewStore(ctx context.Context, cfg *Config) (*Store, error) {
 	}
 
 	ret, err := retrieveropensearch.NewRetriever(ctx, &retrieveropensearch.Config{
-		Index:          cfg.IndexName,
-		URLs:           cfg.URLs,
-		Username:       cfg.Username,
-		Password:       cfg.Password,
-		TLSSkipVerify:  cfg.TLSSkipVerify,
-		SearchPipeline: cfg.SearchPipeline,
-		Embedding:      cfg.Embedding,
-		VectorField:    cfg.VectorField,
-		ContentField:   cfg.ContentField,
-		Hybrid:         cfg.Hybrid,
-		K:              cfg.K,
+		Index:              cfg.IndexName,
+		URLs:               cfg.URLs,
+		Username:           cfg.Username,
+		Password:           cfg.Password,
+		TLSSkipVerify:      cfg.TLSSkipVerify,
+		SearchPipeline:     cfg.SearchPipeline,
+		Embedding:          cfg.Embedding,
+		VectorField:        cfg.VectorField,
+		ContentField:       cfg.ContentField,
+		Hybrid:             cfg.Hybrid,
+		K:                  cfg.K,
+		Operator:           cfg.Operator,
+		MinimumShouldMatch: cfg.MinimumShouldMatch,
+		MinScore:           cfg.MinScore,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create OpenSearch retriever")
@@ -175,7 +209,7 @@ func createIndex(ctx context.Context, client opensearchv4.Client, cfg *Config) e
 	if cfg.Embedding != nil {
 		properties[cfg.VectorField] = map[string]any{
 			"type":      "knn_vector",
-			"dimension": 384,
+			"dimension": cfg.VectorDimension,
 			"method": map[string]any{
 				"name":       "hnsw",
 				"engine":     "nmslib",
@@ -198,6 +232,80 @@ func createIndex(ctx context.Context, client opensearchv4.Client, cfg *Config) e
 	_, err := client.Indices().Create(ctx, cfg.IndexName, body)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create index %s", cfg.IndexName)
+	}
+
+	return nil
+}
+
+// validateVectorDimension checks that the existing index's vector field
+// dimension matches cfg.VectorDimension. If the vector field is missing or
+// the dimension differs, it returns a clear error instructing the user to
+// delete and recreate the index.
+func validateVectorDimension(ctx context.Context, client opensearchv4.Client, cfg *Config) error {
+	mapping, err := client.Indices().GetMapping(ctx, []string{cfg.IndexName})
+	if err != nil {
+		return errors.Wrapf(err, "failed to get mapping for index %s", cfg.IndexName)
+	}
+
+	indexMapping, ok := mapping[cfg.IndexName]
+	if !ok {
+		return errors.Errorf("index %s not found in mapping response", cfg.IndexName)
+	}
+
+	indexMap, ok := indexMapping.(map[string]any)
+	if !ok {
+		return errors.Errorf("unexpected mapping response type for index %s", cfg.IndexName)
+	}
+
+	mappings, ok := indexMap["mappings"].(map[string]any)
+	if !ok {
+		return errors.Errorf("mappings section not found for index %s", cfg.IndexName)
+	}
+
+	properties, ok := mappings["properties"].(map[string]any)
+	if !ok {
+		return errors.Errorf("properties section not found for index %s", cfg.IndexName)
+	}
+
+	vectorField, ok := properties[cfg.VectorField].(map[string]any)
+	if !ok {
+		return errors.Errorf(
+			"vector dimension mismatch: index %q has no vector field %q but config specifies Embedding. "+
+				"Delete and recreate the index to add the vector field.",
+			cfg.IndexName, cfg.VectorField,
+		)
+	}
+
+	dimension, ok := vectorField["dimension"]
+	if !ok {
+		return errors.Errorf(
+			"vector dimension mismatch: index %q vector field %q has no dimension. "+
+				"Delete and recreate the index to change the dimension.",
+			cfg.IndexName, cfg.VectorField,
+		)
+	}
+
+	// dimension can be float64 or int from JSON unmarshaling.
+	var dim int
+	switch v := dimension.(type) {
+	case float64:
+		dim = int(v)
+	case int:
+		dim = v
+	default:
+		return errors.Errorf(
+			"vector dimension mismatch: index %q vector field %q has unexpected dimension type %T. "+
+				"Delete and recreate the index to change the dimension.",
+			cfg.IndexName, cfg.VectorField, dimension,
+		)
+	}
+
+	if dim != cfg.VectorDimension {
+		return errors.Errorf(
+			"vector dimension mismatch: index %q has dimension %d but config specifies %d. "+
+				"Delete and recreate the index to change the dimension.",
+			cfg.IndexName, dim, cfg.VectorDimension,
+		)
 	}
 
 	return nil

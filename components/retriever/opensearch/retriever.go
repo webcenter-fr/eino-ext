@@ -72,6 +72,20 @@ type Config struct {
 	// Defaults to TopK (see Retrieve) when zero.
 	K int `validate:"omitempty" jsonschema:"description=Number of nearest neighbors for kNN"`
 
+	// Operator is the match operator used by the pure-BM25 query ("or" or "and").
+	// Defaults to "or". "and" requires every query term to be present, which is
+	// pathological for multi-sentence natural-language queries.
+	Operator string `validate:"omitempty,oneof=or and" jsonschema:"description=BM25 match operator: or (default) or and"`
+
+	// MinimumShouldMatch is passed through to the BM25 match query when non-empty
+	// (e.g. "2<70%"). Unset by default.
+	MinimumShouldMatch string `validate:"omitempty,max=128" jsonschema:"description=Optional minimum_should_match for the BM25 match query"`
+
+	// MinScore, when non-nil, is sent as the search body's min_score so weakly
+	// matching hits are dropped instead of returned as low-relevance noise.
+	// nil means "not set" (min_score key absent); &0.0 means explicitly set to 0.
+	MinScore *float64 `validate:"omitempty" jsonschema:"description=Optional min_score threshold for search results"`
+
 	// Index is the OpenSearch index to search. A per-call
 	// retriever.WithIndex option overrides this default.
 	Index string `validate:"required" jsonschema:"description=OpenSearch index to search"`
@@ -101,12 +115,19 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	if config.ContentField == "" {
 		config.ContentField = "content"
 	}
+	if config.Operator == "" {
+		config.Operator = "or"
+	}
 	if err := validate.Struct(config); err != nil {
 		return nil, err
 	}
 
 	if config.Embedding != nil && config.VectorField == "" {
 		return nil, errors.New("VectorField is required when Embedding is set")
+	}
+
+	if config.MinScore != nil && *config.MinScore < 0 {
+		return nil, errors.New("MinScore must be >= 0")
 	}
 
 	client, err := osclient.New(ctx, osclient.Config{
@@ -199,12 +220,16 @@ func (r *Retriever) buildSearchBody(query string, topK int, vectors [][]float64)
 	var queryPart map[string]any
 
 	if r.config.Embedding == nil {
+		matchBody := map[string]any{
+			"query":    query,
+			"operator": r.config.Operator,
+		}
+		if r.config.MinimumShouldMatch != "" {
+			matchBody["minimum_should_match"] = r.config.MinimumShouldMatch
+		}
 		queryPart = map[string]any{
 			"match": map[string]any{
-				r.config.ContentField: map[string]any{
-					"query":    query,
-					"operator": "and",
-				},
+				r.config.ContentField: matchBody,
 			},
 		}
 	} else {
@@ -242,6 +267,9 @@ func (r *Retriever) buildSearchBody(query string, topK int, vectors [][]float64)
 	}
 	if r.config.SearchPipeline != "" {
 		body["search_pipeline"] = r.config.SearchPipeline
+	}
+	if r.config.MinScore != nil {
+		body["min_score"] = *r.config.MinScore
 	}
 	return body
 }

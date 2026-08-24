@@ -26,6 +26,21 @@ type Config struct {
 }
 ```
 
+### BM25 match tuning
+
+The pure-BM25 (no `Embedding`) search path supports three tuning knobs:
+
+| Field                | Type     | Default | Description                                                      |
+|---------------------|----------|---------|------------------------------------------------------------------|
+| `Operator`           | `string` | `"or"`  | BM25 match operator: `"or"` or `"and"`                           |
+| `MinimumShouldMatch` | `string` | (unset) | Optional `minimum_should_match` for the BM25 match query (e.g. `"2<70%"`) |
+| `MinScore`           | `float64`| `0`     | When > 0, drops search hits with `_score` below this threshold   |
+
+> **Behavior change**: Prior to this version, the pure-BM25 path hard-coded
+> `operator: "and"`. The default is now `"or"`, which is the standard RAG
+> behavior and matches OpenSearch's own default. Consumers that require strict
+> AND semantics must set `Operator: "and"` explicitly.
+
 ## Usage
 
 ### Pure BM25 (keyword) search

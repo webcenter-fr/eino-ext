@@ -40,8 +40,22 @@ replica management.
 | `ContentField`  | `string`             | No       | `content`              | Text field for BM25 match                   |
 | `Hybrid`        | `bool`               | No       | `false`                | Combine kNN with BM25                       |
 | `K`             | `int`                | No       |                        | Number of nearest neighbors for kNN         |
+| `VectorDimension`   | `int`     | No       | `384`                 | knn_vector dimension (only used when Embedding is set and index is auto-created) |
 | `BatchSize`     | `int`                | No       | `100`                  | Max documents per bulk request              |
 | `SearchPipeline`| `string`             | No       |                        | Optional search pipeline name               |
+| `Operator`           | `string`  | No       | (forwarded)           | BM25 match operator: `"or"` or `"and"`       |
+| `MinimumShouldMatch` | `string`  | No       | (forwarded)           | Optional `minimum_should_match` for BM25     |
+| `MinScore`           | `float64` | No       | `0`                   | min_score threshold for search results       |
+
+> **Memory retrieval is BM25-only** unless an `Embedding` is supplied. The
+> `Operator` defaults to `"or"` (forwarded to the retriever). To reduce noise
+> from the broader OR recall, set `MinScore` to a small positive value (e.g.
+> `0.5`). For strict AND matching, set `Operator: "and"`.
+
+> **Changing `VectorDimension` on an existing index requires deleting and
+> recreating the index**, because `ensureIndex` only creates the mapping when
+> the index does not exist. An existing index with a different vector dimension
+> will not be updated automatically.
 
 ## Example
 

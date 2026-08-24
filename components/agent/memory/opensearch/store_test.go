@@ -115,6 +115,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.BatchSize == 0 {
 		cfg.BatchSize = 100
 	}
+	if cfg.VectorDimension == 0 {
+		cfg.VectorDimension = 384
+	}
 }
 
 func TestBuildFilterQuery(t *testing.T) {
@@ -317,4 +320,59 @@ func TestStore_DeleteByFilterMultipleKeys(t *testing.T) {
 	docs, err := s.List(ctx, 0, 10)
 	require.NoError(t, err)
 	assert.Len(t, docs, 2)
+}
+
+func TestConfig_OperatorFields(t *testing.T) {
+	ms := 0.5
+	cfg := &Config{
+		URLs:               []string{"http://localhost:9200"},
+		Operator:           "or",
+		MinimumShouldMatch: "2<70%",
+		MinScore:           &ms,
+	}
+	applyDefaults(cfg)
+	err := validate.Struct(cfg)
+	assert.NoError(t, err)
+}
+
+func TestConfig_OperatorInvalid(t *testing.T) {
+	cfg := &Config{
+		URLs:     []string{"http://localhost:9200"},
+		Operator: "invalid",
+	}
+	applyDefaults(cfg)
+	err := validate.Struct(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Operator")
+}
+
+func TestConfig_MinScoreNegative(t *testing.T) {
+	// validate.Struct accepts any non-nil *float64 (tag is omitempty only).
+	// The >= 0 check is performed in NewStore.
+	ms := -1.0
+	cfg := &Config{
+		URLs:     []string{"http://localhost:9200"},
+		MinScore: &ms,
+	}
+	applyDefaults(cfg)
+	err := validate.Struct(cfg)
+	assert.NoError(t, err)
+}
+
+func TestConfig_VectorDimensionDefault(t *testing.T) {
+	cfg := &Config{
+		URLs: []string{"http://localhost:9200"},
+	}
+	applyDefaults(cfg)
+	assert.Equal(t, 384, cfg.VectorDimension)
+}
+
+func TestConfig_VectorDimensionNegative(t *testing.T) {
+	cfg := &Config{
+		URLs:            []string{"http://localhost:9200"},
+		VectorDimension: -1,
+	}
+	applyDefaults(cfg)
+	err := validate.Struct(cfg)
+	assert.Error(t, err)
 }

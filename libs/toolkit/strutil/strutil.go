@@ -5,14 +5,20 @@ package strutil
 
 import "strings"
 
-// Truncate returns s unchanged when its length is within maxLen (or maxLen is
-// non-positive). Otherwise it returns the first maxLen bytes followed by the
-// given marker.
+// Truncate returns s unchanged when its rune count is within maxLen (or maxLen
+// is non-positive). Otherwise it returns the first maxLen runes followed by the
+// given marker. Truncation is rune-aware to avoid splitting multi-byte UTF-8
+// characters.
 func Truncate(s string, maxLen int, marker string) string {
 	if maxLen <= 0 || len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + marker
+	// Truncate at rune boundary to avoid splitting multi-byte characters.
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + marker
 }
 
 // StripMarkdownFences removes a surrounding ```lang ... ``` or ``` ... ```

@@ -409,3 +409,46 @@ func TestMemoryAgent_EnrichInput_NoStore(t *testing.T) {
 	assert.Len(t, enriched.Messages, 1)
 	assert.Equal(t, "hello", userQuery)
 }
+
+func TestBuildQuery_MaxQueryChars_Truncates(t *testing.T) {
+	agent := &Agent{maxQueryChars: 10}
+	result := agent.buildQuery([]*schema.Message{
+		schema.UserMessage("this is a very long query that exceeds the limit"),
+	})
+	assert.Equal(t, "this is a ", result)
+}
+
+func TestBuildQuery_MaxQueryChars_Zero_NoTruncation(t *testing.T) {
+	agent := &Agent{maxQueryChars: 0}
+	result := agent.buildQuery([]*schema.Message{
+		schema.UserMessage("hello world"),
+	})
+	assert.Equal(t, "hello world", result)
+}
+
+func TestBuildQuery_MaxQueryChars_ShorterThanLimit(t *testing.T) {
+	agent := &Agent{maxQueryChars: 100}
+	result := agent.buildQuery([]*schema.Message{
+		schema.UserMessage("short"),
+	})
+	assert.Equal(t, "short", result)
+}
+
+func TestBuildQuery_MaxQueryChars_TwoMessages(t *testing.T) {
+	agent := &Agent{maxQueryChars: 5}
+	result := agent.buildQuery([]*schema.Message{
+		schema.UserMessage("hello"),
+		schema.UserMessage("world"),
+	})
+	assert.Equal(t, "hello", result)
+}
+
+func TestNewAgent_MaxQueryChars(t *testing.T) {
+	ctx := context.Background()
+	agent, err := NewAgent(ctx, Config{
+		InnerAgent:    &mockAgent{name: "test"},
+		MaxQueryChars: 512,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 512, agent.maxQueryChars)
+}
