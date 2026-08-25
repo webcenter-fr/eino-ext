@@ -2,12 +2,14 @@ package grafana
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"emperror.dev/errors"
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +28,72 @@ func newDashboardWriteTestTool(t *testing.T, cfg Config, handler http.HandlerFun
 func newDashboardWriteTool(t *testing.T, handler http.HandlerFunc) *DashboardWriteTool {
 	t.Helper()
 	return newDashboardWriteTestTool(t, Config{}, handler)
+}
+
+func captureBody(captured *[]byte, status int, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if captured != nil && r.Body != nil {
+			b, _ := io.ReadAll(r.Body)
+			*captured = b
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+// newDashboardWriteToolWithMux creates a DashboardWriteTool that routes to
+// handlers registered on the provided mux. Used for tests that need multiple
+// endpoints (e.g. GET dashboard + POST save).
+func newDashboardWriteToolWithMux(t *testing.T, mux *http.ServeMux) *DashboardWriteTool {
+	t.Helper()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	tool, err := NewDashboardWriteTool(context.Background(), Configs{"test": {URL: server.URL}})
+	require.NoError(t, err)
+	return tool
+}
+
+// dashboardGetHandler returns a handler for GET /api/dashboards/uid/:uid that
+// returns a dashboard response with the given uid, title, and version.
+func dashboardGetHandler(uid, title string, version int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"dashboard":{"uid":%q,"title":%q},"meta":{"version":%d}}`,
+			uid, title, version)))
+	}
+}
+
+// dashboardGetNotFoundHandler returns a handler that returns HTTP 404.
+func dashboardGetNotFoundHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Dashboard not found"}`))
+	}
+}
+
+// dashboardSaveHandler returns a handler for POST /api/dashboards/db that
+// captures the request body (if captured is non-nil) and returns a success
+// response with the given uid and version.
+func dashboardSaveHandler(captured *[]byte, uid string, version int) http.HandlerFunc {
+	return captureBody(captured, http.StatusOK, fmt.Sprintf(
+		`{"id":10,"uid":%q,"url":"/d/%s/slug","status":"success","version":%d,"slug":"slug"}`,
+		uid, uid, version))
+}
+
+// dashboardSaveConflictHandler returns a handler that returns HTTP 412
+// (PreconditionFailed) with a version-mismatch status.
+func dashboardSaveConflictHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPreconditionFailed)
+		_, _ = w.Write([]byte(`{"message":"The dashboard has been changed by someone else","status":"version-mismatch"}`))
+	}
 }
 
 func TestNewDashboardWriteToolRequiresConfigs(t *testing.T) {
@@ -327,6 +395,237 @@ func TestDashboardWriteToolProtection(t *testing.T) {
 	})
 }
 
+// TestDashboardWriteToolVersionResolution tests various version and ID handling
+// scenarios when updating existing dashboards.
+func TestDashboardWriteToolVersionResolution(t *testing.T) {
+	t.Parallel()
+
+	// assertPOSTVersionUnmarshaled is a test assertion helper that unmarshals
+	// the captured POST body and asserts the dashboard version.
+	assertPOSTVersion := func(t *testing.T, gotPOST []byte, wantVersion float64) {
+		t.Helper()
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+		v, _ := req.Dashboard["version"].(float64)
+		assert.Equal(t, wantVersion, v)
+	}
+
+	// assertPOSTHasNoField is a test assertion helper that asserts a field is
+	// NOT present in the dashboard of the captured POST body.
+	assertPOSTHasNoField := func(t *testing.T, gotPOST []byte, field string) {
+		t.Helper()
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+		_, exists := req.Dashboard[field]
+		assert.False(t, exists, "field %q must not be present", field)
+	}
+
+	t.Run("version is injected when model has no version", func(t *testing.T) {
+		t.Parallel()
+		var gotPOST []byte
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 7))
+		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
+
+		tool := newDashboardWriteToolWithMux(t, mux)
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			Dashboard: `{"uid":"abc123","title":"T"}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+
+		assertPOSTVersion(t, gotPOST, 7)
+	})
+
+	t.Run("stale version is replaced with current version", func(t *testing.T) {
+		t.Parallel()
+		var gotPOST []byte
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 7))
+		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
+
+		tool := newDashboardWriteToolWithMux(t, mux)
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			Dashboard: `{"uid":"abc123","title":"T","version":3}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+
+		assertPOSTVersion(t, gotPOST, 7)
+	})
+
+	t.Run("stale id is stripped from request", func(t *testing.T) {
+		t.Parallel()
+		var gotPOST []byte
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 5))
+		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 6))
+
+		tool := newDashboardWriteToolWithMux(t, mux)
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			Dashboard: `{"uid":"abc123","title":"T","id":1471}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+
+		assertPOSTHasNoField(t, gotPOST, "id")
+		assertPOSTVersion(t, gotPOST, 5)
+	})
+}
+
+func TestDashboardWriteToolOverwritePassthrough(t *testing.T) {
+	t.Parallel()
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	// Note: GET /api/dashboards/uid/abc123 is still called by checkProtected
+	// before reaching the version-resolution code (which skips when overwrite=true)
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 7))
+	mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "update",
+		Dashboard: `{"uid":"abc123","title":"T","version":99,"id":999}`,
+		Overwrite: true,
+		Confirmed: true,
+	})
+	require.NoError(t, err)
+
+	var req saveDashboardRequest
+	require.NoError(t, json.Unmarshal(gotPOST, &req))
+	assert.True(t, req.Overwrite, "overwrite must be true in request")
+	v, _ := req.Dashboard["version"].(float64)
+	assert.Equal(t, float64(99), v, "caller-supplied version must pass through untouched when overwrite=true")
+	_, hasID := req.Dashboard["id"]
+	assert.False(t, hasID, "id must be stripped even when overwrite=true")
+}
+
+func TestDashboardWriteToolUnknownUID(t *testing.T) {
+	t.Parallel()
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/notfound", dashboardGetNotFoundHandler())
+	mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "notfound", 1))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "create",
+		Dashboard: `{"uid":"notfound","title":"New Dashboard","version":5,"id":99}`,
+		Confirmed: true,
+	})
+	require.NoError(t, err)
+
+	var req saveDashboardRequest
+	require.NoError(t, json.Unmarshal(gotPOST, &req))
+	_, hasVersion := req.Dashboard["version"]
+	assert.False(t, hasVersion, "version must be stripped when dashboard does not exist")
+	_, hasID := req.Dashboard["id"]
+	assert.False(t, hasID, "id must be stripped when dashboard does not exist")
+	assert.Equal(t, "New Dashboard", req.Dashboard["title"])
+}
+
+func TestDashboardWriteToolGenuineConflict(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 7))
+	mux.HandleFunc("/api/dashboards/db", dashboardSaveConflictHandler())
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "update",
+		Dashboard: `{"uid":"abc123","title":"T"}`,
+		Confirmed: true,
+	})
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrVersionMismatch), "error must wrap ErrVersionMismatch")
+	errStr := err.Error()
+	assert.Contains(t, errStr, "abc123", "error must name the dashboard uid")
+	assert.Contains(t, errStr, "version 7", "error must mention the submitted version (7)")
+	assert.Contains(t, errStr, "modified concurrently", "error must explain the cause")
+}
+
+func TestDashboardWriteToolDryRunNoVersionRead(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	// GET is called by checkProtected, but not for version resolution
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "T", 7))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+	result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "update",
+		Dashboard: `{"uid":"abc123","title":"T"}`,
+		DryRun:    true,
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, result, `"dryRun":true`)
+	assert.Contains(t, result, `"operation":"update"`)
+	assert.Contains(t, result, `"folderUid":`)
+	assert.NotContains(t, result, `"folderUID":`)
+	assert.Contains(t, result, `"versionResolvedAtExecute":true`)
+}
+
+// TestDashboardWriteToolRegressionReportedIncident reproduces the exact scenario
+// from the reported bug: Model with id:1471, no version, overwrite unset.
+// The save must succeed (no 412 version mismatch).
+func TestDashboardWriteToolRegressionReportedIncident(t *testing.T) {
+	t.Parallel()
+	var gotPOST []byte
+
+	const uid = "3ce913db-abcd-1234-5678-abcdef123456"
+
+	mux := http.NewServeMux()
+	// GET returns the existing dashboard with version 6 and id 1471
+	mux.HandleFunc("/api/dashboards/uid/"+uid, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"dashboard":{"uid":%q,"title":"My Dashboard","id":1471},"meta":{"version":6}}`, uid)))
+	})
+	// POST succeeds with new version 7
+	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK, fmt.Sprintf(
+		`{"id":1471,"uid":%q,"url":"/d/%s/slug","status":"success","version":7,"slug":"slug"}`, uid, uid)))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+	result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "update",
+		Dashboard: fmt.Sprintf(`{"uid":%q,"title":"My Dashboard","id":1471}`, uid),
+		Confirmed: true,
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, result, `"status":"success"`)
+
+	var req saveDashboardRequest
+	require.NoError(t, json.Unmarshal(gotPOST, &req))
+	v, _ := req.Dashboard["version"].(float64)
+	assert.Equal(t, float64(6), v, "version must be 6 (injected from GET)")
+	_, hasID := req.Dashboard["id"]
+	assert.False(t, hasID, "stale id 1471 must be stripped")
+}
+
 func TestDashboardWriteToolConstructor(t *testing.T) {
 	tool, err := NewDashboardWriteTool(context.Background(), Configs{"t": {URL: "http://localhost"}})
 	require.NoError(t, err)
@@ -335,6 +634,105 @@ func TestDashboardWriteToolConstructor(t *testing.T) {
 	info, err := tool.Info(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "grafana_dashboard_write", info.Name)
+}
+
+// TestDashboardWriteToolUIDValidation verifies that invalid UIDs are rejected
+// before any HTTP request is made (CWE-20, CWE-22, CWE-400).
+func TestDashboardWriteToolUIDValidation(t *testing.T) {
+	tool, err := NewDashboardWriteTool(context.Background(), Configs{"t": {URL: "http://localhost"}})
+	require.NoError(t, err)
+
+	t.Run("path traversal uid rejected in delete", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "delete",
+			UID:       "../../etc/passwd",
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid dashboard UID")
+	})
+
+	t.Run("path traversal uid rejected in update via params", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "update",
+			UID:       "../../etc/passwd",
+			Dashboard: `{"title":"Test"}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid dashboard UID")
+	})
+
+	t.Run("path traversal uid rejected in update via model", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "update",
+			Dashboard: `{"uid":"../../etc/passwd","title":"Test"}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid dashboard UID")
+	})
+
+	t.Run("overly long uid rejected (41 chars)", func(t *testing.T) {
+		uid := strings.Repeat("a", 41)
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "delete",
+			UID:       uid,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid dashboard UID")
+	})
+
+	t.Run("uid with invalid characters rejected", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "delete",
+			UID:       "uid with spaces",
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid dashboard UID")
+	})
+
+	t.Run("valid uid formats accepted", func(t *testing.T) {
+		validUIDs := []string{
+			"abc123",
+			"my-dashboard_UID-123",
+			strings.Repeat("a", 40), // max length
+		}
+		for _, uid := range validUIDs {
+			// Just validate that we get past the UID validation and either succeed
+			// or fail for a different reason (like network)
+			_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+				Instance:  "t",
+				Operation: "delete",
+				UID:       uid,
+				Confirmed: true,
+			})
+			// Error should NOT be "invalid dashboard UID"
+			if err != nil {
+				assert.NotContains(t, err.Error(), "invalid dashboard UID", "uid %q should be valid", uid)
+			}
+		}
+	})
+
+	t.Run("empty uid is valid (for create)", func(t *testing.T) {
+		// Create with no UID should be fine (no HTTP call needed for validation)
+		// But will fail because no confirmation/dryrun - but not because of UID
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "create",
+			Dashboard: `{"title":"New Dashboard"}`,
+		})
+		if err != nil {
+			assert.NotContains(t, err.Error(), "invalid dashboard UID")
+		}
+	})
 }
 
 // TestDashboardWriteToolInputLengthLimits verifies that oversized inputs are

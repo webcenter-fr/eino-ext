@@ -3,6 +3,7 @@ package grafana
 import (
 	"context"
 	"net/http"
+	"regexp"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -10,6 +11,15 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 )
+
+var uidRegexp = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,40}$`)
+
+func validateUID(uid string) error {
+	if uid != "" && !uidRegexp.MatchString(uid) {
+		return errors.Errorf("invalid dashboard UID %q: must match [a-zA-Z0-9_-]{1,40}", uid)
+	}
+	return nil
+}
 
 const dashboardWriteDescription = `
 ** General Purpose **
@@ -24,6 +34,11 @@ required 'operation' param selects the action:
 ** Safety **
 This is a write tool. Always use dryRun=true first to preview the resolved
 payload before saving/deleting. After reviewing, set confirmed=true to execute.
+
+Do NOT include 'version' or 'id' in the dashboard model — the tool resolves the
+current version automatically at execute time. Set overwrite=true only when the
+user explicitly asks to force the save and discard any concurrent modifications;
+otherwise leave it false.
 
 ** Dashboard Protection **
 Dashboards matching the instance's protected blocklist (by UID, title prefix,
@@ -40,11 +55,11 @@ title and message.
 type DashboardWriteParams struct {
 	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The Grafana instance to connect to."`
 	Operation string `json:"operation" validate:"required,oneof=create update delete" jsonschema:"(required) Operation: 'create', 'update', or 'delete'."`
-	Dashboard string `json:"dashboard,omitempty" validate:"omitempty,max=1048576" jsonschema:"(optional, create/update) The full Grafana dashboard model as a JSON string. Must include 'title'. Include 'uid' to target an existing dashboard (update). Ignored for delete."`
+	Dashboard string `json:"dashboard,omitempty" validate:"omitempty,max=1048576" jsonschema:"(optional, create/update) The full Grafana dashboard model as a JSON string. Must include 'title'. Include 'uid' to target an existing dashboard (update). Do NOT include 'version' or 'id' — they are resolved by the tool. Ignored for delete."`
 	UID       string `json:"uid,omitempty" validate:"omitempty,max=256" jsonschema:"(optional, delete/update by UID) For delete: the dashboard UID to delete. For update: may be provided here instead of inside the dashboard model. Ignored for create."`
 	FolderUID string `json:"folderUID,omitempty" validate:"omitempty,max=256" jsonschema:"(optional, create/update) Folder UID to place the dashboard in."`
 	Message   string `json:"message,omitempty" validate:"omitempty,max=1024" jsonschema:"(optional, create/update) Commit message for the version."`
-	Overwrite bool   `json:"overwrite,omitempty" jsonschema:"(optional, create/update) Overwrite without version checking."`
+	Overwrite bool   `json:"overwrite,omitempty" jsonschema:"(optional, create/update) Force the save, discarding any concurrent modification. Leave false unless the user explicitly asked to force it; the tool resolves the current version automatically."`
 	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) Preview without saving/deleting."`
 	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to execute."`
 }
@@ -116,9 +131,23 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 			dashboardModel["uid"] = params.UID
 		}
 
+		if err := validateUID(uid); err != nil {
+			return "", err
+		}
+
+		var existingDR *dashboardResponse
 		if uid != "" {
-			if err := t.checkProtected(ctx, params.Instance, uid); err != nil {
-				return "", err
+			dr, err := t.fetchDashboard(ctx, params.Instance, uid)
+			if err != nil {
+				// A 404 means the dashboard does not exist yet; treat as not protected.
+				if !isHTTPStatus(err, http.StatusNotFound) {
+					return "", err
+				}
+			} else {
+				existingDR = &dr
+				if err := t.checkProtectedDashboard(params.Instance, uid, dr); err != nil {
+					return "", err
+				}
 			}
 		}
 
@@ -129,14 +158,36 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 			return "", err
 		}
 
+		// Always strip stale numeric id: Grafana upserts on uid; a stale id
+		// inherited by copying another dashboard's JSON can retarget the write.
+		// This must run regardless of overwrite mode.
+		delete(dashboardModel, "id")
+
 		if params.DryRun {
-			return marshalJSON(map[string]any{
+			preview := map[string]any{
 				"dryRun":    true,
 				"operation": params.Operation,
 				"dashboard": dashboardModel,
-				"folderUID": params.FolderUID,
+				"folderUid": params.FolderUID,
 				"overwrite": params.Overwrite,
-			}, "failed to marshal dry-run preview")
+			}
+			if uid != "" && !params.Overwrite {
+				preview["versionResolvedAtExecute"] = true
+			}
+			return marshalJSON(preview, "failed to marshal dry-run preview")
+		}
+
+		if uid != "" && !params.Overwrite {
+			if existingDR == nil {
+				// Dashboard did not exist at protection-check time, or was deleted
+				// between protection check and now. Treat as fresh create: strip
+				// any inherited version.
+				delete(dashboardModel, "version")
+			} else {
+				// Inject the current version so Grafana's optimistic-concurrency
+				// check passes. This overwrites any stale version in the model.
+				dashboardModel["version"] = existingDR.Meta.Version
+			}
 		}
 
 		req := saveDashboardRequest{
@@ -153,6 +204,15 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 
 		body, err := c.SaveDashboard(ctx, payload)
 		if err != nil {
+			if errors.Is(err, ErrVersionMismatch) {
+				submittedVersion := dashboardModel["version"]
+				return "", errors.Wrapf(err,
+					"dashboard %q was modified concurrently: the tool submitted version %v, "+
+						"which Grafana rejected. Re-read the dashboard, re-apply your change on "+
+						"top of the newer model, and retry. Set overwrite=true only to "+
+						"deliberately discard the concurrent change",
+					uid, submittedVersion)
+			}
 			return "", errors.Wrap(err, "failed to save dashboard")
 		}
 
@@ -172,6 +232,10 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 	case "delete":
 		if params.UID == "" {
 			return "", errors.New("parameter 'uid' is required for delete; provide the dashboard UID to delete and retry")
+		}
+
+		if err := validateUID(params.UID); err != nil {
+			return "", err
 		}
 
 		// Fetch the existing dashboard first to (a) confirm it exists and

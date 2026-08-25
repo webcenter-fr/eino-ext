@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -96,6 +97,11 @@ const maxErrorBodyLen = 512
 // maxResponseBodyLen caps how many bytes of a successful response body are read
 // into memory. Prevents a broad range query from exhausting memory.
 const maxResponseBodyLen = 10 << 20 // 10 MiB
+
+// ErrVersionMismatch is returned by SaveDashboard when Grafana rejects the
+// save because the submitted dashboard.version is not the current one
+// (HTTP 412, status "version-mismatch").
+var ErrVersionMismatch = errors.New("dashboard version mismatch")
 
 // httpError is a typed error carrying the HTTP status code so callers can
 // branch on it (e.g. 404 → not found) without parsing the error string.
@@ -364,12 +370,36 @@ func (c *grafanaClient) GetDashboard(ctx context.Context, uid string) ([]byte, e
 
 // SaveDashboard calls POST /api/dashboards/db with the given payload.
 // Returns the raw response body (contains id, uid, url, version, status).
+// Returns ErrVersionMismatch when Grafana responds with HTTP 412
+// (version-mismatch), wrapped with the raw response body.
 func (c *grafanaClient) SaveDashboard(ctx context.Context, payload []byte) ([]byte, error) {
-	body, _, err := c.doRequest(ctx, http.MethodPost, "/api/dashboards/db", strings.NewReader(string(payload)))
+	body, status, err := c.doRequest(ctx, http.MethodPost, "/api/dashboards/db", strings.NewReader(string(payload)))
 	if err != nil {
+		if status == http.StatusPreconditionFailed {
+			return nil, errors.Wrapf(ErrVersionMismatch, "grafana rejected save with 412: %s", err.Error())
+		}
 		return nil, errors.Wrap(err, "failed to save dashboard")
 	}
 	return body, nil
+}
+
+// dashboardVersion returns the current version of the dashboard identified
+// by uid. Returns (0, false, nil) when the dashboard does not exist (HTTP 404).
+func (c *grafanaClient) dashboardVersion(ctx context.Context, uid string) (int, bool, error) {
+	body, err := c.GetDashboard(ctx, uid)
+	if err != nil {
+		if isHTTPStatus(err, http.StatusNotFound) {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+
+	var dr dashboardResponse
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return 0, false, errors.Wrap(err, "failed to unmarshal dashboard response")
+	}
+
+	return dr.Meta.Version, true, nil
 }
 
 // DeleteDashboard calls DELETE /api/dashboards/uid/:uid.
