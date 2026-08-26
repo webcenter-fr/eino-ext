@@ -114,8 +114,9 @@ selects `create`, `update`, or `delete`. This is a **write tool**: always use
 |---|---|---|
 | `instance` | Yes | Grafana instance name |
 | `operation` | Yes | `create`, `update`, or `delete` |
-| `dashboard` | No | (create/update) Full dashboard model as a JSON string; must include `title`. Include `uid` to target an existing dashboard. Ignored for delete |
-| `uid` | No | (delete/update) For delete: the dashboard UID to delete. For update: may be provided here instead of inside the model. Ignored for create |
+| `dashboard` | No | (create/update) Full dashboard model as a JSON string; must include `title`. Include `uid` to target an existing dashboard. Ignored for delete. For update, may be omitted when `changes` is provided — the tool auto-fetches the existing dashboard |
+| `changes` | No | (update only) Partial dashboard model as a JSON object containing only the fields to change. The tool auto-fetches the existing dashboard by UID, deep-merges the changes on top, and saves. Use this for targeted updates (e.g. modifying a template variable) without providing the full dashboard model. Ignored for create and delete |
+| `uid` | No | (delete/update) For delete: the dashboard UID to delete. For update: may be provided here instead of inside the model. Required when `changes` is provided without `dashboard`. Ignored for create |
 | `folderUID` | No | (create/update) Folder UID to place the dashboard in |
 | `message` | No | (create/update) Commit message for the version |
 | `overwrite` | No | (create/update) Overwrite without version checking |

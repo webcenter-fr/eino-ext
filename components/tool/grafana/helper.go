@@ -57,6 +57,22 @@ func validateParams(v any) error {
 	return validate.Struct(v)
 }
 
+// deepMergeJSON merges src into dst recursively. Maps are merged key-by-key;
+// slices and other values are replaced entirely by the src value.
+func deepMergeJSON(dst, src map[string]any) {
+	for key, srcVal := range src {
+		if dstVal, ok := dst[key]; ok {
+			dstMap, dstIsMap := dstVal.(map[string]any)
+			srcMap, srcIsMap := srcVal.(map[string]any)
+			if dstIsMap && srcIsMap {
+				deepMergeJSON(dstMap, srcMap)
+				continue
+			}
+		}
+		dst[key] = srcVal
+	}
+}
+
 // applyExcludes clears each requested field using the provided setter map. It
 // returns an error for a field name not present in the map.
 func applyExcludes(excludeFields []string, setters map[string]func()) error {

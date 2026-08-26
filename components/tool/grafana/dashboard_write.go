@@ -31,6 +31,26 @@ required 'operation' param selects the action:
   semantics; include a 'uid' to target an existing dashboard).
 - delete: DELETE /api/dashboards/uid/:uid.
 
+** Targeted Updates with 'changes' **
+For update operations, use the 'changes' parameter to specify only the fields
+you want to modify. The tool will auto-fetch the existing dashboard by UID, deep-
+merge your changes on top, and save the result. This eliminates the need to
+provide the entire dashboard model for small targeted updates like modifying a
+single template variable.
+
+Example — update a template variable:
+{
+  "operation": "update",
+  "uid": "3ce913db-b3ec-48a3-8867-8ef48cf2e337",
+  "changes": {
+    "templating": {
+      "list": [
+        {"name": "cluster", "current": {"value": "logmanagement2-rec"}, "includeAll": true, "allValue": ".+"}
+      ]
+    }
+  }
+}
+
 ** Safety **
 This is a write tool. Always use dryRun=true first to preview the resolved
 payload before saving/deleting. After reviewing, set confirmed=true to execute.
@@ -55,7 +75,8 @@ title and message.
 type DashboardWriteParams struct {
 	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The Grafana instance to connect to."`
 	Operation string `json:"operation" validate:"required,oneof=create update delete" jsonschema:"(required) Operation: 'create', 'update', or 'delete'."`
-	Dashboard string `json:"dashboard,omitempty" validate:"omitempty,max=1048576" jsonschema:"(optional, create/update) The full Grafana dashboard model as a JSON string. Must include 'title'. Include 'uid' to target an existing dashboard (update). Do NOT include 'version' or 'id' — they are resolved by the tool. Ignored for delete."`
+	Dashboard string `json:"dashboard,omitempty" validate:"omitempty,max=1048576" jsonschema:"(optional, create/update) The full Grafana dashboard model as a JSON string. Must include 'title'. Include 'uid' to target an existing dashboard (update). Do NOT include 'version' or 'id' — they are resolved by the tool. For update, may be omitted when 'changes' is provided and 'uid' is set — the tool will auto-fetch the existing dashboard and apply changes on top."`
+	Changes   string `json:"changes,omitempty" validate:"omitempty,max=1048576" jsonschema:"(optional, update only) A partial dashboard model as a JSON object containing only the fields to change. When provided for update, the tool deep-merges these changes into the existing dashboard (auto-fetched by UID, or into the provided 'dashboard' model). This avoids having to supply the full dashboard model for small targeted updates like modifying a single template variable. Ignored for create and delete."`
 	UID       string `json:"uid,omitempty" validate:"omitempty,max=256" jsonschema:"(optional, delete/update by UID) For delete: the dashboard UID to delete. For update: may be provided here instead of inside the dashboard model. Ignored for create."`
 	FolderUID string `json:"folderUID,omitempty" validate:"omitempty,max=256" jsonschema:"(optional, create/update) Folder UID to place the dashboard in."`
 	Message   string `json:"message,omitempty" validate:"omitempty,max=1024" jsonschema:"(optional, create/update) Commit message for the version."`
@@ -105,32 +126,34 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 
 	switch params.Operation {
 	case "create", "update":
-		if params.Dashboard == "" {
+		if params.Dashboard == "" && params.Changes == "" {
 			return "", errors.Errorf("parameter 'dashboard' is required for operation %q; provide the full dashboard model JSON (including 'title') and retry", params.Operation)
+		}
+		if params.Changes != "" && params.Operation == "create" {
+			return "", errors.New("parameter 'changes' is not supported for create; use 'dashboard' to provide the full dashboard model, or switch to update")
+		}
+
+		var changesModel map[string]any
+		if params.Changes != "" {
+			if err := json.Unmarshal([]byte(params.Changes), &changesModel); err != nil {
+				return "", errors.Wrap(err, "parameter 'changes' is not valid JSON; fix the changes model and retry")
+			}
 		}
 
 		var dashboardModel map[string]any
-		if err := json.Unmarshal([]byte(params.Dashboard), &dashboardModel); err != nil {
-			return "", errors.Wrap(err, "parameter 'dashboard' is not valid JSON; fix the dashboard model and retry")
+		if params.Dashboard != "" {
+			if err := json.Unmarshal([]byte(params.Dashboard), &dashboardModel); err != nil {
+				return "", errors.Wrap(err, "parameter 'dashboard' is not valid JSON; fix the dashboard model and retry")
+			}
 		}
 
-		title, _ := dashboardModel["title"].(string)
-		if title == "" {
-			return "", errors.New("parameter 'dashboard' is missing a 'title' field; add a non-empty 'title' to the dashboard model and retry")
-		}
-
-		// Determine the target uid: for update prefer params.UID, else the
-		// model's uid; for create use the model's uid (may be empty).
-		uid, _ := dashboardModel["uid"].(string)
-		if params.Operation == "update" && params.UID != "" {
+		// Resolve the target UID.
+		var uid string
+		if params.UID != "" {
 			uid = params.UID
-			// The update target is specified via params.UID. Grafana's save
-			// endpoint keys on the dashboard model's "uid" field, so inject it
-			// into the model; otherwise the POST would create a NEW dashboard
-			// instead of updating the intended one.
-			dashboardModel["uid"] = params.UID
+		} else if dashboardModel != nil {
+			uid, _ = dashboardModel["uid"].(string)
 		}
-
 		if err := validateUID(uid); err != nil {
 			return "", err
 		}
@@ -139,7 +162,6 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 		if uid != "" {
 			dr, err := t.fetchDashboard(ctx, params.Instance, uid)
 			if err != nil {
-				// A 404 means the dashboard does not exist yet; treat as not protected.
 				if !isHTTPStatus(err, http.StatusNotFound) {
 					return "", err
 				}
@@ -149,6 +171,38 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 					return "", err
 				}
 			}
+		}
+
+		// Auto-fetch the existing dashboard when changes are provided without a
+		// full dashboard model. This enables targeted updates (e.g. modifying a
+		// single template variable) without requiring the caller to supply the
+		// entire dashboard JSON.
+		if len(changesModel) > 0 && dashboardModel == nil {
+			if uid == "" {
+				return "", errors.New("parameter 'uid' is required when 'changes' is provided without 'dashboard'; set 'uid' to identify the target dashboard")
+			}
+			if existingDR == nil {
+				return "", errors.Errorf("dashboard with UID %q not found; cannot apply changes to a nonexistent dashboard", uid)
+			}
+			dashboardModel = existingDR.Dashboard
+		}
+
+		// Deep-merge changes into the dashboard model.
+		if len(changesModel) > 0 {
+			deepMergeJSON(dashboardModel, changesModel)
+		}
+
+		// Inject params.UID into the model for update operations. Grafana's
+		// save endpoint keys on the dashboard model's "uid" field, so without
+		// this the POST would create a NEW dashboard instead of updating the
+		// intended one.
+		if params.Operation == "update" && uid != "" {
+			dashboardModel["uid"] = uid
+		}
+
+		title, _ := dashboardModel["title"].(string)
+		if title == "" {
+			return "", errors.New("the resolved dashboard model is missing a 'title' field; ensure the dashboard or changes include a non-empty 'title'")
 		}
 
 		// Defense-in-depth: also evaluate the NEW dashboard model (and target

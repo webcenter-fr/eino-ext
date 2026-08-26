@@ -776,3 +776,278 @@ func TestDashboardWriteToolInputLengthLimits(t *testing.T) {
 		assert.Contains(t, err.Error(), "invalid parameters")
 	})
 }
+
+func TestDashboardWriteToolChangesAutoFetch(t *testing.T) {
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "Production Overview", 3))
+	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK,
+		`{"id":10,"uid":"abc123","url":"/d/abc123/slug","status":"success","version":4,"slug":"slug"}`))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("auto-fetch and merge changes", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "abc123",
+			Changes:   `{"templating":{"list":[{"current":{"value":"new-cluster"}}]}}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"uid":"abc123"`)
+		assert.Contains(t, result, `"status":"success"`)
+
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+		assert.Equal(t, "Production Overview", req.Dashboard["title"],
+			"title must come from auto-fetched dashboard")
+		assert.Equal(t, float64(3), req.Dashboard["version"],
+			"version must be injected from fetched dashboard")
+		assert.NotContains(t, string(gotPOST), `"id":`)
+	})
+}
+
+func TestDashboardWriteToolChangesWithDashboard(t *testing.T) {
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "Existing Title", 5))
+	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK,
+		`{"id":10,"uid":"abc123","url":"/d/abc123/slug","status":"success","version":6,"slug":"slug"}`))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("changes merged into provided dashboard", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			Dashboard: `{"uid":"abc123","title":"Custom Title","panels":[{"id":1}]}`,
+			Changes:   `{"tags":["env:prod"],"panels":[{"id":2,"title":"New Panel"}]}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"status":"success"`)
+
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+		assert.Equal(t, "Custom Title", req.Dashboard["title"],
+			"title from dashboard must be preserved")
+		assert.Contains(t, string(gotPOST), `"env:prod"`,
+			"tags from changes must be merged")
+		panels, _ := req.Dashboard["panels"].([]any)
+		assert.Len(t, panels, 1,
+			"panels from changes must replace panels from dashboard (array replacement)")
+	})
+}
+
+func TestDashboardWriteToolChangesErrors(t *testing.T) {
+	tool, err := NewDashboardWriteTool(context.Background(), Configs{"t": {URL: "http://localhost"}})
+	require.NoError(t, err)
+
+	t.Run("changes without dashboard and without uid", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "update",
+			Changes:   `{"title":"Test"}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "uid' is required when 'changes' is provided without 'dashboard'")
+	})
+
+	t.Run("changes on create rejected", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "create",
+			Dashboard: `{"title":"Test"}`,
+			Changes:   `{"tags":["prod"]}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "changes' is not supported for create")
+	})
+
+	t.Run("invalid changes JSON", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "t",
+			Operation: "update",
+			UID:       "abc123",
+			Changes:   "not json",
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not valid JSON")
+	})
+}
+
+func TestDashboardWriteToolChangesAutoFetchNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/nonexistent", dashboardGetNotFoundHandler())
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("changes on nonexistent dashboard", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "nonexistent",
+			Changes:   `{"title":"New Title"}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestDashboardWriteToolChangesProtected(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/protected-uid", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"uid":"protected-uid","title":"Kubernetes Monitoring","tags":["infrastructure"]},"meta":{"folderUid":"infra-folder","version":1}}`))
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	tool, err := NewDashboardWriteTool(context.Background(), Configs{
+		"test": {
+			URL: server.URL,
+			ProtectedDashboards: ProtectedDashboardsConfig{
+				UIDs: []string{"protected-uid"},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	t.Run("changes on protected dashboard blocked", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "protected-uid",
+			Changes:   `{"templating":{"list":[{"current":{"value":"x"}}]}}`,
+			Confirmed: true,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "is protected")
+	})
+}
+
+func TestDashboardWriteToolChangesDryRun(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "Dry Run Dashboard", 2))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("dry run with changes shows merged preview", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "abc123",
+			Changes:   `{"tags":["env:staging"]}`,
+			DryRun:    true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"dryRun":true`)
+		assert.Contains(t, result, `"operation":"update"`)
+		assert.Contains(t, result, `"Dry Run Dashboard"`,
+			"title from fetched dashboard must be in preview")
+		assert.Contains(t, result, `"env:staging"`,
+			"changes must be reflected in preview")
+		assert.Contains(t, result, `"versionResolvedAtExecute":true`)
+	})
+}
+
+func TestDashboardWriteToolChangesDeepMerge(t *testing.T) {
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"dashboard": {
+				"uid": "abc123",
+				"title": "Deep Merge Test",
+				"templating": {
+					"list": [
+						{"name": "cluster", "current": {"value": "old-cluster"}, "includeAll": false},
+						{"name": "namespace", "current": {"value": "default"}}
+					]
+				},
+				"time": {"from": "now-6h", "to": "now"}
+			},
+			"meta": {"version": 1}
+		}`))
+	})
+	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK,
+		`{"id":10,"uid":"abc123","url":"/d/abc123/slug","status":"success","version":2,"slug":"slug"}`))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("deep merge nested changes", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "abc123",
+			Changes: `{
+				"templating": {
+					"list": [
+						{"name": "cluster", "current": {"value": "new-cluster"}, "includeAll": true, "allValue": ".+"}
+					]
+				},
+				"time": {"from": "now-1h"}
+			}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+
+		d := req.Dashboard
+		assert.Equal(t, "Deep Merge Test", d["title"])
+
+		templating, _ := d["templating"].(map[string]any)
+		list, _ := templating["list"].([]any)
+		assert.Len(t, list, 1, "templating.list from changes replaces existing list (array replacement)")
+
+		timeMap, _ := d["time"].(map[string]any)
+		assert.Equal(t, "now-1h", timeMap["from"], "time.from from changes overrides existing")
+		assert.Equal(t, "now", timeMap["to"], "time.to from existing dashboard is preserved (deep merge)")
+	})
+}
+
+func TestDashboardWriteToolChangesTitleMerged(t *testing.T) {
+	var gotPOST []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/uid/abc123", dashboardGetHandler("abc123", "Original Title", 1))
+	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK,
+		`{"id":10,"uid":"abc123","url":"/d/abc123/slug","status":"success","version":2,"slug":"slug"}`))
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("changes with title override", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "abc123",
+			Changes:   `{"title":"Updated Title"}`,
+			Confirmed: true,
+		})
+		require.NoError(t, err)
+
+		var req saveDashboardRequest
+		require.NoError(t, json.Unmarshal(gotPOST, &req))
+		assert.Equal(t, "Updated Title", req.Dashboard["title"])
+	})
+}
