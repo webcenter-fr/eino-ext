@@ -58,6 +58,9 @@ configs := github.Configs{
 | `github_repo_settings_update` | Update repository settings |
 | `github_webhook_upsert` | Create or update a repository webhook |
 | `github_file_write` | Write/create a file, commit, and push |
+| `github_file_delete` | Delete a file or directory from a cloned repo (local only, no commit/push) |
+| `github_file_copy` | Copy a file or directory within a cloned repo (local only, no commit/push) |
+| `github_file_move` | Move/rename a file or directory within a cloned repo (local only, no commit/push) |
 
 ### File Tools
 
@@ -66,8 +69,9 @@ File tools operate on repositories cloned by `github_repo_clone`. The workflow i
 1. `github_repo_clone` — clone the repo to <CloneDir>/<owner>/<repo>
 2. `github_file_read` / `github_file_search` / `github_file_list` — inspect
 3. `github_branch_create` (optional) — create a working branch
-4. `github_file_write` — modify files, commit, push
-5. `github_pr_create` — open a PR from the pushed branch
+4. `github_file_write` / `github_file_delete` / `github_file_copy` / `github_file_move` — modify files locally
+5. `github_file_write` — commit and push changes
+6. `github_pr_create` — open a PR from the pushed branch
 
 All file paths are validated to stay within the clone directory. Symlinks and
 the `.git` directory are always skipped or rejected.

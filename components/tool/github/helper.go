@@ -4,6 +4,8 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,6 +164,250 @@ const (
 	maxSearchFileBytes = 10 << 20 // 10MB — skip files larger than this in file_search.
 )
 
+// walkDirFiles returns the relative paths (from root) of all regular files
+// in the directory tree. Skips .git directories and symlinks.
+func walkDirFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		fi, err := os.Lstat(path)
+		if err != nil {
+			return nil // skip on stat error
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return nil // skip symlinks
+		}
+		if fi.IsDir() {
+			return nil // descend into dirs but don't add them
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	return files, err
+}
+
+// prefixedRelPaths joins each relative path with prefix and normalizes the
+// result to forward slashes. Used by DryRun previews to display walked files
+// relative to the clone root (e.g. "sub/main.go" for root "sub" and rel "main.go").
+func prefixedRelPaths(relPaths []string, prefix string) []string {
+	paths := make([]string, len(relPaths))
+	for i, p := range relPaths {
+		paths[i] = filepath.ToSlash(filepath.Join(prefix, p))
+	}
+	return paths
+}
+
+// copyFileContents copies the contents of the file at src to dst, creating or
+// truncating dst. Both files are closed before returning.
+func copyFileContents(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open source file %q", src)
+	}
+	defer func() { _ = srcFile.Close() }()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return errors.Wrapf(err, "failed to create destination file %q", dst)
+	}
+	defer func() { _ = dstFile.Close() }()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return errors.Wrapf(err, "failed to copy %q to %q", src, dst)
+	}
+	return nil
+}
+
+// copyDir recursively copies the directory tree from src to dst. It creates
+// destination directories as needed and copies each file with io.Copy.
+// Directories named .git and symlinks inside the tree are skipped, consistent
+// with walkDirFiles: os.Open follows symlinks, so copying them would pull the
+// symlink target's content (possibly from outside the clone) into the
+// destination (CWE-59). Returns the number of files copied and total bytes
+// written.
+func copyDir(src, dst string) (fileCount int, totalBytes int64, err error) {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, relErr := filepath.Rel(src, path)
+		if relErr != nil {
+			return relErr
+		}
+		target := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			if mkErr := os.MkdirAll(target, 0o755); mkErr != nil {
+				return mkErr
+			}
+			return nil
+		}
+		// DirEntry.Type() uses Lstat semantics, so this detects symlinks
+		// without an extra syscall.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+
+		srcFile, openErr := os.Open(path)
+		if openErr != nil {
+			return openErr
+		}
+		defer func() { _ = srcFile.Close() }()
+
+		dstFile, createErr := os.Create(target)
+		if createErr != nil {
+			return createErr
+		}
+		defer func() { _ = dstFile.Close() }()
+
+		written, copyErr := io.Copy(dstFile, srcFile)
+		if copyErr != nil {
+			return copyErr
+		}
+
+		totalBytes += written
+		fileCount++
+		return nil
+	})
+	return fileCount, totalBytes, err
+}
+
+// transferDryRunPreview builds the DryRun preview JSON shared by the file copy
+// and file move tools. previewKey is "wouldCopy" for github_file_copy and
+// "wouldMove" for github_file_move. Both endpoints are validated (.git
+// rejection, traversal, symlinks, source existence) without any side effect:
+// no directory is created and no file is touched. The preview contains the
+// source, destination, type ("file" or "dir"), branch, and — for directories —
+// the list of files that would be transferred.
+func transferDryRunPreview(clonePath_, source, destination, branch, previewKey string) (string, error) {
+	if err := rejectDotGitPath(source); err != nil {
+		return "", err
+	}
+	if err := rejectDotGitPath(destination); err != nil {
+		return "", err
+	}
+	srcFullPath, err := validateFilePath(clonePath_, source)
+	if err != nil {
+		return "", err
+	}
+	if _, err := validateFilePath(clonePath_, destination); err != nil {
+		return "", err
+	}
+	srcSafePath, err := resolveSymlinkSafe(clonePath_, srcFullPath, false)
+	if err != nil {
+		return "", err
+	}
+	fi, err := os.Lstat(srcSafePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", errors.Wrapf(err, "source path %q not found in clone", source)
+		}
+		return "", errors.Wrapf(err, "failed to stat source path %q", source)
+	}
+	would := map[string]any{
+		"source":      source,
+		"destination": destination,
+		"type":        "file",
+		"branch":      branch,
+	}
+	if fi.IsDir() {
+		would["type"] = "dir"
+		files, err := walkDirFiles(srcSafePath)
+		if err != nil {
+			return "", errors.Wrapf(err, "failed to walk directory %q", source)
+		}
+		would["files"] = prefixedRelPaths(files, source)
+	}
+	preview, err := json.Marshal(map[string]any{
+		"dryRun":   true,
+		previewKey: would,
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "failed to marshal dry-run preview")
+	}
+	return string(preview), nil
+}
+
+// validateTransferPaths validates the source and destination endpoints of a
+// file copy or move. It rejects .git access, path traversal, symlinks, a
+// missing source, and file/dir type mismatches between the endpoints.
+// Destination parent directories are created as needed. It returns the safe
+// source and destination paths and whether the source is a directory.
+func validateTransferPaths(clonePath_, source, destination string) (srcSafePath, dstSafePath string, isDir bool, err error) {
+	if err := rejectDotGitPath(source); err != nil {
+		return "", "", false, err
+	}
+	if err := rejectDotGitPath(destination); err != nil {
+		return "", "", false, err
+	}
+	srcFullPath, err := validateFilePath(clonePath_, source)
+	if err != nil {
+		return "", "", false, err
+	}
+	srcSafePath, err = resolveSymlinkSafe(clonePath_, srcFullPath, false)
+	if err != nil {
+		return "", "", false, err
+	}
+	srcFi, err := os.Lstat(srcSafePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", false, errors.Wrapf(err, "source path %q not found in clone", source)
+		}
+		return "", "", false, errors.Wrapf(err, "failed to stat source path %q", source)
+	}
+	isDir = srcFi.IsDir()
+
+	dstFullPath, err := validateFilePath(clonePath_, destination)
+	if err != nil {
+		return "", "", false, err
+	}
+	dstSafePath, err = resolveSymlinkSafe(clonePath_, dstFullPath, true)
+	if err != nil {
+		return "", "", false, err
+	}
+	// Reject aliased or nested endpoints. A destination that resolves to the
+	// same path as the source (e.g. "sub/x" vs "sub/./x") would corrupt the
+	// source in place, and a destination inside the source directory would
+	// make copyDir write into the very tree it is walking, recursing without
+	// bound until the OS path-length limit is hit.
+	cleanSrc := filepath.Clean(srcSafePath)
+	cleanDst := filepath.Clean(dstSafePath)
+	if cleanDst == cleanSrc {
+		return "", "", false, errors.Errorf("source and destination resolve to the same path %q", source)
+	}
+	if strings.HasPrefix(cleanDst, cleanSrc+string(filepath.Separator)) {
+		return "", "", false, errors.Errorf("destination %q is inside the source directory %q; choose a destination outside of it", destination, source)
+	}
+	// Defense in depth: reject a symlink destination and file/dir type mismatches.
+	if dstFi, statErr := os.Lstat(dstSafePath); statErr == nil {
+		if dstFi.Mode()&os.ModeSymlink != 0 {
+			return "", "", false, errors.Errorf("destination %q is a symlink; symlinks are not allowed", destination)
+		}
+		if dstFi.IsDir() && !isDir {
+			return "", "", false, errors.Errorf("destination %q is a directory but source is a file", destination)
+		}
+		if !dstFi.IsDir() && isDir {
+			return "", "", false, errors.Errorf("destination %q is a file but source is a directory", destination)
+		}
+	}
+	return srcSafePath, dstSafePath, isDir, nil
+}
+
 var commitIdentity = &object.Signature{
 	Name:  "eino-ext",
 	Email: "eino-ext@users.noreply.github.com",
@@ -208,14 +454,6 @@ func validateFilePath(cloneRoot, relPath string) (string, error) {
 		return "", errors.Errorf("path %q contains directory traversal", relPath)
 	}
 	return cleaned, nil
-}
-
-// isWithinPath returns true if path is equal to root or a descendant of root.
-// Both paths are cleaned before comparison.
-func isWithinPath(path, root string) bool {
-	p := filepath.Clean(path)
-	r := filepath.Clean(root)
-	return p == r || strings.HasPrefix(p, r+string(filepath.Separator))
 }
 
 // resolveSymlinkSafe walks each component of fullPath from cloneRoot, rejecting
@@ -293,6 +531,17 @@ func isBinary(data []byte) bool {
 		n = 8192
 	}
 	return bytes.Contains(data[:n], []byte{0})
+}
+
+// rejectCloneRootPath returns an error if the path refers to the clone root
+// itself ("." after cleaning). Deleting the clone root would remove the entire
+// clone, including the .git directory, destroying local history and breaking
+// all subsequent git operations.
+func rejectCloneRootPath(path string) error {
+	if filepath.Clean(filepath.FromSlash(path)) == "." {
+		return errors.Errorf("path %q refers to the clone root; deleting the entire clone is not allowed", path)
+	}
+	return nil
 }
 
 // ensureCloneExists stats the clone directory and returns a descriptive error

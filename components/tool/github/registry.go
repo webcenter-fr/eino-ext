@@ -54,6 +54,9 @@ var writeConstructors = []toolConstructor{
 		return newWebhookUpsertTool(ctx, b)
 	},
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileWriteTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileDeleteTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileCopyTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileMoveTool(ctx, b) },
 }
 
 // buildTools creates tools from the given constructors, sharing a single baseTool.
@@ -101,6 +104,9 @@ func WriteToolNames() []string {
 		"github_repo_settings_update",
 		"github_webhook_upsert",
 		"github_file_write",
+		"github_file_delete",
+		"github_file_copy",
+		"github_file_move",
 	}
 }
 
@@ -169,4 +175,7 @@ var (
 	_ tool.InvokableTool = (*FileSearchTool)(nil)
 	_ tool.InvokableTool = (*FileListTool)(nil)
 	_ tool.InvokableTool = (*FileWriteTool)(nil)
+	_ tool.InvokableTool = (*FileDeleteTool)(nil)
+	_ tool.InvokableTool = (*FileCopyTool)(nil)
+	_ tool.InvokableTool = (*FileMoveTool)(nil)
 )
