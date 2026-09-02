@@ -89,7 +89,6 @@ func NewReadOnlyTools(ctx context.Context, configs Configs) ([]tool.InvokableToo
 // WriteToolNames returns the tool names of all GitHub write tools.
 func WriteToolNames() []string {
 	return []string{
-		"github_repo_clone",
 		"github_branch_create",
 		"github_release_create",
 		"github_issue_create",
