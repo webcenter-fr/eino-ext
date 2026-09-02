@@ -9,7 +9,7 @@ Uses `go-github` (v71) for the GitHub REST API and `go-git` (v5) for local clone
 | Library | Purpose |
 |---------|---------|
 | `github.com/google/go-github/v71` | GitHub REST API (issues, PRs, releases, repos, webhooks, search) |
-| `github.com/go-git/go-git/v5` | Local clone, branch creation |
+| `github.com/go-git/go-git/v5` | Local clone, pull (fast-forward), branch creation |
 
 ## Configuration
 
@@ -23,7 +23,22 @@ configs := github.Configs{
 }
 ```
 
-`CloneDir` is the base directory for local clones. The LLM cannot pick an arbitrary path — clones always go under `<CloneDir>/<owner>/<repo>`.
+`CloneDir` is the base directory for local clones. The LLM cannot pick an arbitrary path — clones always go under `<CloneDir>/<session>/<owner>/<repo>`.
+
+### Session-scoped clones
+
+The clone directory is namespaced per user session: `<CloneDir>/<session>/<owner>/<repo>`.
+Concurrent sessions sharing one `Config.CloneDir` root therefore never collide. The session
+ID is taken from the eino ADK session values, which the harness controls (the LLM cannot
+spoof it):
+
+```go
+// ctx must be the current ADK agent run context (it carries the run session).
+adk.AddSessionValue(ctx, github.CloneSessionKey, sessionID)
+```
+
+When the key is absent (plain `context.Background()`, unit tests, non-ADK usage), the
+fallback segment `default` is used, yielding `<CloneDir>/default/<owner>/<repo>`.
 
 ## Tools
 
@@ -37,6 +52,8 @@ configs := github.Configs{
 | `github_pr_get` | Get pull request details |
 | `github_org_repo_list` | List repositories in an organization |
 | `github_repo_search` | Search repositories by query |
+| `github_repo_clone` | Clone a repository to the local filesystem (read-classified; self-gates via `DryRun`/`Confirmed`) |
+| `github_repo_pull` | Update an existing clone to the latest remote state, non-destructively (fast-forward only; read-classified) |
 | `github_file_read` | Read file contents from a cloned repo |
 | `github_file_search` | Grep (regex) within a cloned repo |
 | `github_file_list` | List files/dirs in a cloned repo |
@@ -45,7 +62,6 @@ configs := github.Configs{
 
 | Tool | Description |
 |------|-------------|
-| `github_repo_clone` | Clone a repository to the local filesystem |
 | `github_branch_create` | Create a branch (local via go-git, or remote via API) |
 | `github_release_create` | Create a release (with optional tag) |
 | `github_issue_create` | Create an issue |
@@ -66,12 +82,18 @@ configs := github.Configs{
 
 File tools operate on repositories cloned by `github_repo_clone`. The workflow is:
 
-1. `github_repo_clone` — clone the repo to <CloneDir>/<owner>/<repo>
+1. `github_repo_clone` — clone the repo to <CloneDir>/<session>/<owner>/<repo>
 2. `github_file_read` / `github_file_search` / `github_file_list` — inspect
 3. `github_branch_create` (optional) — create a working branch
 4. `github_file_write` / `github_file_delete` / `github_file_copy` / `github_file_move` — modify files locally
 5. `github_file_write` — commit and push changes
 6. `github_pr_create` — open a PR from the pushed branch
+
+`github_repo_pull` refreshes an existing clone to the latest remote state without
+destroying local work: it fails on a dirty worktree, only fast-forwards (local
+commits ahead of the remote are preserved and reported as an error), and never
+resets, stashes, or force-updates. Use it to re-sync after others have pushed,
+instead of re-cloning.
 
 All file paths are validated to stay within the clone directory. Symlinks and
 the `.git` directory are always skipped or rejected.
@@ -93,7 +115,7 @@ tools, mw, err := github.NewAllToolsWithSafety(ctx, configs, &safety.Config{
 
 ## Security
 
-- **Path safety**: Clone target always under `Config.CloneDir`; owner/repo segments are sanitized.
+- **Path safety**: Clone target always under `Config.CloneDir`; session, owner, and repo segments are sanitized (no traversal).
 - **SSRF protection**: Webhook URLs must use HTTPS; loopback/private/metadata IPs are blocked.
 - **Secret redaction**: GitHub tokens are redacted from all tool output.
 - **Confirmation gating**: All write tools require `Confirmed=true` (or use `DryRun` to preview).

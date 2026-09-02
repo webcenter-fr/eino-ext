@@ -2,6 +2,7 @@ package github
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
 	"io"
@@ -12,12 +13,37 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/cloudwego/eino/adk"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/goccy/go-json"
 	ghlib "github.com/google/go-github/v71/github" // aliased to avoid conflict with package name
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 )
+
+// CloneSessionKey is the adk session-value key under which the per-user-session
+// clone namespace is stored. Callers set it at run start via:
+//
+//	adk.AddSessionValue(ctx, github.CloneSessionKey, sessionID)
+const CloneSessionKey = "github_clone_session_id"
+
+// defaultSession is the fallback clone namespace used when no session is set in
+// the invocation context.
+const defaultSession = "default"
+
+// sessionFromContext reads the per-user-session ID from the adk session values.
+// It returns defaultSession when the value is absent, empty, or not a string.
+func sessionFromContext(ctx context.Context) string {
+	v, ok := adk.GetSessionValue(ctx, CloneSessionKey)
+	if !ok {
+		return defaultSession
+	}
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return defaultSession
+	}
+	return s
+}
 
 // labelList splits a comma-separated labels string into a slice.
 func labelList(labels string) []string {
@@ -46,9 +72,22 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// clonePath returns the safe local path for cloning a repository.
-func clonePath(cloneDir, owner, repo string) string {
-	return fmt.Sprintf("%s/%s/%s", cloneDir, sanitizeSegment(owner), sanitizeSegment(repo))
+// clonePath returns the safe, session-scoped local path for cloning a repository.
+func clonePath(cloneDir, session, owner, repo string) string {
+	if session == "" {
+		session = defaultSession
+	}
+	return fmt.Sprintf("%s/%s/%s/%s",
+		cloneDir,
+		sanitizeSegment(session),
+		sanitizeSegment(owner),
+		sanitizeSegment(repo))
+}
+
+// clonePathForSession returns the session-scoped clone path for owner/repo,
+// deriving the session from the invocation context.
+func (b *baseTool) clonePathForSession(ctx context.Context, owner, repo string) string {
+	return clonePath(b.cloneDir, sessionFromContext(ctx), owner, repo)
 }
 
 // sanitizeSegment ensures a path segment does not contain path traversal characters.

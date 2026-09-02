@@ -81,7 +81,7 @@ func (s *GitHubToolTestSuite) TestRepoClonedDryRun() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "dryRun": true}`)
 	s.NoError(err)
 	s.Contains(result, `"dryRun": true`)
-	s.Contains(result, `/tmp/test-github-clones/testowner/testrepo`)
+	s.Contains(result, `/tmp/test-github-clones/default/testowner/testrepo`)
 }
 
 func (s *GitHubToolTestSuite) TestWebhookUpsert() {

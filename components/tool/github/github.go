@@ -1,7 +1,7 @@
 // Package github provides eino tools that interact with GitHub repositories,
 // issues, pull requests, releases, branches, and webhooks. It wraps the
-// go-github REST client for API operations and go-git for local clone/branch
-// operations.
+// go-github REST client for API operations and go-git for local clone, pull,
+// and branch operations.
 //
 // # Usage
 //

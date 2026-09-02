@@ -72,7 +72,7 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 		return "", errors.Errorf("source and destination are the same path %q", params.Source)
 	}
 
-	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)
+	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
 
 	if params.DryRun {
 		if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {

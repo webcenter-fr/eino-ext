@@ -52,7 +52,7 @@ func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (stri
 		return "", err
 	}
 
-	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)
+	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
 		return "", err
 	}

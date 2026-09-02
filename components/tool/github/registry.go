@@ -25,6 +25,8 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoSearchTool(ctx, b) },
 	// Clone repo is the read action. It clone repo on local temporary storage
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoCloneTool(ctx, b) },
+	// Pull repo is the read action. It updates an existing clone non-destructively (fast-forward only)
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoPullTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileReadTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileSearchTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileListTool(ctx, b) },
@@ -160,6 +162,7 @@ var (
 	_ tool.InvokableTool = (*OrgRepoListTool)(nil)
 	_ tool.InvokableTool = (*RepoSearchTool)(nil)
 	_ tool.InvokableTool = (*RepoCloneTool)(nil)
+	_ tool.InvokableTool = (*RepoPullTool)(nil)
 	_ tool.InvokableTool = (*BranchCreateTool)(nil)
 	_ tool.InvokableTool = (*ReleaseCreateTool)(nil)
 	_ tool.InvokableTool = (*IssueCreateTool)(nil)

@@ -24,7 +24,7 @@ It returns the local path where the repository was cloned and the HEAD commit in
 
 ** Important **
 - The clone path is fixed at tool creation time. The LLM cannot choose an arbitrary path.
-- Repository is cloned under: <CloneDir>/<owner>/<repo>
+- Repository is cloned under: <CloneDir>/<session>/<owner>/<repo>
 `
 
 // RepoCloneParams defines the parameters for cloning a GitHub repository.
@@ -50,7 +50,7 @@ func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (re
 		return "", err
 	}
 
-	targetPath := clonePath(t.cloneDir, params.Owner, params.Repo)
+	targetPath := t.clonePathForSession(ctx, params.Owner, params.Repo)
 
 	if params.DryRun {
 		return fmt.Sprintf(`{"dryRun": true, "wouldCloneTo": %q, "owner": %q, "repo": %q, "branch": %q}`, targetPath, params.Owner, params.Repo, params.Branch), nil
