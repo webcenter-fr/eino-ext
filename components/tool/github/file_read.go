@@ -61,7 +61,7 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 		return "", errors.Errorf("parameter 'startLine' (%d) must be <= 'endLine' (%d); swap or correct the values and retry", params.StartLine, params.EndLine)
 	}
 
-	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)
+	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
 		return "", err
 	}

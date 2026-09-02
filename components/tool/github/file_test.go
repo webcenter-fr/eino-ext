@@ -9,11 +9,17 @@ import (
 	"github.com/goccy/go-json"
 )
 
+// testRepoPath returns the session-scoped clone path used by the tests:
+// <cloneDir>/default/testowner/testrepo.
+func testRepoPath(cloneDir string) string {
+	return filepath.Join(cloneDir, "default", "testowner", "testrepo")
+}
+
 func (s *GitHubToolTestSuite) setupClone() (cloneDir string, cleanup func()) {
 	dir, err := os.MkdirTemp("", "eino-ext-file-test")
 	s.NoError(err)
 
-	repoPath := filepath.Join(dir, "testowner", "testrepo")
+	repoPath := testRepoPath(dir)
 	err = os.MkdirAll(repoPath, 0o755)
 	s.NoError(err)
 
@@ -218,7 +224,7 @@ func (s *GitHubToolTestSuite) TestFileReadSymlinkTraversal() {
 	s.NoError(err)
 
 	// Plant a symlink inside the clone that points outside.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
 	s.NoError(err)
 
@@ -236,7 +242,7 @@ func (s *GitHubToolTestSuite) TestFileReadEmptyFile() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.WriteFile(filepath.Join(repoPath, "empty.txt"), []byte{}, 0o644)
 	s.NoError(err)
 
@@ -258,7 +264,7 @@ func (s *GitHubToolTestSuite) TestFileReadLargeFile() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	largeContent := make([]byte, maxFileReadBytes+100)
 	for i := range largeContent {
 		largeContent[i] = 'a'
@@ -583,7 +589,7 @@ func (s *GitHubToolTestSuite) TestFileListSkipsSymlinks() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.Symlink(filepath.Join(repoPath, "README.md"), filepath.Join(repoPath, "link.md"))
 	s.NoError(err)
 
@@ -655,7 +661,7 @@ func (s *GitHubToolTestSuite) TestFileWriteDryRun() {
 	s.Contains(result, `newfile.txt`)
 
 	// Verify file was not actually written
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, err = os.Stat(filepath.Join(repoPath, "newfile.txt"))
 	s.True(os.IsNotExist(err))
 }
@@ -671,7 +677,7 @@ func (s *GitHubToolTestSuite) TestFileWriteConfirmed() {
 	// Push will fail against the mock server, but the commit should succeed locally.
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello world", "branch": "master", "commitMessage": "add newfile", "confirmed": true}`)
 	// Push fails, but commit succeeded; verify file was written locally.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "newfile.txt"))
 	s.NoError(readErr)
 	s.Equal("hello world", string(data))
@@ -702,7 +708,7 @@ func (s *GitHubToolTestSuite) TestFileWriteNewBranch() {
 	// Push will fail against mock server, but branch creation and commit should succeed locally.
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "feature.txt", "content": "feature content", "branch": "new-feature", "baseBranch": "master", "commitMessage": "add feature", "confirmed": true}`)
 	// Verify file was written locally (commit succeeded before push failed)
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "feature.txt"))
 	s.NoError(readErr)
 	s.Equal("feature content", string(data))
@@ -719,7 +725,7 @@ func (s *GitHubToolTestSuite) TestFileWriteOverwrite() {
 
 	// Push will fail against mock server, but overwrite should succeed locally.
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "content": "overwritten content", "branch": "master", "commitMessage": "update readme", "confirmed": true}`)
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "README.md"))
 	s.NoError(readErr)
 	s.Equal("overwritten content", string(data))
@@ -750,7 +756,7 @@ func (s *GitHubToolTestSuite) TestFileWriteSymlinkTraversal() {
 	defer os.RemoveAll(outsideDir)
 
 	// Plant a symlink inside the clone that points outside.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
 	s.NoError(err)
 
@@ -810,7 +816,7 @@ func (s *GitHubToolTestSuite) TestFileWriteCreatesParentDirs() {
 
 	// Push will fail against mock server, but dirs should be created locally.
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "deep/nested/file.txt", "content": "nested content", "branch": "master", "commitMessage": "create nested file", "confirmed": true}`)
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "file.txt"))
 	s.NoError(readErr)
 	s.Equal("nested content", string(data))
@@ -856,7 +862,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteFile() {
 	s.Equal("file", output.Type)
 	s.True(output.Deleted)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
 	s.True(os.IsNotExist(statErr), "README.md should be deleted")
 }
@@ -876,7 +882,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteFileDryRun() {
 	s.Contains(result, `"type":"file"`)
 
 	// Verify the file was not actually deleted.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
 	s.NoError(statErr, "README.md must still exist after dry-run")
 }
@@ -925,7 +931,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDirectory() {
 	s.Equal("dir", output.Type)
 	s.True(output.Deleted)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub"))
 	s.True(os.IsNotExist(statErr), "sub directory should be deleted")
 }
@@ -946,7 +952,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDirectoryDryRun() {
 	s.Contains(result, `"files":["sub/main.go"]`)
 
 	// Verify the directory was not actually deleted.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub", "main.go"))
 	s.NoError(statErr, "sub/main.go must still exist after dry-run")
 }
@@ -956,7 +962,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDirectoryNested() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.MkdirAll(filepath.Join(repoPath, "sub", "deep"), 0o755)
 	s.NoError(err)
 	err = os.WriteFile(filepath.Join(repoPath, "sub", "deep", "nested.txt"), []byte("nested"), 0o644)
@@ -1021,7 +1027,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteSymlink() {
 	s.NoError(err)
 	defer os.RemoveAll(outsideDir)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
 	s.NoError(err)
 
@@ -1067,7 +1073,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteCloneRoot() {
 	s.Contains(err.Error(), "clone root")
 
 	// Verify the clone (including .git) still exists.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, ".git"))
 	s.NoError(statErr, "clone directory must not be deleted")
 
@@ -1101,7 +1107,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFile() {
 	s.Equal("file", output.Type)
 	s.True(output.Copied)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	src, err := os.ReadFile(filepath.Join(repoPath, "README.md"))
 	s.NoError(err)
 	dst, err := os.ReadFile(filepath.Join(repoPath, "copy.md"))
@@ -1124,7 +1130,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileDryRun() {
 	s.Contains(result, `"type":"file"`)
 
 	// Verify the destination was not created.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "copy.md"))
 	s.True(os.IsNotExist(statErr), "copy.md must not be created after dry-run")
 }
@@ -1173,7 +1179,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileOverwrite() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.WriteFile(filepath.Join(repoPath, "copy.md"), []byte("old content"), 0o644)
 	s.NoError(err)
 
@@ -1199,7 +1205,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileCreatesParentDirs() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/copy.md", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	dst, err := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "copy.md"))
 	s.NoError(err)
 	s.Equal("line1\nline2\nline3\n", string(dst))
@@ -1226,7 +1232,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectory() {
 	s.Greater(output.FileCount, 0)
 	s.Greater(output.TotalBytes, int64(0))
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	src, err := os.ReadFile(filepath.Join(repoPath, "sub", "main.go"))
 	s.NoError(err)
 	dst, err := os.ReadFile(filepath.Join(repoPath, "sub2", "main.go"))
@@ -1250,7 +1256,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryDryRun() {
 	s.Contains(result, `"files":["sub/main.go"]`)
 
 	// Verify the destination was not created.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub2"))
 	s.True(os.IsNotExist(statErr), "sub2 must not be created after dry-run")
 }
@@ -1260,7 +1266,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryMerge() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.MkdirAll(filepath.Join(repoPath, "sub2"), 0o755)
 	s.NoError(err)
 	err = os.WriteFile(filepath.Join(repoPath, "sub2", "main.go"), []byte("old main"), 0o644)
@@ -1296,7 +1302,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryCreatesParents() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "deep/nested/sub", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	dst, err := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "sub", "main.go"))
 	s.NoError(err)
 	s.Equal("package main\n\nfunc main() {}\n", string(dst))
@@ -1340,7 +1346,7 @@ func (s *GitHubToolTestSuite) TestFileCopySymlinkSource() {
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
 	s.NoError(err)
 
@@ -1416,7 +1422,7 @@ func (s *GitHubToolTestSuite) TestFileCopySkipsSymlinkInsideTree() {
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(filepath.Join(outsideDir, "secret.txt"), filepath.Join(repoPath, "sub", "link"))
 	s.NoError(err)
 	err = os.MkdirAll(filepath.Join(repoPath, "sub", ".git"), 0o755)
@@ -1465,7 +1471,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDestInsideSource() {
 	s.Contains(err.Error(), "inside the source directory")
 
 	// Verify no self-nested directories were created.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub", "sub2"))
 	s.True(os.IsNotExist(statErr), "destination must not be created when it is inside the source")
 }
@@ -1497,7 +1503,7 @@ func (s *GitHubToolTestSuite) TestFileCopyCleanPathAlias() {
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 
-	data, readErr := os.ReadFile(filepath.Join(cloneDir, "testowner", "testrepo", "sub", "main.go"))
+	data, readErr := os.ReadFile(filepath.Join(testRepoPath(cloneDir), "sub", "main.go"))
 	s.NoError(readErr)
 	s.Equal("package main\n\nfunc main() {}\n", string(data), "source file must not be corrupted")
 }
@@ -1526,7 +1532,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFile() {
 	s.Equal("file", output.Type)
 	s.True(output.Moved)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
 	s.True(os.IsNotExist(statErr), "source must be gone after move")
 
@@ -1546,7 +1552,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileRename() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README2.md", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
 	s.True(os.IsNotExist(statErr))
 	_, statErr = os.Stat(filepath.Join(repoPath, "README2.md"))
@@ -1564,7 +1570,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileAcrossDirs() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub/main.go", "destination": "main.go", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub", "main.go"))
 	s.True(os.IsNotExist(statErr))
 
@@ -1588,7 +1594,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileDryRun() {
 	s.Contains(result, `"type":"file"`)
 
 	// Verify the source still exists and the destination was not created.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
 	s.NoError(statErr, "source must still exist after dry-run")
 	_, statErr = os.Stat(filepath.Join(repoPath, "moved.md"))
@@ -1639,7 +1645,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileOverwrite() {
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err := os.WriteFile(filepath.Join(repoPath, "moved.md"), []byte("old content"), 0o644)
 	s.NoError(err)
 
@@ -1668,7 +1674,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileCreatesParentDirs() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/moved.md", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	dst, err := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "moved.md"))
 	s.NoError(err)
 	s.Equal("line1\nline2\nline3\n", string(dst))
@@ -1696,7 +1702,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDirectory() {
 	s.Equal("dir", output.Type)
 	s.True(output.Moved)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub"))
 	s.True(os.IsNotExist(statErr), "source directory must be gone after move")
 
@@ -1716,7 +1722,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDirectoryRename() {
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "renamed", "branch": "master", "confirmed": true}`)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub"))
 	s.True(os.IsNotExist(statErr))
 	_, statErr = os.Stat(filepath.Join(repoPath, "renamed", "main.go"))
@@ -1739,7 +1745,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDirectoryDryRun() {
 	s.Contains(result, `"files":["sub/main.go"]`)
 
 	// Verify the source still exists and the destination was not created.
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub", "main.go"))
 	s.NoError(statErr, "source must still exist after dry-run")
 	_, statErr = os.Stat(filepath.Join(repoPath, "sub2"))
@@ -1784,7 +1790,7 @@ func (s *GitHubToolTestSuite) TestFileMoveSymlinkSource() {
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
-	repoPath := filepath.Join(cloneDir, "testowner", "testrepo")
+	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
 	s.NoError(err)
 
@@ -1856,7 +1862,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDestInsideSource() {
 	s.Contains(err.Error(), "inside the source directory")
 
 	// Verify the source was not touched.
-	data, readErr := os.ReadFile(filepath.Join(cloneDir, "testowner", "testrepo", "sub", "main.go"))
+	data, readErr := os.ReadFile(filepath.Join(testRepoPath(cloneDir), "sub", "main.go"))
 	s.NoError(readErr)
 	s.Equal("package main\n\nfunc main() {}\n", string(data))
 }
@@ -1875,7 +1881,7 @@ func (s *GitHubToolTestSuite) TestFileMoveCleanPathAlias() {
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 
-	data, readErr := os.ReadFile(filepath.Join(cloneDir, "testowner", "testrepo", "README.md"))
+	data, readErr := os.ReadFile(filepath.Join(testRepoPath(cloneDir), "README.md"))
 	s.NoError(readErr)
 	s.Equal("line1\nline2\nline3\n", string(data), "source file must remain intact")
 }

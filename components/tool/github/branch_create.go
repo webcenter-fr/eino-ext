@@ -109,7 +109,7 @@ func (t *BranchCreateTool) createRemoteBranch(ctx context.Context, params *Branc
 }
 
 func (t *BranchCreateTool) createLocalBranch(ctx context.Context, params *BranchCreateParams) (string, error) {
-	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)
+	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
 
 	repo, err := git.PlainOpen(clonePath_)
 	if err != nil {

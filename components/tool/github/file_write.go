@@ -26,7 +26,7 @@ the change, and pushes to the specified remote branch.
 It returns the file path, commit SHA, and push status.
 
 ** Important **
-- The repository must already be cloned under <CloneDir>/<owner>/<repo>.
+- The repository must already be cloned under <CloneDir>/<session>/<owner>/<repo>.
 - If the target branch does not exist locally, it is created from BaseBranch
   (defaults to current HEAD).
 - Requires Confirmed=true. Use DryRun=true first to preview.
@@ -89,7 +89,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), maxFileWriteBytes)
 	}
 
-	clonePath_ := clonePath(t.cloneDir, params.Owner, params.Repo)
+	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
 		return "", err
 	}
