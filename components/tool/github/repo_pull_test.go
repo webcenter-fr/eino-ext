@@ -12,6 +12,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 // pullRemote is a local bare "remote" repository plus a seed worktree used to
@@ -306,9 +307,10 @@ func TestRepoPullSessionNamespacing(t *testing.T) {
 	// "sess/../x" must never survive sanitization: no separator and no "..".
 	assert.Equal(t, "/root/sess__x/o/r", clonePath("/root", "sess/../x", "o", "r"))
 
-	// A plain context.Background() has no adk run session, so the fallback
-	// applies (the same limitation as components/agent/memory tests).
-	assert.Equal(t, defaultSession, sessionFromContext(context.Background()))
+	// A plain context.Background() has no adk run session, so SessionFromContext
+	// returns "" and clonePath falls back to the "default" namespace (asserted
+	// above) — the same limitation as components/agent/memory tests.
+	assert.Equal(t, "", fileutil.SessionFromContext(context.Background(), CloneSessionKey))
 }
 
 func TestRepoPullValidation(t *testing.T) {

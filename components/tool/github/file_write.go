@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileWriteDescription = `
@@ -85,8 +86,8 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		return "", err
 	}
 
-	if len(params.Content) > maxFileWriteBytes {
-		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), maxFileWriteBytes)
+	if len(params.Content) > fileutil.DefaultMaxWriteBytes {
+		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), fileutil.DefaultMaxWriteBytes)
 	}
 
 	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
@@ -94,11 +95,11 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		return "", err
 	}
 
-	if err := rejectDotGitPath(params.Path); err != nil {
+	if err := fileutil.RejectDotGitPath(params.Path); err != nil {
 		return "", err
 	}
 
-	fullPath, err := validateFilePath(clonePath_, params.Path)
+	fullPath, err := fileutil.ValidateRelativePath(clonePath_, params.Path)
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +107,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 	// Resolve symlinks at every path component to prevent symlink-based
 	// directory traversal. A malicious repo can contain symlinks that would
 	// redirect file writes outside the clone directory.
-	safePath, err := resolveSymlinkSafe(clonePath_, fullPath, true)
+	safePath, err := fileutil.ResolveSymlinkSafe(clonePath_, fullPath, true)
 	if err != nil {
 		return "", err
 	}
@@ -163,7 +164,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		}
 	}
 
-	// Parent directories were already created by resolveSymlinkSafe (createDirs=true).
+	// Parent directories were already created by fileutil.ResolveSymlinkSafe (createDirs=true).
 	// Write file using the symlink-safe path.
 	if err := os.WriteFile(safePath, []byte(params.Content), 0o644); err != nil {
 		return "", errors.Wrapf(err, "failed to write file %q", params.Path)

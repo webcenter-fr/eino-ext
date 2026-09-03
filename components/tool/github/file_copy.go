@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileCopyDescription = `
@@ -104,14 +105,14 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 
 	if isDir {
 		output.Type = "dir"
-		fileCount, totalBytes, err := copyDir(srcSafePath, dstSafePath)
+		fileCount, totalBytes, err := fileutil.CopyDir(srcSafePath, dstSafePath, true)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to copy directory %q to %q", params.Source, params.Destination)
 		}
 		output.FileCount = fileCount
 		output.TotalBytes = totalBytes
 	} else {
-		if err := copyFileContents(srcSafePath, dstSafePath); err != nil {
+		if err := fileutil.CopyFileContents(srcSafePath, dstSafePath); err != nil {
 			// Best-effort cleanup of the partial destination; the copy error
 			// is what matters, so cleanup failures are ignored.
 			_ = os.Remove(dstSafePath)

@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileReadDescription = `
@@ -66,11 +66,11 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 		return "", err
 	}
 
-	if err := rejectDotGitPath(params.Path); err != nil {
+	if err := fileutil.RejectDotGitPath(params.Path); err != nil {
 		return "", err
 	}
 
-	fullPath, err := validateFilePath(clonePath_, params.Path)
+	fullPath, err := fileutil.ValidateRelativePath(clonePath_, params.Path)
 	if err != nil {
 		return "", err
 	}
@@ -78,9 +78,9 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 	// Resolve symlinks at every path component to prevent symlink-based
 	// directory traversal. A malicious repo can contain symlinks (e.g.,
 	// "link -> /etc") that os.ReadFile would follow, reading files outside
-	// the clone. validateFilePath only does a lexical check; this walk
+	// the clone. ValidateRelativePath only does a lexical check; this walk
 	// rejects symlinks at any level.
-	safePath, err := resolveSymlinkSafe(clonePath_, fullPath, false)
+	safePath, err := fileutil.ResolveSymlinkSafe(clonePath_, fullPath, false)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +100,7 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 		return "", errors.Wrapf(err, "failed to read file %q", params.Path)
 	}
 
-	if isBinary(data) {
+	if fileutil.IsBinary(data) {
 		return "", errors.Errorf("file %q appears to be binary; refusing to read", params.Path)
 	}
 
@@ -109,39 +109,20 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 		Bytes: len(data),
 	}
 
-	if len(data) > maxFileReadBytes {
+	if len(data) > fileutil.DefaultMaxReadBytes {
 		output.Truncated = true
 		output.Note = fmt.Sprintf("file truncated to 1MB (original size: %d bytes)", len(data))
-		data = data[:maxFileReadBytes]
+		data = data[:fileutil.DefaultMaxReadBytes]
 		output.Bytes = len(data)
 	}
 
 	output.Content = string(data)
 
 	if params.StartLine > 0 || params.EndLine > 0 {
-		lines := strings.Split(output.Content, "\n")
-		startIdx := 0
-		endIdx := len(lines)
-
-		if params.StartLine > 0 {
-			startIdx = params.StartLine - 1
-			if startIdx > len(lines) {
-				startIdx = len(lines)
-			}
-		}
-		if params.EndLine > 0 {
-			endIdx = params.EndLine
-			if endIdx > len(lines) {
-				endIdx = len(lines)
-			}
-		}
-		if startIdx < endIdx {
-			output.Content = strings.Join(lines[startIdx:endIdx], "\n")
-		} else {
-			output.Content = ""
-		}
-		output.StartLine = startIdx + 1
-		output.EndLine = endIdx
+		content, actualStart, actualEnd := fileutil.ApplyLineRange(output.Content, params.StartLine, params.EndLine)
+		output.Content = content
+		output.StartLine = actualStart
+		output.EndLine = actualEnd
 		output.Bytes = len(output.Content)
 	}
 

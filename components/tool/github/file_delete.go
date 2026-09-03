@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileDeleteDescription = `
@@ -65,17 +66,17 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
 			return "", err
 		}
-		if err := rejectDotGitPath(params.Path); err != nil {
+		if err := fileutil.RejectDotGitPath(params.Path); err != nil {
 			return "", err
 		}
 		if err := rejectCloneRootPath(params.Path); err != nil {
 			return "", err
 		}
-		fullPath, err := validateFilePath(clonePath_, params.Path)
+		fullPath, err := fileutil.ValidateRelativePath(clonePath_, params.Path)
 		if err != nil {
 			return "", err
 		}
-		safePath, err := resolveSymlinkSafe(clonePath_, fullPath, false)
+		safePath, err := fileutil.ResolveSymlinkSafe(clonePath_, fullPath, false)
 		if err != nil {
 			return "", err
 		}
@@ -90,7 +91,7 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		}
 		if fi.IsDir() {
 			wouldDelete["type"] = "dir"
-			files, err := walkDirFiles(safePath)
+			files, err := fileutil.WalkDirFiles(safePath, true)
 			if err != nil {
 				return "", errors.Wrapf(err, "failed to walk directory %q", params.Path)
 			}
@@ -115,7 +116,7 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		return "", err
 	}
 
-	if err := rejectDotGitPath(params.Path); err != nil {
+	if err := fileutil.RejectDotGitPath(params.Path); err != nil {
 		return "", err
 	}
 
@@ -123,14 +124,14 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		return "", err
 	}
 
-	fullPath, err := validateFilePath(clonePath_, params.Path)
+	fullPath, err := fileutil.ValidateRelativePath(clonePath_, params.Path)
 	if err != nil {
 		return "", err
 	}
 
 	// Resolve symlinks at every path component to prevent symlink-based
 	// directory traversal. createDirs=false: deleting never creates paths.
-	safePath, err := resolveSymlinkSafe(clonePath_, fullPath, false)
+	safePath, err := fileutil.ResolveSymlinkSafe(clonePath_, fullPath, false)
 	if err != nil {
 		return "", err
 	}

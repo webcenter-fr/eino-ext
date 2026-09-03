@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileSearchDescription = `
@@ -65,11 +66,11 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 		return "", err
 	}
 
-	if err := rejectDotGitPath(params.PathPrefix); err != nil {
+	if err := fileutil.RejectDotGitPath(params.PathPrefix); err != nil {
 		return "", err
 	}
 
-	searchRoot, err := validateFilePath(clonePath_, params.PathPrefix)
+	searchRoot, err := fileutil.ValidateRelativePath(clonePath_, params.PathPrefix)
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +110,7 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 		}
 
 		// Skip files that are too large to prevent memory exhaustion.
-		if fi.Size() > maxSearchFileBytes {
+		if fi.Size() > fileutil.DefaultMaxSearchFileBytes {
 			return nil
 		}
 
@@ -117,7 +118,7 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 		if err != nil {
 			return nil
 		}
-		if isBinary(data) {
+		if fileutil.IsBinary(data) {
 			return nil
 		}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileMoveDescription = `
@@ -105,14 +106,14 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 		}
 		// os.Rename fails across mount points (EXDEV); fall back to copy+delete.
 		if isDir {
-			if _, _, copyErr := copyDir(srcSafePath, dstSafePath); copyErr != nil {
+			if _, _, copyErr := fileutil.CopyDir(srcSafePath, dstSafePath, true); copyErr != nil {
 				return "", errors.Wrapf(copyErr, "failed to copy directory %q to %q for cross-device move", params.Source, params.Destination)
 			}
 			if rmErr := os.RemoveAll(srcSafePath); rmErr != nil {
 				return "", errors.Wrapf(rmErr, "copied directory %q to %q but failed to remove the source; both copies now exist", params.Source, params.Destination)
 			}
 		} else {
-			if copyErr := copyFileContents(srcSafePath, dstSafePath); copyErr != nil {
+			if copyErr := fileutil.CopyFileContents(srcSafePath, dstSafePath); copyErr != nil {
 				// Best-effort cleanup of the partial destination; the copy
 				// error is what matters, so cleanup failures are ignored.
 				_ = os.Remove(dstSafePath)

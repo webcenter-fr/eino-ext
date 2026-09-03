@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileListDescription = `
@@ -57,11 +58,11 @@ func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (stri
 		return "", err
 	}
 
-	if err := rejectDotGitPath(params.SubPath); err != nil {
+	if err := fileutil.RejectDotGitPath(params.SubPath); err != nil {
 		return "", err
 	}
 
-	listRoot, err := validateFilePath(clonePath_, params.SubPath)
+	listRoot, err := fileutil.ValidateRelativePath(clonePath_, params.SubPath)
 	if err != nil {
 		return "", err
 	}

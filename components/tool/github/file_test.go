@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 // testRepoPath returns the session-scoped clone path used by the tests:
@@ -143,7 +144,7 @@ func (s *GitHubToolTestSuite) TestFileReadPathTraversal() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../../etc/passwd"}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileReadBinary() {
@@ -265,7 +266,7 @@ func (s *GitHubToolTestSuite) TestFileReadLargeFile() {
 	defer cleanup()
 
 	repoPath := testRepoPath(cloneDir)
-	largeContent := make([]byte, maxFileReadBytes+100)
+	largeContent := make([]byte, fileutil.DefaultMaxReadBytes+100)
 	for i := range largeContent {
 		largeContent[i] = 'a'
 	}
@@ -638,7 +639,7 @@ func (s *GitHubToolTestSuite) TestFileListPathTraversal() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "subPath": "../"}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 // ---- github_file_write ----
@@ -742,7 +743,7 @@ func (s *GitHubToolTestSuite) TestFileWritePathTraversal() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../evil.txt", "content": "evil", "branch": "master", "commitMessage": "test", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileWriteSymlinkTraversal() {
@@ -1014,7 +1015,7 @@ func (s *GitHubToolTestSuite) TestFileDeletePathTraversal() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../etc/passwd", "branch": "master", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileDeleteSymlink() {
@@ -1318,7 +1319,7 @@ func (s *GitHubToolTestSuite) TestFileCopyPathTraversalSource() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "copy.md", "branch": "master", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileCopyPathTraversalDest() {
@@ -1331,7 +1332,7 @@ func (s *GitHubToolTestSuite) TestFileCopyPathTraversalDest() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileCopySymlinkSource() {
@@ -1762,7 +1763,7 @@ func (s *GitHubToolTestSuite) TestFileMovePathTraversalSource() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "moved.md", "branch": "master", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileMovePathTraversalDest() {
@@ -1775,7 +1776,7 @@ func (s *GitHubToolTestSuite) TestFileMovePathTraversalDest() {
 
 	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master", "confirmed": true}`)
 	s.Error(err)
-	s.Contains(err.Error(), "escapes clone directory")
+	s.Contains(err.Error(), "escapes root directory")
 }
 
 func (s *GitHubToolTestSuite) TestFileMoveSymlinkSource() {
