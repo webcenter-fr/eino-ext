@@ -82,7 +82,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		return string(previewJSON), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("write file", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_write", "write file", params.Confirmed); err != nil {
 		return "", err
 	}
 

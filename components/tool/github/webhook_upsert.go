@@ -62,7 +62,7 @@ func (t *WebhookUpsertTool) Invoke(ctx context.Context, params *WebhookUpsertPar
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": {"url": %q, "events": %v, "active": %v}}`, params.HookURL, params.Events, params.Active), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create/update webhook", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_webhook_upsert", "create/update webhook", params.Confirmed); err != nil {
 		return "", err
 	}
 

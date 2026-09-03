@@ -78,7 +78,7 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 	}
 
 	// Enforce safety gate: require confirmation for non-dry-run operations.
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "kubernetes_resource_create", params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

@@ -68,13 +68,13 @@ func (m *Middleware) WrapInvokableToolCall(_ context.Context, endpoint adk.Invok
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 		args := argumentsInJSON
 
-		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
+		execCtx, phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
 			return "", err
 		}
 
-		result, err := endpoint(ctx, argumentsInJSON, opts...)
-		m.auditResult(ctx, toolName, callID, phase, args, result, err)
+		result, err := endpoint(execCtx, argumentsInJSON, opts...)
+		m.auditResult(execCtx, toolName, callID, phase, args, result, err)
 		if err != nil {
 			return "", err
 		}
@@ -97,17 +97,17 @@ func (m *Middleware) WrapStreamableToolCall(_ context.Context, endpoint adk.Stre
 	return func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (*schema.StreamReader[string], error) {
 		args := argumentsInJSON
 
-		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
+		execCtx, phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
 			return nil, err
 		}
 
-		sr, err := endpoint(ctx, argumentsInJSON, opts...)
+		sr, err := endpoint(execCtx, argumentsInJSON, opts...)
 		if err != nil {
-			m.auditResult(ctx, toolName, callID, phase, args, "", err)
+			m.auditResult(execCtx, toolName, callID, phase, args, "", err)
 			return nil, err
 		}
-		return wrapStreamAudit(ctx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
+		return wrapStreamAudit(execCtx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
 	}, nil
 }
 
@@ -120,13 +120,13 @@ func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint a
 	return func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
 		args := toolArg.Text
 
-		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
+		execCtx, phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
 			return nil, err
 		}
 
-		result, err := endpoint(ctx, toolArg, opts...)
-		m.auditResult(ctx, toolName, callID, phase, args, "", err)
+		result, err := endpoint(execCtx, toolArg, opts...)
+		m.auditResult(execCtx, toolName, callID, phase, args, "", err)
 		if err != nil {
 			return nil, err
 		}
@@ -150,17 +150,17 @@ func (m *Middleware) WrapEnhancedStreamableToolCall(_ context.Context, endpoint 
 	return func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
 		args := toolArg.Text
 
-		phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
+		execCtx, phase, err := m.preflight(ctx, toolName, callID, args, isWrite)
 		if err != nil {
 			return nil, err
 		}
 
-		sr, err := endpoint(ctx, toolArg, opts...)
+		sr, err := endpoint(execCtx, toolArg, opts...)
 		if err != nil {
-			m.auditResult(ctx, toolName, callID, phase, args, "", err)
+			m.auditResult(execCtx, toolName, callID, phase, args, "", err)
 			return nil, err
 		}
-		return wrapEnhancedStreamAudit(ctx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
+		return wrapEnhancedStreamAudit(execCtx, sr, toolName, callID, phase, args, phase == safety.PhaseDryRun, m.audit), nil
 	}, nil
 }
 
@@ -172,10 +172,10 @@ func (m *Middleware) WrapModel(_ context.Context, cm model.BaseChatModel, _ *adk
 // --- internal helpers ---
 
 // preflight runs policy evaluation for every tool and, for write tools, the
-// dry-run/confirm gate. It emits reject audit events on failure. On success it
-// returns the phase the call should be audited under. proceed is false only
-// when an error is returned.
-func (m *Middleware) preflight(ctx context.Context, toolName, callID, args string, isWrite bool) (safety.Phase, error) {
+// dry-run/confirm gate plus the host-execution authorization. It emits reject
+// audit events on failure. On success it returns the (possibly
+// authorization-marked) context and the phase the call should be audited under.
+func (m *Middleware) preflight(ctx context.Context, toolName, callID, args string, isWrite bool) (context.Context, safety.Phase, error) {
 	params, parseErr := parseArgs(args)
 	if parseErr != nil {
 		// If we can't parse, still allow through — tools do their own validation.
@@ -194,29 +194,42 @@ func (m *Middleware) preflight(ctx context.Context, toolName, callID, args strin
 				Error:      err.Error(),
 				PolicyPass: false,
 			})
-			return "", err
+			return ctx, "", err
 		}
 	}
 
 	if !isWrite {
-		return safety.PhaseRead, nil
+		return ctx, safety.PhaseRead, nil
 	}
 
 	// Gate check (write tools only).
 	gp, gpErr := safety.ExtractGateParams(args)
 	if gpErr != nil {
 		m.auditReject(ctx, toolName, callID, args, gpErr)
-		return "", gpErr
+		return ctx, "", gpErr
 	}
-	if err := safety.ShouldGate(toolName, m.writeTools, gp); err != nil {
-		m.auditReject(ctx, toolName, callID, args, err)
-		return "", err
+
+	var gateErr error
+	if m.cfg.AllowModelConfirmation {
+		// Legacy, insecure path: trust model-supplied confirmed=true.
+		gateErr = safety.ShouldGate(toolName, m.writeTools, gp)
+	} else {
+		gateErr = safety.ShouldGateWithAuthorization(ctx, toolName, m.writeTools, gp, json.RawMessage(args), m.cfg.ExecutionAuthorizer)
+	}
+	if gateErr != nil {
+		m.auditReject(ctx, toolName, callID, args, gateErr)
+		return ctx, "", gateErr
 	}
 
 	if gp.DryRun {
-		return safety.PhaseDryRun, nil
+		return ctx, safety.PhaseDryRun, nil
 	}
-	return safety.PhaseExecute, nil
+
+	// Real execution authorized: mark the context so the per-tool second layer
+	// (confirm.RequireConfirmationCtx / RequireConfirmationForActionCtx) sees it.
+	// This runs for BOTH the authorizer path and the AllowModelConfirmation path,
+	// so the per-tool layer never rejects a call the middleware already allowed.
+	return safety.WithExecutionAuthorized(ctx, toolName), safety.PhaseExecute, nil
 }
 
 // auditReject emits a rejection audit event for a write tool whose gate parsing

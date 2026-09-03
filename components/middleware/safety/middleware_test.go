@@ -2,6 +2,7 @@ package safety
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -13,6 +14,12 @@ import (
 
 	safety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
+
+type stubAuthorizer struct{ err error }
+
+func (s stubAuthorizer) AuthorizeExecute(context.Context, string, json.RawMessage) error {
+	return s.err
+}
 
 func TestNewDefaultsToLogSink(t *testing.T) {
 	m, err := New(&Config{
@@ -175,14 +182,18 @@ func TestWrapInvokableToolCallWriteConfirmed(t *testing.T) {
 	defer channelSink.Close()
 
 	m, err := New(&Config{
-		WriteToolNames: []string{"write_tool"},
-		AuditSink:      channelSink,
+		WriteToolNames:      []string{"write_tool"},
+		AuditSink:           channelSink,
+		ExecutionAuthorizer: stubAuthorizer{},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
 	endpoint := func(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
+		if !safety.ExecutionAuthorizedFor(ctx, "write_tool") {
+			t.Error("expected endpoint ctx to be marked authorized for write_tool")
+		}
 		return "executed result", nil
 	}
 
@@ -508,8 +519,9 @@ func TestWrapStreamableToolCallStreamError(t *testing.T) {
 	defer channelSink.Close()
 
 	m, err := New(&Config{
-		WriteToolNames: []string{"write_tool"},
-		AuditSink:      channelSink,
+		WriteToolNames:      []string{"write_tool"},
+		AuditSink:           channelSink,
+		ExecutionAuthorizer: stubAuthorizer{},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -571,8 +583,9 @@ func TestWrapEnhancedStreamableToolCallStreamError(t *testing.T) {
 	defer channelSink.Close()
 
 	m, err := New(&Config{
-		WriteToolNames: []string{"write_tool"},
-		AuditSink:      channelSink,
+		WriteToolNames:      []string{"write_tool"},
+		AuditSink:           channelSink,
+		ExecutionAuthorizer: stubAuthorizer{},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -628,5 +641,479 @@ func TestWrapEnhancedStreamableToolCallStreamError(t *testing.T) {
 	event := <-channelSink.Events()
 	if event.Error != "boom-enhanced" {
 		t.Fatalf("expected audited error 'boom-enhanced', got %q", event.Error)
+	}
+}
+
+func TestWrapInvokableToolCallWriteConfirmedAuthorization(t *testing.T) {
+	allowedEndpoint := func(t *testing.T) adk.InvokableToolCallEndpoint {
+		return func(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
+			if !safety.ExecutionAuthorizedFor(ctx, "write_tool") {
+				t.Error("expected endpoint ctx to be marked authorized")
+			}
+			return "executed", nil
+		}
+	}
+	checkAllowed := func(t *testing.T, result string, err error, sink *safety.ChannelSink, endpointRan bool) {
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if result != "executed" {
+			t.Fatalf("expected 'executed', got %q", result)
+		}
+		if !endpointRan {
+			t.Fatal("expected endpoint to run")
+		}
+		event := <-sink.Events()
+		if event.Phase != safety.PhaseExecute {
+			t.Fatalf("expected PhaseExecute, got %q", event.Phase)
+		}
+	}
+
+	cases := []struct {
+		name     string
+		cfg      *Config
+		endpoint func(t *testing.T) adk.InvokableToolCallEndpoint
+		check    func(t *testing.T, result string, err error, sink *safety.ChannelSink, endpointRan bool)
+	}{
+		{
+			name: "no authorizer",
+			cfg:  &Config{},
+			endpoint: func(t *testing.T) adk.InvokableToolCallEndpoint {
+				return func(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
+					t.Error("endpoint should not be called")
+					return "", nil
+				}
+			},
+			check: func(t *testing.T, _ string, err error, sink *safety.ChannelSink, _ bool) {
+				if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+					t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+			},
+		},
+		{
+			name: "authorizer denies",
+			cfg:  &Config{ExecutionAuthorizer: stubAuthorizer{err: errors.New("denied")}},
+			endpoint: func(t *testing.T) adk.InvokableToolCallEndpoint {
+				return func(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
+					t.Error("endpoint should not be called")
+					return "", nil
+				}
+			},
+			check: func(t *testing.T, _ string, err error, sink *safety.ChannelSink, _ bool) {
+				if err == nil || !strings.Contains(err.Error(), "denied") {
+					t.Fatalf("expected error containing 'denied', got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+			},
+		},
+		{
+			name:     "authorizer allows",
+			cfg:      &Config{ExecutionAuthorizer: stubAuthorizer{}},
+			endpoint: allowedEndpoint,
+			check:    checkAllowed,
+		},
+		{
+			name:     "AllowModelConfirmation",
+			cfg:      &Config{AllowModelConfirmation: true},
+			endpoint: allowedEndpoint,
+			check:    checkAllowed,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := safety.NewChannelSink(10)
+			defer sink.Close()
+
+			cfg := tc.cfg
+			cfg.WriteToolNames = []string{"write_tool"}
+			if cfg.AuditSink == nil {
+				cfg.AuditSink = sink
+			}
+
+			m, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			endpointRan := false
+			wrapped, err := m.WrapInvokableToolCall(context.Background(), func(ctx context.Context, args string, opts ...tool.Option) (string, error) {
+				endpointRan = true
+				return tc.endpoint(t)(ctx, args, opts...)
+			}, &adk.ToolContext{Name: "write_tool", CallID: "auth-invokable"})
+			if err != nil {
+				t.Fatalf("WrapInvokableToolCall: %v", err)
+			}
+
+			result, err := wrapped(context.Background(), `{"confirmed":true}`)
+			tc.check(t, result, err, sink, endpointRan)
+		})
+	}
+}
+
+func TestWrapStreamableToolCallWriteConfirmedAuthorization(t *testing.T) {
+	newStreamEndpoint := func(t *testing.T) adk.StreamableToolCallEndpoint {
+		return func(ctx context.Context, _ string, _ ...tool.Option) (*schema.StreamReader[string], error) {
+			if !safety.ExecutionAuthorizedFor(ctx, "write_tool") {
+				t.Error("expected endpoint ctx to be marked authorized")
+			}
+			sr, sw := schema.Pipe[string](3)
+			go func() {
+				defer sw.Close()
+				sw.Send("chunk1", nil)
+			}()
+			return sr, nil
+		}
+	}
+
+	cases := []struct {
+		name      string
+		cfg       *Config
+		endpoint  func(t *testing.T) adk.StreamableToolCallEndpoint
+		expectRun bool
+	}{
+		{
+			name: "no authorizer",
+			cfg:  &Config{},
+			endpoint: func(t *testing.T) adk.StreamableToolCallEndpoint {
+				return func(ctx context.Context, _ string, _ ...tool.Option) (*schema.StreamReader[string], error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			expectRun: false,
+		},
+		{
+			name: "authorizer denies",
+			cfg:  &Config{ExecutionAuthorizer: stubAuthorizer{err: errors.New("denied")}},
+			endpoint: func(t *testing.T) adk.StreamableToolCallEndpoint {
+				return func(ctx context.Context, _ string, _ ...tool.Option) (*schema.StreamReader[string], error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			expectRun: false,
+		},
+		{
+			name:      "authorizer allows",
+			cfg:       &Config{ExecutionAuthorizer: stubAuthorizer{}},
+			endpoint:  newStreamEndpoint,
+			expectRun: true,
+		},
+		{
+			name:      "AllowModelConfirmation",
+			cfg:       &Config{AllowModelConfirmation: true},
+			endpoint:  newStreamEndpoint,
+			expectRun: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := safety.NewChannelSink(10)
+			defer sink.Close()
+
+			cfg := tc.cfg
+			cfg.WriteToolNames = []string{"write_tool"}
+			if cfg.AuditSink == nil {
+				cfg.AuditSink = sink
+			}
+
+			m, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			endpointRan := false
+			wrapped, err := m.WrapStreamableToolCall(context.Background(), func(ctx context.Context, args string, opts ...tool.Option) (*schema.StreamReader[string], error) {
+				endpointRan = true
+				return tc.endpoint(t)(ctx, args, opts...)
+			}, &adk.ToolContext{Name: "write_tool", CallID: "auth-stream"})
+			if err != nil {
+				t.Fatalf("WrapStreamableToolCall: %v", err)
+			}
+
+			sr, err := wrapped(context.Background(), `{"confirmed":true}`)
+			if !tc.expectRun {
+				if err == nil {
+					t.Fatal("expected gate rejection error")
+				}
+				if tc.cfg.ExecutionAuthorizer != nil {
+					if !strings.Contains(err.Error(), "denied") {
+						t.Fatalf("expected error containing 'denied', got %v", err)
+					}
+				} else if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+					t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("wrapped endpoint: %v", err)
+			}
+			defer sr.Close()
+
+			// Consume the stream to EOF so the audit event is emitted.
+			for {
+				if _, recvErr := sr.Recv(); recvErr != nil {
+					break
+				}
+			}
+
+			if !endpointRan {
+				t.Fatal("expected endpoint to run")
+			}
+			event := <-sink.Events()
+			if event.Phase != safety.PhaseExecute {
+				t.Fatalf("expected PhaseExecute, got %q", event.Phase)
+			}
+		})
+	}
+}
+
+func TestWrapEnhancedInvokableToolCallWriteConfirmedAuthorization(t *testing.T) {
+	allowedEnhancedEndpoint := func(t *testing.T) adk.EnhancedInvokableToolCallEndpoint {
+		return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.ToolResult, error) {
+			if !safety.ExecutionAuthorizedFor(ctx, "write_tool") {
+				t.Error("expected endpoint ctx to be marked authorized")
+			}
+			return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: "executed"}}}, nil
+		}
+	}
+	checkEnhancedAllowed := func(t *testing.T, result *schema.ToolResult, err error, sink *safety.ChannelSink, endpointRan bool) {
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if result == nil || len(result.Parts) != 1 || result.Parts[0].Text != "executed" {
+			t.Fatalf("expected executed result, got %+v", result)
+		}
+		if !endpointRan {
+			t.Fatal("expected endpoint to run")
+		}
+		event := <-sink.Events()
+		if event.Phase != safety.PhaseExecute {
+			t.Fatalf("expected PhaseExecute, got %q", event.Phase)
+		}
+	}
+
+	cases := []struct {
+		name     string
+		cfg      *Config
+		endpoint func(t *testing.T) adk.EnhancedInvokableToolCallEndpoint
+		check    func(t *testing.T, result *schema.ToolResult, err error, sink *safety.ChannelSink, endpointRan bool)
+	}{
+		{
+			name: "no authorizer",
+			cfg:  &Config{},
+			endpoint: func(t *testing.T) adk.EnhancedInvokableToolCallEndpoint {
+				return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.ToolResult, error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			check: func(t *testing.T, _ *schema.ToolResult, err error, sink *safety.ChannelSink, _ bool) {
+				if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+					t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+			},
+		},
+		{
+			name: "authorizer denies",
+			cfg:  &Config{ExecutionAuthorizer: stubAuthorizer{err: errors.New("denied")}},
+			endpoint: func(t *testing.T) adk.EnhancedInvokableToolCallEndpoint {
+				return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.ToolResult, error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			check: func(t *testing.T, _ *schema.ToolResult, err error, sink *safety.ChannelSink, _ bool) {
+				if err == nil || !strings.Contains(err.Error(), "denied") {
+					t.Fatalf("expected error containing 'denied', got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+			},
+		},
+		{
+			name:     "authorizer allows",
+			cfg:      &Config{ExecutionAuthorizer: stubAuthorizer{}},
+			endpoint: allowedEnhancedEndpoint,
+			check:    checkEnhancedAllowed,
+		},
+		{
+			name:     "AllowModelConfirmation",
+			cfg:      &Config{AllowModelConfirmation: true},
+			endpoint: allowedEnhancedEndpoint,
+			check:    checkEnhancedAllowed,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := safety.NewChannelSink(10)
+			defer sink.Close()
+
+			cfg := tc.cfg
+			cfg.WriteToolNames = []string{"write_tool"}
+			if cfg.AuditSink == nil {
+				cfg.AuditSink = sink
+			}
+
+			m, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			endpointRan := false
+			wrapped, err := m.WrapEnhancedInvokableToolCall(context.Background(), func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
+				endpointRan = true
+				return tc.endpoint(t)(ctx, toolArg, opts...)
+			}, &adk.ToolContext{Name: "write_tool", CallID: "auth-enhanced-invokable"})
+			if err != nil {
+				t.Fatalf("WrapEnhancedInvokableToolCall: %v", err)
+			}
+
+			result, err := wrapped(context.Background(), &schema.ToolArgument{Text: `{"confirmed":true}`})
+			tc.check(t, result, err, sink, endpointRan)
+		})
+	}
+}
+
+func TestWrapEnhancedStreamableToolCallWriteConfirmedAuthorization(t *testing.T) {
+	newStreamEndpoint := func(t *testing.T) adk.EnhancedStreamableToolCallEndpoint {
+		return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+			if !safety.ExecutionAuthorizedFor(ctx, "write_tool") {
+				t.Error("expected endpoint ctx to be marked authorized")
+			}
+			sr, sw := schema.Pipe[*schema.ToolResult](3)
+			go func() {
+				defer sw.Close()
+				sw.Send(&schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: "chunk1"}}}, nil)
+			}()
+			return sr, nil
+		}
+	}
+
+	cases := []struct {
+		name      string
+		cfg       *Config
+		endpoint  func(t *testing.T) adk.EnhancedStreamableToolCallEndpoint
+		expectRun bool
+	}{
+		{
+			name: "no authorizer",
+			cfg:  &Config{},
+			endpoint: func(t *testing.T) adk.EnhancedStreamableToolCallEndpoint {
+				return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			expectRun: false,
+		},
+		{
+			name: "authorizer denies",
+			cfg:  &Config{ExecutionAuthorizer: stubAuthorizer{err: errors.New("denied")}},
+			endpoint: func(t *testing.T) adk.EnhancedStreamableToolCallEndpoint {
+				return func(ctx context.Context, _ *schema.ToolArgument, _ ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+					t.Error("endpoint should not be called")
+					return nil, nil
+				}
+			},
+			expectRun: false,
+		},
+		{
+			name:      "authorizer allows",
+			cfg:       &Config{ExecutionAuthorizer: stubAuthorizer{}},
+			endpoint:  newStreamEndpoint,
+			expectRun: true,
+		},
+		{
+			name:      "AllowModelConfirmation",
+			cfg:       &Config{AllowModelConfirmation: true},
+			endpoint:  newStreamEndpoint,
+			expectRun: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := safety.NewChannelSink(10)
+			defer sink.Close()
+
+			cfg := tc.cfg
+			cfg.WriteToolNames = []string{"write_tool"}
+			if cfg.AuditSink == nil {
+				cfg.AuditSink = sink
+			}
+
+			m, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			endpointRan := false
+			wrapped, err := m.WrapEnhancedStreamableToolCall(context.Background(), func(ctx context.Context, toolArg *schema.ToolArgument, opts ...tool.Option) (*schema.StreamReader[*schema.ToolResult], error) {
+				endpointRan = true
+				return tc.endpoint(t)(ctx, toolArg, opts...)
+			}, &adk.ToolContext{Name: "write_tool", CallID: "auth-enhanced-stream"})
+			if err != nil {
+				t.Fatalf("WrapEnhancedStreamableToolCall: %v", err)
+			}
+
+			sr, err := wrapped(context.Background(), &schema.ToolArgument{Text: `{"confirmed":true}`})
+			if !tc.expectRun {
+				if err == nil {
+					t.Fatal("expected gate rejection error")
+				}
+				if tc.cfg.ExecutionAuthorizer != nil {
+					if !strings.Contains(err.Error(), "denied") {
+						t.Fatalf("expected error containing 'denied', got %v", err)
+					}
+				} else if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+					t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+				}
+				event := <-sink.Events()
+				if event.Phase != safety.PhaseRejected {
+					t.Fatalf("expected PhaseRejected, got %q", event.Phase)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("wrapped endpoint: %v", err)
+			}
+			defer sr.Close()
+
+			// Consume the stream to EOF so the audit event is emitted.
+			for {
+				if _, recvErr := sr.Recv(); recvErr != nil {
+					break
+				}
+			}
+
+			if !endpointRan {
+				t.Fatal("expected endpoint to run")
+			}
+			event := <-sink.Events()
+			if event.Phase != safety.PhaseExecute {
+				t.Fatalf("expected PhaseExecute, got %q", event.Phase)
+			}
+		})
 	}
 }

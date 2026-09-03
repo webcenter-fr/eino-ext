@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,4 +89,36 @@ func TestWriteToolNames(t *testing.T) {
 	names := WriteToolNames()
 	require.Len(t, names, 1)
 	assert.Equal(t, "shell_exec", names[0])
+}
+
+// TestDryRunNoMutation asserts the WriteToolNames contract: a dry-run invoke
+// returns a preview and performs no Dagger/session work (it returns before
+// profile resolution), so a zero-value Tool (nil blocklist, nil sessions) is
+// sufficient.
+func TestDryRunNoMutation(t *testing.T) {
+	tool := &Tool{}
+
+	result, err := tool.Invoke(context.Background(), &Params{
+		Command: []string{"echo", "x"},
+		DryRun:  true,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, result, `"dryRun": true`)
+
+	sr, err := tool.InvokeAsStream(context.Background(), &Params{
+		Command: []string{"echo", "x"},
+		DryRun:  true,
+	})
+	require.NoError(t, err)
+	defer sr.Close()
+
+	var out string
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr != nil {
+			break
+		}
+		out += chunk
+	}
+	assert.Contains(t, out, `"dryRun": true`)
 }

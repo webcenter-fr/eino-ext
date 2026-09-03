@@ -3,9 +3,16 @@ package argocd
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 
+	"emperror.dev/errors"
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func (t *ToolTestSuite) TestApplicationList() {
@@ -82,7 +89,7 @@ func (t *ToolTestSuite) TestApplicationDescribe() {
 }
 
 func (t *ToolTestSuite) TestApplicationSync() {
-	ctx := context.Background()
+	ctx := safety.WithExecutionAuthorized(context.Background(), "argocd_application_sync")
 
 	syncTool, err := NewApplicationSyncTool(ctx, t.configs)
 	assert.NoError(t.T(), err)
@@ -99,8 +106,92 @@ func (t *ToolTestSuite) TestApplicationSync() {
 	assert.Error(t.T(), err)
 }
 
-func (t *ToolTestSuite) TestApplicationCreate() {
+// TestApplicationSyncUnauthorizedContext asserts the per-tool second layer:
+// calling the tool directly (no middleware) with confirmed:true and an
+// unauthorized context is refused with ErrExecutionNotAuthorized.
+func (t *ToolTestSuite) TestApplicationSyncUnauthorizedContext() {
 	ctx := context.Background()
+
+	syncTool, err := NewApplicationSyncTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	_, err = syncTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "confirmed": true}`)
+	assert.Error(t.T(), err)
+	assert.True(t.T(), errors.Is(err, safety.ErrExecutionNotAuthorized), "expected ErrExecutionNotAuthorized, got %v", err)
+}
+
+// TestDryRunNoMutation asserts the WriteToolNames contract: create and delete
+// dry-runs issue no POST/DELETE request, and a sync dry-run sends a sync
+// request carrying dryRun:true (server-side dry-run).
+func (t *ToolTestSuite) TestDryRunNoMutation() {
+	var mutating []string
+	var syncBodies []string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/applications", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutating = append(mutating, r.Method+" "+r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"metadata":{"name":"my-app"},"spec":{"project":"default"}}`))
+	})
+	mux.HandleFunc("/api/v1/applications/my-app", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutating = append(mutating, r.Method+" "+r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"metadata":{"name":"my-app"},"spec":{"project":"default"}}`))
+	})
+	mux.HandleFunc("/api/v1/applications/my-app/sync", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			body, _ := io.ReadAll(r.Body)
+			mutating = append(mutating, r.Method+" "+r.URL.Path)
+			syncBodies = append(syncBodies, string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"metadata":{"name":"my-app"},"status":{"sync":{"status":"Synced"}}}`))
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	configs := Configs{"test": {URL: server.URL}}
+	ctx := safety.WithExecutionAuthorized(context.Background(), "argocd_application_sync")
+
+	t.Run("create dry-run issues no POST", func() {
+		createTool, err := NewApplicationCreateTool(ctx, configs)
+		assert.NoError(t.T(), err)
+		_, err = createTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "repoURL": "https://git.example.com/repo", "destServer": "my-cluster", "dryRun": true}`)
+		assert.NoError(t.T(), err)
+	})
+
+	t.Run("delete dry-run issues no DELETE", func() {
+		deleteTool, err := NewApplicationDeleteTool(ctx, configs)
+		assert.NoError(t.T(), err)
+		_, err = deleteTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "dryRun": true}`)
+		assert.NoError(t.T(), err)
+	})
+
+	t.Run("sync dry-run sends server-side dryRun", func() {
+		syncTool, err := NewApplicationSyncTool(ctx, configs)
+		assert.NoError(t.T(), err)
+		_, err = syncTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app", "dryRun": true}`)
+		assert.NoError(t.T(), err)
+	})
+
+	// Only the sync (server-side dry-run) POST may have occurred, and it must
+	// carry dryRun:true.
+	for _, m := range mutating {
+		assert.True(t.T(), strings.HasPrefix(m, "POST /api/v1/applications/my-app/sync"),
+			"dry-run issued an unexpected mutating request: %s", m)
+	}
+	for _, body := range syncBodies {
+		assert.Contains(t.T(), body, `"dryRun":true`, "sync dry-run request must carry dryRun:true")
+	}
+}
+
+func (t *ToolTestSuite) TestApplicationCreate() {
+	ctx := safety.WithExecutionAuthorized(context.Background(), "argocd_application_create")
 
 	createTool, err := NewApplicationCreateTool(ctx, t.configs)
 	assert.NoError(t.T(), err)
@@ -118,7 +209,7 @@ func (t *ToolTestSuite) TestApplicationCreate() {
 }
 
 func (t *ToolTestSuite) TestApplicationDelete() {
-	ctx := context.Background()
+	ctx := safety.WithExecutionAuthorized(context.Background(), "argocd_application_delete")
 
 	deleteTool, err := NewApplicationDeleteTool(ctx, t.configs)
 	assert.NoError(t.T(), err)

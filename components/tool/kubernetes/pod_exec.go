@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	corev1 "k8s.io/api/core/v1"
@@ -176,8 +177,8 @@ func (t *PodExecTool) Invoke(ctx context.Context, params *PodExecParams) (string
 		return t.dryRunPreview(params), nil
 	}
 
-	if !params.Confirmed {
-		return "", errors.New("confirmed must be true to execute a command in a pod (set dryRun=true first to preview)")
+	if err := confirm.RequireConfirmationCtx(ctx, "kubernetes_pod_exec", params.DryRun, params.Confirmed); err != nil {
+		return "", err
 	}
 
 	config, err := t.base.restConfig(params.Cluster)
@@ -271,8 +272,8 @@ func (t *PodExecTool) InvokeAsStream(ctx context.Context, params *PodExecParams)
 		return sr, nil
 	}
 
-	if !params.Confirmed {
-		return nil, errors.New("confirmed must be true to execute a command in a pod (set dryRun=true first to preview)")
+	if err := confirm.RequireConfirmationCtx(ctx, "kubernetes_pod_exec", params.DryRun, params.Confirmed); err != nil {
+		return nil, err
 	}
 
 	config, err := t.base.restConfig(params.Cluster)

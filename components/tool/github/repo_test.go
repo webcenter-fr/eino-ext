@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/goccy/go-json"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func (s *GitHubToolTestSuite) TestOrgRepoList() {
@@ -93,7 +95,7 @@ func (s *GitHubToolTestSuite) TestWebhookUpsert() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "hookUrl": "https://hooks.example.com/webhook", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_webhook_upsert"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "hookUrl": "https://hooks.example.com/webhook", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"id": 500`)
 
@@ -113,7 +115,7 @@ func (s *GitHubToolTestSuite) TestRepoSettingsUpdate() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "description": "Updated desc", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_repo_settings_update"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "description": "Updated desc", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"updated": true`)
 
@@ -130,7 +132,7 @@ func (s *GitHubToolTestSuite) TestReleaseCreate() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "tagName": "v1.0.0", "name": "v1.0.0 Release", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_release_create"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "tagName": "v1.0.0", "name": "v1.0.0 Release", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"id": 600`)
 }
@@ -144,7 +146,7 @@ func (s *GitHubToolTestSuite) TestBranchCreateRemote() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo-remote", "branchName": "new-branch", "remote": true, "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_branch_create"), `{"instance": "test", "owner": "testowner", "repo": "testrepo-remote", "branchName": "new-branch", "remote": true, "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"mode": "remote"`)
 }

@@ -48,7 +48,7 @@ func (t *IssueCreateTool) Invoke(ctx context.Context, params *IssueCreateParams)
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": {"title": %q, "labels": %q, "assignee": %q}}`, params.Title, params.Labels, params.Assignee), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create issue", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_issue_create", "create issue", params.Confirmed); err != nil {
 		return "", err
 	}
 

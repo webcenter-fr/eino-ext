@@ -58,7 +58,7 @@ func (t *BranchCreateTool) Invoke(ctx context.Context, params *BranchCreateParam
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreateBranch": %q, "mode": %q, "baseBranch": %q}`, params.BranchName, mode, params.BaseBranch), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create branch", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_branch_create", "create branch", params.Confirmed); err != nil {
 		return "", err
 	}
 

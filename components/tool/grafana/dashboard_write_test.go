@@ -13,7 +13,13 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
+
+// authorizedCtx marks grafana_dashboard_write as execution-authorized so
+// confirmed:true invocations pass the per-tool authorization layer.
+var authorizedCtx = safety.WithExecutionAuthorized(context.Background(), "grafana_dashboard_write")
 
 func newDashboardWriteTestTool(t *testing.T, cfg Config, handler http.HandlerFunc) *DashboardWriteTool {
 	t.Helper()
@@ -101,6 +107,86 @@ func TestNewDashboardWriteToolRequiresConfigs(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestDashboardWriteUnauthorizedContext asserts the per-tool second layer:
+// calling the tool directly (no middleware) with confirmed:true and an
+// unauthorized context is refused with ErrExecutionNotAuthorized. The
+// authorization check fires before any HTTP request, so the handler is not hit.
+func TestDashboardWriteUnauthorizedContext(t *testing.T) {
+	handlerHit := false
+	tool := newDashboardWriteTool(t, func(w http.ResponseWriter, r *http.Request) {
+		handlerHit = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":10,"uid":"new-uid","url":"/d/new-uid/slug","status":"success","version":1,"slug":"slug"}`))
+	})
+
+	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		Instance:  "test",
+		Operation: "create",
+		Dashboard: `{"title":"My Dashboard"}`,
+		Confirmed: true,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, safety.ErrExecutionNotAuthorized), "expected ErrExecutionNotAuthorized, got %v", err)
+	assert.False(t, handlerHit, "handler must not be reached when execution is not authorized")
+}
+
+// TestDryRunNoMutation asserts the WriteToolNames contract: invoking the write
+// tool with dryRun:true returns a preview and issues no mutating request.
+func TestDryRunNoMutation(t *testing.T) {
+	mutating := []string{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/dashboards/db", func(w http.ResponseWriter, r *http.Request) {
+		mutating = append(mutating, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":10,"uid":"abc123","url":"/d/abc123/slug","status":"success","version":2,"slug":"slug"}`))
+	})
+	mux.HandleFunc("/api/dashboards/uid/abc123", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			mutating = append(mutating, r.Method+" "+r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"uid":"abc123","title":"Production Overview"},"meta":{"version":1}}`))
+	})
+
+	tool := newDashboardWriteToolWithMux(t, mux)
+
+	t.Run("create dry-run", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "create",
+			Dashboard: `{"title":"My Dashboard"}`,
+			DryRun:    true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"dryRun":true`)
+	})
+
+	t.Run("update dry-run", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "update",
+			UID:       "abc123",
+			Dashboard: `{"uid":"abc123","title":"My Dashboard"}`,
+			DryRun:    true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"dryRun":true`)
+	})
+
+	t.Run("delete dry-run", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			Instance:  "test",
+			Operation: "delete",
+			UID:       "abc123",
+			DryRun:    true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, result, `"dryRun":true`)
+	})
+
+	assert.Empty(t, mutating, "dry-run must issue no POST /api/dashboards/db and no DELETE request, got %v", mutating)
+}
+
 func TestDashboardWriteToolCreate(t *testing.T) {
 	tool := newDashboardWriteTool(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
@@ -110,7 +196,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("create confirmed", func(t *testing.T) {
-		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "create",
 			Dashboard: `{"title":"My Dashboard"}`,
@@ -137,7 +223,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("missing title", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "create",
 			Dashboard: `{}`,
@@ -148,7 +234,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("missing dashboard", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "create",
 			Confirmed: true,
@@ -158,7 +244,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("invalid json", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "create",
 			Dashboard: "not json",
@@ -169,7 +255,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("unknown instance", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "invalid",
 			Operation: "create",
 			Dashboard: `{"title":"X"}`,
@@ -179,7 +265,7 @@ func TestDashboardWriteToolCreate(t *testing.T) {
 	})
 
 	t.Run("invalid operation", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "bogus",
 			Dashboard: `{"title":"X"}`,
@@ -215,7 +301,7 @@ func TestDashboardWriteToolUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("update existing", func(t *testing.T) {
-		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			Dashboard: `{"uid":"abc123","title":"Production Overview"}`,
@@ -255,7 +341,7 @@ func TestDashboardWriteToolUpdate(t *testing.T) {
 		updateTool, err := NewDashboardWriteTool(context.Background(), Configs{"test": {URL: server.URL}})
 		require.NoError(t, err)
 
-		_, err = updateTool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err = updateTool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "abc123",
@@ -324,7 +410,7 @@ func TestDashboardWriteToolDelete(t *testing.T) {
 	})
 
 	t.Run("delete confirmed", func(t *testing.T) {
-		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "delete",
 			UID:       "abc123",
@@ -340,7 +426,7 @@ func TestDashboardWriteToolDelete(t *testing.T) {
 	})
 
 	t.Run("delete protected", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "delete",
 			UID:       "protected-uid",
@@ -351,7 +437,7 @@ func TestDashboardWriteToolDelete(t *testing.T) {
 	})
 
 	t.Run("delete nonexistent", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "delete",
 			UID:       "nonexistent",
@@ -362,7 +448,7 @@ func TestDashboardWriteToolDelete(t *testing.T) {
 	})
 
 	t.Run("delete missing uid", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "delete",
 			Confirmed: true,
@@ -384,7 +470,7 @@ func TestDashboardWriteToolProtection(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err = tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "create",
 			Dashboard: `{"title":"Kubernetes Evil"}`,
@@ -429,7 +515,7 @@ func TestDashboardWriteToolVersionResolution(t *testing.T) {
 		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
 
 		tool := newDashboardWriteToolWithMux(t, mux)
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			Dashboard: `{"uid":"abc123","title":"T"}`,
@@ -449,7 +535,7 @@ func TestDashboardWriteToolVersionResolution(t *testing.T) {
 		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
 
 		tool := newDashboardWriteToolWithMux(t, mux)
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			Dashboard: `{"uid":"abc123","title":"T","version":3}`,
@@ -469,7 +555,7 @@ func TestDashboardWriteToolVersionResolution(t *testing.T) {
 		mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 6))
 
 		tool := newDashboardWriteToolWithMux(t, mux)
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			Dashboard: `{"uid":"abc123","title":"T","id":1471}`,
@@ -493,7 +579,7 @@ func TestDashboardWriteToolOverwritePassthrough(t *testing.T) {
 	mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "abc123", 8))
 
 	tool := newDashboardWriteToolWithMux(t, mux)
-	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+	_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 		Instance:  "test",
 		Operation: "update",
 		Dashboard: `{"uid":"abc123","title":"T","version":99,"id":999}`,
@@ -520,7 +606,7 @@ func TestDashboardWriteToolUnknownUID(t *testing.T) {
 	mux.HandleFunc("/api/dashboards/db", dashboardSaveHandler(&gotPOST, "notfound", 1))
 
 	tool := newDashboardWriteToolWithMux(t, mux)
-	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+	_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 		Instance:  "test",
 		Operation: "create",
 		Dashboard: `{"uid":"notfound","title":"New Dashboard","version":5,"id":99}`,
@@ -545,7 +631,7 @@ func TestDashboardWriteToolGenuineConflict(t *testing.T) {
 	mux.HandleFunc("/api/dashboards/db", dashboardSaveConflictHandler())
 
 	tool := newDashboardWriteToolWithMux(t, mux)
-	_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+	_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 		Instance:  "test",
 		Operation: "update",
 		Dashboard: `{"uid":"abc123","title":"T"}`,
@@ -608,7 +694,7 @@ func TestDashboardWriteToolRegressionReportedIncident(t *testing.T) {
 		`{"id":1471,"uid":%q,"url":"/d/%s/slug","status":"success","version":7,"slug":"slug"}`, uid, uid)))
 
 	tool := newDashboardWriteToolWithMux(t, mux)
-	result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+	result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 		Instance:  "test",
 		Operation: "update",
 		Dashboard: fmt.Sprintf(`{"uid":%q,"title":"My Dashboard","id":1471}`, uid),
@@ -643,7 +729,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("path traversal uid rejected in delete", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "delete",
 			UID:       "../../etc/passwd",
@@ -654,7 +740,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 	})
 
 	t.Run("path traversal uid rejected in update via params", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "update",
 			UID:       "../../etc/passwd",
@@ -666,7 +752,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 	})
 
 	t.Run("path traversal uid rejected in update via model", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "update",
 			Dashboard: `{"uid":"../../etc/passwd","title":"Test"}`,
@@ -678,7 +764,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 
 	t.Run("overly long uid rejected (41 chars)", func(t *testing.T) {
 		uid := strings.Repeat("a", 41)
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "delete",
 			UID:       uid,
@@ -689,7 +775,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 	})
 
 	t.Run("uid with invalid characters rejected", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "delete",
 			UID:       "uid with spaces",
@@ -708,7 +794,7 @@ func TestDashboardWriteToolUIDValidation(t *testing.T) {
 		for _, uid := range validUIDs {
 			// Just validate that we get past the UID validation and either succeed
 			// or fail for a different reason (like network)
-			_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+			_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 				Instance:  "t",
 				Operation: "delete",
 				UID:       uid,
@@ -743,7 +829,7 @@ func TestDashboardWriteToolInputLengthLimits(t *testing.T) {
 
 	t.Run("oversized dashboard JSON rejected", func(t *testing.T) {
 		huge := strings.Repeat("x", 1048577) // 1MB + 1
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "create",
 			Dashboard: `{"title":"x","fill":"` + huge + `"}`,
@@ -754,7 +840,7 @@ func TestDashboardWriteToolInputLengthLimits(t *testing.T) {
 	})
 
 	t.Run("oversized uid rejected", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "delete",
 			UID:       strings.Repeat("x", 257),
@@ -765,7 +851,7 @@ func TestDashboardWriteToolInputLengthLimits(t *testing.T) {
 	})
 
 	t.Run("oversized message rejected", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "create",
 			Dashboard: `{"title":"x"}`,
@@ -788,7 +874,7 @@ func TestDashboardWriteToolChangesAutoFetch(t *testing.T) {
 	tool := newDashboardWriteToolWithMux(t, mux)
 
 	t.Run("auto-fetch and merge changes", func(t *testing.T) {
-		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "abc123",
@@ -820,7 +906,7 @@ func TestDashboardWriteToolChangesWithDashboard(t *testing.T) {
 	tool := newDashboardWriteToolWithMux(t, mux)
 
 	t.Run("changes merged into provided dashboard", func(t *testing.T) {
-		result, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		result, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			Dashboard: `{"uid":"abc123","title":"Custom Title","panels":[{"id":1}]}`,
@@ -847,7 +933,7 @@ func TestDashboardWriteToolChangesErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("changes without dashboard and without uid", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "update",
 			Changes:   `{"title":"Test"}`,
@@ -858,7 +944,7 @@ func TestDashboardWriteToolChangesErrors(t *testing.T) {
 	})
 
 	t.Run("changes on create rejected", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "create",
 			Dashboard: `{"title":"Test"}`,
@@ -870,7 +956,7 @@ func TestDashboardWriteToolChangesErrors(t *testing.T) {
 	})
 
 	t.Run("invalid changes JSON", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "t",
 			Operation: "update",
 			UID:       "abc123",
@@ -889,7 +975,7 @@ func TestDashboardWriteToolChangesAutoFetchNotFound(t *testing.T) {
 	tool := newDashboardWriteToolWithMux(t, mux)
 
 	t.Run("changes on nonexistent dashboard", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "nonexistent",
@@ -926,7 +1012,7 @@ func TestDashboardWriteToolChangesProtected(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("changes on protected dashboard blocked", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "protected-uid",
@@ -994,7 +1080,7 @@ func TestDashboardWriteToolChangesDeepMerge(t *testing.T) {
 	tool := newDashboardWriteToolWithMux(t, mux)
 
 	t.Run("deep merge nested changes", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "abc123",
@@ -1037,7 +1123,7 @@ func TestDashboardWriteToolChangesTitleMerged(t *testing.T) {
 	tool := newDashboardWriteToolWithMux(t, mux)
 
 	t.Run("changes with title override", func(t *testing.T) {
-		_, err := tool.Invoke(context.Background(), &DashboardWriteParams{
+		_, err := tool.Invoke(authorizedCtx, &DashboardWriteParams{
 			Instance:  "test",
 			Operation: "update",
 			UID:       "abc123",

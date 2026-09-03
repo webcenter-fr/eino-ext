@@ -79,6 +79,10 @@ func NewReadOnlyTools(ctx context.Context, configs Configs) ([]tool.InvokableToo
 
 // WriteToolNames returns the tool names of all ArgoCD write tools.
 // These names can be passed to the safety middleware's Config.WriteToolNames.
+//
+// Contract: every name listed here MUST honor dryRun=true as a no-side-effect
+// preview. The safety gate treats dry-run as always-safe, so a tool that mutates
+// during dry-run would let an unconfirmed model call bypass the gate.
 func WriteToolNames() []string {
 	return []string{
 		"argocd_application_create",

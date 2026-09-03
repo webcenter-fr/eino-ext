@@ -55,7 +55,7 @@ func (t *RepoSettingsUpdateTool) Invoke(ctx context.Context, params *RepoSetting
 		return fmt.Sprintf(`{"dryRun": true, "wouldUpdate": {"owner": %q, "repo": %q}}`, params.Owner, params.Repo), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("update repository settings", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_repo_settings_update", "update repository settings", params.Confirmed); err != nil {
 		return "", err
 	}
 

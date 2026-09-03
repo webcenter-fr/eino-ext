@@ -49,7 +49,7 @@ func (t *PRCreateTool) Invoke(ctx context.Context, params *PRCreateParams) (resu
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": {"title": %q, "head": %q, "base": %q, "draft": %v}}`, params.Title, params.Head, params.Base, params.Draft), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create pull request", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_pr_create", "create pull request", params.Confirmed); err != nil {
 		return "", err
 	}
 

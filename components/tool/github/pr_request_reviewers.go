@@ -46,7 +46,7 @@ func (t *PRRequestReviewersTool) Invoke(ctx context.Context, params *PRRequestRe
 		return fmt.Sprintf(`{"dryRun": true, "wouldRequest": {"number": %d, "reviewers": %v}}`, params.Number, params.Reviewers), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("request reviewers", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_pr_request_reviewers", "request reviewers", params.Confirmed); err != nil {
 		return "", err
 	}
 

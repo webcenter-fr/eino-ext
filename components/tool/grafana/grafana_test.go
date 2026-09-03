@@ -6,6 +6,8 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func (t *ToolTestSuite) TestInstanceList() {
@@ -209,6 +211,9 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	_, err = writeTool.Info(ctx)
 	assert.NoError(t.T(), err)
 
+	// confirmed:true subtests must run with a host-authorized context.
+	authorizedCtx := safety.WithExecutionAuthorized(ctx, dashboardWriteToolName)
+
 	t.Run("create dry run", func() {
 		dashboardJSON := `{"title": "My New Dashboard"}`
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "create", "dashboard": %q, "dryRun": true}`, dashboardJSON)
@@ -221,7 +226,7 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	t.Run("create confirmed", func() {
 		dashboardJSON := `{"title": "My New Dashboard"}`
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "create", "dashboard": %q, "confirmed": true}`, dashboardJSON)
-		result, err := writeTool.InvokableRun(ctx, paramsJSON)
+		result, err := writeTool.InvokableRun(authorizedCtx, paramsJSON)
 		assert.NoError(t.T(), err)
 		assert.NotEmpty(t.T(), result)
 		assert.Contains(t.T(), result, `"uid"`)
@@ -232,7 +237,7 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	t.Run("update existing", func() {
 		dashboardJSON := `{"uid": "abc123", "title": "Production Overview"}`
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "update", "dashboard": %q, "overwrite": true, "confirmed": true}`, dashboardJSON)
-		result, err := writeTool.InvokableRun(ctx, paramsJSON)
+		result, err := writeTool.InvokableRun(authorizedCtx, paramsJSON)
 		assert.NoError(t.T(), err)
 		assert.NotEmpty(t.T(), result)
 		assert.Contains(t.T(), result, `"uid":"new-uid"`)
@@ -246,20 +251,20 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	})
 
 	t.Run("delete confirmed", func() {
-		result, err := writeTool.InvokableRun(ctx, `{"instance": "test", "operation": "delete", "uid": "abc123", "confirmed": true}`)
+		result, err := writeTool.InvokableRun(authorizedCtx, `{"instance": "test", "operation": "delete", "uid": "abc123", "confirmed": true}`)
 		assert.NoError(t.T(), err)
 		assert.Contains(t.T(), result, `"status":"success"`)
 		assert.Contains(t.T(), result, `"Production Overview"`)
 	})
 
 	t.Run("delete protected by uid", func() {
-		_, err := writeTool.InvokableRun(ctx, `{"instance": "test", "operation": "delete", "uid": "protected-uid", "confirmed": true}`)
+		_, err := writeTool.InvokableRun(authorizedCtx, `{"instance": "test", "operation": "delete", "uid": "protected-uid", "confirmed": true}`)
 		assert.Error(t.T(), err)
 		assert.Contains(t.T(), err.Error(), "is protected")
 	})
 
 	t.Run("delete nonexistent", func() {
-		_, err := writeTool.InvokableRun(ctx, `{"instance": "test", "operation": "delete", "uid": "nonexistent", "confirmed": true}`)
+		_, err := writeTool.InvokableRun(authorizedCtx, `{"instance": "test", "operation": "delete", "uid": "nonexistent", "confirmed": true}`)
 		assert.Error(t.T(), err)
 		assert.Contains(t.T(), err.Error(), "not found")
 	})
@@ -267,7 +272,7 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	t.Run("update protected by uid", func() {
 		dashboardJSON := `{"uid": "protected-uid", "title": "Kubernetes Monitoring"}`
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "update", "dashboard": %q, "confirmed": true}`, dashboardJSON)
-		_, err := writeTool.InvokableRun(ctx, paramsJSON)
+		_, err := writeTool.InvokableRun(authorizedCtx, paramsJSON)
 		assert.Error(t.T(), err)
 		assert.Contains(t.T(), err.Error(), "is protected")
 	})
@@ -282,13 +287,13 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	t.Run("missing title", func() {
 		dashboardJSON := `{}`
 		paramsJSON := fmt.Sprintf(`{"instance": "test", "operation": "create", "dashboard": %q, "confirmed": true}`, dashboardJSON)
-		_, err := writeTool.InvokableRun(ctx, paramsJSON)
+		_, err := writeTool.InvokableRun(authorizedCtx, paramsJSON)
 		assert.Error(t.T(), err)
 		assert.Contains(t.T(), err.Error(), "missing a 'title'")
 	})
 
 	t.Run("invalid json", func() {
-		_, err := writeTool.InvokableRun(ctx, `{"instance": "test", "operation": "create", "dashboard": "not json", "confirmed": true}`)
+		_, err := writeTool.InvokableRun(authorizedCtx, `{"instance": "test", "operation": "create", "dashboard": "not json", "confirmed": true}`)
 		assert.Error(t.T(), err)
 		assert.Contains(t.T(), err.Error(), "not valid JSON")
 	})
@@ -296,7 +301,7 @@ func (t *ToolTestSuite) TestDashboardWrite() {
 	t.Run("unknown instance", func() {
 		dashboardJSON := `{"title": "X"}`
 		paramsJSON := fmt.Sprintf(`{"instance": "invalid", "operation": "create", "dashboard": %q, "confirmed": true}`, dashboardJSON)
-		_, err := writeTool.InvokableRun(ctx, paramsJSON)
+		_, err := writeTool.InvokableRun(authorizedCtx, paramsJSON)
 		assert.Error(t.T(), err)
 	})
 }

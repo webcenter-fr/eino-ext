@@ -1,5 +1,18 @@
 # Breaking Changes
 
+## safety middleware: write tools now require host authorization to execute
+
+The safety middleware and every write tool now authorize real execution from
+`context.Context` (an `ExecutionAuthorizer`) instead of trusting the
+model-supplied `confirmed:true` argument. With no authorizer configured, write
+tools may only dry-run; a `confirmed:true` call returns
+`safety.ErrExecutionNotAuthorized`.
+
+To migrate, implement `safety.ExecutionAuthorizer` backed by your approval store
+and set `safety.Config.ExecutionAuthorizer`, or set
+`Config.AllowModelConfirmation: true` to opt back into the previous (insecure)
+behavior.
+
 ## memory/file: Return signature changed
 
 `NewFileMemory` and `GetDefaultMemory` now return `(memory.Memory, error)` instead of `memory.Memory`. Previously, errors (invalid config, directory creation failure) were silently swallowed and `nil` was returned. Callers must now handle the error.

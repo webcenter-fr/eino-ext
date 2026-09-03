@@ -103,7 +103,7 @@ func (t *ResourceDeleteTool) Invoke(ctx context.Context, params *ResourceDeleteP
 	}
 
 	// Enforce safety gate: require confirmation for non-dry-run operations.
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "kubernetes_resource_delete", params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

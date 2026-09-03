@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/goccy/go-json"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func (s *GitHubToolTestSuite) TestPRList() {
@@ -70,7 +72,7 @@ func (s *GitHubToolTestSuite) TestPRCreate() {
 	s.NoError(err)
 	s.Contains(result, `"dryRun": true`)
 
-	result, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "title": "New PR", "head": "feature-x", "confirmed": true}`)
+	result, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_pr_create"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "title": "New PR", "head": "feature-x", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"created": true`)
 	s.Contains(result, `"number": 11`)
@@ -88,7 +90,7 @@ func (s *GitHubToolTestSuite) TestPRComment() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "body": "Nice PR!", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_pr_comment"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "body": "Nice PR!", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"created": true`)
 	s.Contains(result, `"id": 200`)
@@ -106,7 +108,7 @@ func (s *GitHubToolTestSuite) TestPRReview() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "event": "APPROVE", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_pr_review"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "event": "APPROVE", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"id": 300`)
 
@@ -123,7 +125,7 @@ func (s *GitHubToolTestSuite) TestPRSuggestChange() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "commitId": "abc123", "filePath": "main.go", "line": 42, "body": "Consider using a constant here.", "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_pr_suggest_change"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "commitId": "abc123", "filePath": "main.go", "line": 42, "body": "Consider using a constant here.", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"id": 400`)
 	s.Contains(result, `"path":`)
@@ -142,7 +144,7 @@ func (s *GitHubToolTestSuite) TestPRRequestReviewers() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "reviewers": ["reviewer1", "reviewer2"], "confirmed": true}`)
+	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_pr_request_reviewers"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 10, "reviewers": ["reviewer1", "reviewer2"], "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"requestedReviewers"`)
 

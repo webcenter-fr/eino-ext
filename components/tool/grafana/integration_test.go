@@ -13,6 +13,8 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func grafanaURL() string {
@@ -180,6 +182,9 @@ func TestIntegrationAllTools(t *testing.T) {
 		tool, err := NewDashboardWriteTool(ctx, configs)
 		require.NoError(t, err)
 
+		// confirmed:true subtests must run with a host-authorized context.
+		authorizedCtx := safety.WithExecutionAuthorized(ctx, dashboardWriteToolName)
+
 		t.Run("dry run new dashboard", func(t *testing.T) {
 			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"dryRun":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
 			result, err := tool.InvokableRun(ctx, params)
@@ -190,7 +195,7 @@ func TestIntegrationAllTools(t *testing.T) {
 
 		t.Run("create new dashboard", func(t *testing.T) {
 			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"confirmed":true}`, `{"title":"Integration Test Dashboard","tags":["integration-test"]}`)
-			result, err := tool.InvokableRun(ctx, params)
+			result, err := tool.InvokableRun(authorizedCtx, params)
 			require.NoError(t, err)
 
 			var out DashboardSaveOutput
@@ -203,7 +208,7 @@ func TestIntegrationAllTools(t *testing.T) {
 
 		t.Run("update existing dashboard", func(t *testing.T) {
 			params := fmt.Sprintf(`{"instance":"test","operation":"update","dashboard":%q,"overwrite":true,"confirmed":true}`, `{"uid":"test-dashboard-001","title":"Test Production Updated","tags":["test","updated"],"panels":[{"id":1,"title":"CPU","type":"graph"}],"schemaVersion":36}`)
-			result, err := tool.InvokableRun(ctx, params)
+			result, err := tool.InvokableRun(authorizedCtx, params)
 			require.NoError(t, err)
 
 			var out DashboardSaveOutput
@@ -215,20 +220,20 @@ func TestIntegrationAllTools(t *testing.T) {
 
 		t.Run("protected by UID", func(t *testing.T) {
 			params := fmt.Sprintf(`{"instance":"test","operation":"update","dashboard":%q,"confirmed":true}`, `{"uid":"kube-protected","title":"Kubernetes Monitoring"}`)
-			_, err := tool.InvokableRun(ctx, params)
+			_, err := tool.InvokableRun(authorizedCtx, params)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "is protected")
 		})
 
 		t.Run("block new dashboard with protected title", func(t *testing.T) {
 			params := fmt.Sprintf(`{"instance":"test","operation":"create","dashboard":%q,"confirmed":true}`, `{"title":"Kubernetes My New Dashboard"}`)
-			_, err := tool.InvokableRun(ctx, params)
+			_, err := tool.InvokableRun(authorizedCtx, params)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "protected blocklist")
 		})
 
 		t.Run("delete nonexistent", func(t *testing.T) {
-			_, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"delete","uid":"nonexistent-dashboard","confirmed":true}`)
+			_, err := tool.InvokableRun(authorizedCtx, `{"instance":"test","operation":"delete","uid":"nonexistent-dashboard","confirmed":true}`)
 			assert.Error(t, err)
 		})
 
@@ -239,13 +244,13 @@ func TestIntegrationAllTools(t *testing.T) {
 		})
 
 		t.Run("missing title", func(t *testing.T) {
-			_, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"create","dashboard":"{}","confirmed":true}`)
+			_, err := tool.InvokableRun(authorizedCtx, `{"instance":"test","operation":"create","dashboard":"{}","confirmed":true}`)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "must include a title")
 		})
 
 		t.Run("delete existing dashboard", func(t *testing.T) {
-			result, err := tool.InvokableRun(ctx, `{"instance":"test","operation":"delete","uid":"test-staging-002","confirmed":true}`)
+			result, err := tool.InvokableRun(authorizedCtx, `{"instance":"test","operation":"delete","uid":"test-staging-002","confirmed":true}`)
 			require.NoError(t, err)
 
 			var out DashboardDeleteOutput

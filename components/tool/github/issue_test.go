@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/goccy/go-json"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 func (s *GitHubToolTestSuite) TestInstanceList() {
@@ -115,7 +117,7 @@ func (s *GitHubToolTestSuite) TestIssueCreate() {
 	s.NoError(err)
 	s.Contains(result, `"dryRun": true`)
 
-	result, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "title": "New issue", "confirmed": true}`)
+	result, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_issue_create"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "title": "New issue", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"created": true`)
 	s.Contains(result, `"number": 3`)
@@ -137,7 +139,7 @@ func (s *GitHubToolTestSuite) TestIssueComment() {
 	s.NoError(err)
 	s.Contains(result, `"dryRun": true`)
 
-	result, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 1, "body": "Test comment", "confirmed": true}`)
+	result, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_issue_comment"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "number": 1, "body": "Test comment", "confirmed": true}`)
 	s.NoError(err)
 	s.Contains(result, `"created": true`)
 	s.Contains(result, `"id": 100`)

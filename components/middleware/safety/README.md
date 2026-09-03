@@ -15,6 +15,11 @@ Every tool call passes through three layers:
 3. **Gate** — write tools (those listed in `WriteToolNames`) must first be called
    with `dryRun=true`, then re-called with `confirmed=true`. Read-only tools skip
    the gate.
+4. **Authorization** — real execution of a write tool requires the host
+   application to authorize it via an `ExecutionAuthorizer`. **The default is
+   fail-closed**: with no authorizer configured, write tools may only dry-run,
+   and a `confirmed:true` call is rejected with
+   `safety.ErrExecutionNotAuthorized`.
 
 The middleware wraps all four tool call hook types (`WrapInvokableToolCall`,
 `WrapStreamableToolCall`, `WrapEnhancedInvokableToolCall`,
@@ -55,7 +60,32 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 | `WriteToolNames` | Tool names that require the dry-run/confirmed gate. |
 | `AuditSink` | Where to write audit events (default: log via logrus). |
 | `Policy` | CEL-based or custom policy evaluator. |
+| `ExecutionAuthorizer` | Gates real execution of write tools. When nil, write tools may only dry-run. |
+| `AllowModelConfirmation` | INSECURE escape hatch that trusts model-supplied `confirmed=true` (tests/sandboxes only). |
 | `CheckOwnership` | Reserved for future controller ownership checks. |
+
+> **Fail-closed by default.** The model cannot write to `context.Context`, so
+> prompt injection cannot fabricate authorization.
+> `AllowModelConfirmation: true` restores the pre-hardening (insecure)
+> behavior and must not be used in production.
+
+Implementing a host `ExecutionAuthorizer`:
+
+```go
+type approvalStoreAuthorizer struct{ approvals *store.Approvals }
+
+func (a *approvalStoreAuthorizer) AuthorizeExecute(ctx context.Context, toolName string, args json.RawMessage) error {
+    if a.approvals.HasPendingApproval(ctx, toolName, args) {
+        return nil
+    }
+    return fmt.Errorf("no approval recorded for %q", toolName)
+}
+
+mw, err := safety.New(&safety.Config{
+    WriteToolNames:      kubernetes.WriteToolNames(),
+    ExecutionAuthorizer: &approvalStoreAuthorizer{approvals: store.Approvals},
+})
+```
 
 ## Audit event structure
 

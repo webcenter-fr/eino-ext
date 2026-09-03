@@ -84,7 +84,7 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 		return transferDryRunPreview(clonePath_, params.Source, params.Destination, params.Branch, "wouldMove")
 	}
 
-	if err := confirm.RequireConfirmationForAction("move file", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_move", "move file", params.Confirmed); err != nil {
 		return "", err
 	}
 

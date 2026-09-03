@@ -58,7 +58,7 @@ func (t *ReleaseCreateTool) Invoke(ctx context.Context, params *ReleaseCreatePar
 		return fmt.Sprintf(`{"dryRun": true, "wouldCreate": {"tagName": %q, "name": %q, "draft": %v, "prerelease": %v}}`, params.TagName, name, params.Draft, params.Prerelease), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("create release", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_release_create", "create release", params.Confirmed); err != nil {
 		return "", err
 	}
 

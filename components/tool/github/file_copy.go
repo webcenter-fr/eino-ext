@@ -82,7 +82,7 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 		return transferDryRunPreview(clonePath_, params.Source, params.Destination, params.Branch, "wouldCopy")
 	}
 
-	if err := confirm.RequireConfirmationForAction("copy file", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_copy", "copy file", params.Confirmed); err != nil {
 		return "", err
 	}
 

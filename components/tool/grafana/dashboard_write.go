@@ -115,7 +115,7 @@ func (t *DashboardWriteTool) Invoke(ctx context.Context, params *DashboardWriteP
 		return "", err
 	}
 
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, dashboardWriteToolName, params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

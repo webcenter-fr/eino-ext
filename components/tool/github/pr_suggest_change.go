@@ -54,7 +54,7 @@ func (t *PRSuggestChangeTool) Invoke(ctx context.Context, params *PRSuggestChang
 		return fmt.Sprintf(`{"dryRun": true, "wouldSuggest": {"filePath": %q, "line": %d, "bodyPreview": %q}}`, params.FilePath, params.Line, truncate(params.Body, 100)), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("post suggestion", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_pr_suggest_change", "post suggestion", params.Confirmed); err != nil {
 		return "", err
 	}
 

@@ -46,7 +46,7 @@ func (t *IssueCommentTool) Invoke(ctx context.Context, params *IssueCommentParam
 		return fmt.Sprintf(`{"dryRun": true, "wouldComment": {"number": %d, "bodyPreview": %q}}`, params.Number, truncate(params.Body, 100)), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("add comment", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_issue_comment", "add comment", params.Confirmed); err != nil {
 		return "", err
 	}
 

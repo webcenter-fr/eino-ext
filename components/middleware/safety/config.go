@@ -11,6 +11,9 @@
 //   - Write tools must first be called with dryRun=true to preview the result.
 //   - Then they must be re-called with confirmed=true after user approval.
 //   - Calling a write tool without dryRun or confirmed is rejected.
+//   - Real execution additionally requires host-app authorization (an
+//     ExecutionAuthorizer); with no authorizer configured, write tools may
+//     only dry-run (fail closed).
 package safety
 
 import (
@@ -31,6 +34,17 @@ type Config struct {
 	// Policy is evaluated before execution for ALL tool calls (read + write). Optional.
 	// If nil, all tool calls are allowed (policy pass-through).
 	Policy safety.Policy `json:"-"`
+
+	// ExecutionAuthorizer gates real execution of write tools. When nil, write
+	// tools may only dry-run: a confirmed=true call is rejected with
+	// safety.ErrExecutionNotAuthorized. Implementations must derive the decision
+	// from server-side state and must not trust model-supplied arguments.
+	ExecutionAuthorizer safety.ExecutionAuthorizer `json:"-"`
+
+	// AllowModelConfirmation restores the pre-hardening behavior where a
+	// model-supplied confirmed=true is sufficient to execute a write tool.
+	// INSECURE: only for tests and non-production sandboxes.
+	AllowModelConfirmation bool `json:"allowModelConfirmation" jsonschema:"description=Insecure escape hatch that trusts model-supplied confirmed=true for write tools (tests/sandboxes only)"`
 
 	// CheckOwnership enables controller/operator ownership detection for K8s tools.
 	// Only applies to write operations on existing resources (update/delete).

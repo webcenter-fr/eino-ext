@@ -102,7 +102,7 @@ func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 		return t.dryRunPreview(params), nil
 	}
 
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "shell_exec", params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 
@@ -168,7 +168,7 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 		return sr, nil
 	}
 
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "shell_exec", params.DryRun, params.Confirmed); err != nil {
 		return nil, err
 	}
 

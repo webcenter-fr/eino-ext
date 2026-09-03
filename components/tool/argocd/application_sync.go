@@ -48,7 +48,7 @@ func (t *ApplicationSyncTool) Invoke(ctx context.Context, params *ApplicationSyn
 		return "", err
 	}
 
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "argocd_application_sync", params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

@@ -68,7 +68,7 @@ func (t *ApplicationDeleteTool) Invoke(ctx context.Context, params *ApplicationD
 		return fmt.Sprintf(`{"dryRun": true, "wouldDelete": %s}`, string(data)), nil
 	}
 
-	if err := confirm.RequireConfirmation(params.DryRun, params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationCtx(ctx, "argocd_application_delete", params.DryRun, params.Confirmed); err != nil {
 		return "", err
 	}
 

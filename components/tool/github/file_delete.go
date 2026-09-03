@@ -107,7 +107,7 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		return string(preview), nil
 	}
 
-	if err := confirm.RequireConfirmationForAction("delete file", params.Confirmed); err != nil {
+	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_delete", "delete file", params.Confirmed); err != nil {
 		return "", err
 	}
 

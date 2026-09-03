@@ -10,6 +10,8 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 const testTimeout = 5 * time.Second
@@ -139,7 +141,7 @@ func TestCheckProtectedModelBlocksNewDashboardWithProtectedTitle(t *testing.T) {
 // that creating a NEW dashboard (no uid) whose title matches a protected prefix
 // is rejected, closing the previous protection bypass.
 func TestDashboardWriteBlocksNewDashboardWithProtectedTitle(t *testing.T) {
-	ctx := context.Background()
+	ctx := safety.WithExecutionAuthorized(context.Background(), "grafana_dashboard_write")
 	writeTool, err := NewDashboardWriteTool(ctx, Configs{
 		"t": {
 			URL: "http://localhost",
