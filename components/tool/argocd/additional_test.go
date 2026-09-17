@@ -93,6 +93,13 @@ func (t *ToolTestSuite) TestClusterDescribe() {
 	// GET /api/v1/clusters/?name=<name> (empty path segment).
 	assert.Equal(t.T(), "GET /api/v1/clusters/my-cluster?id.type=name", t.lastClusterGet)
 
+	// A name containing URL-special characters must be escaped into a single path
+	// segment (url.PathEscape) and round-trip back to the original name.
+	describeResult, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "team/a b"}`)
+	assert.NoError(t.T(), err)
+	assert.Contains(t.T(), describeResult, `"name":"team/a b"`)
+	assert.Equal(t.T(), "GET /api/v1/clusters/team%2Fa%20b?id.type=name", t.lastClusterGet)
+
 	describeResult, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "my-cluster", "excludeFieldsOutput": ["metadata"]}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)

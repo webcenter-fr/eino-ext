@@ -1,9 +1,10 @@
 package argocd
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -178,7 +179,9 @@ func (t *ToolTestSuite) SetupSuite() {
 	// lookup is expressed as the path segment plus ?id.type=name. The broken form
 	// GET /api/v1/clusters/?name=... (issue #6) is rejected with 400.
 	mux.HandleFunc("/api/v1/clusters/", func(w http.ResponseWriter, r *http.Request) {
-		t.lastClusterGet = r.Method + " " + r.URL.Path + "?" + r.URL.RawQuery
+		// Record the request line using the escaped path so tests can assert the
+		// exact wire encoding (r.URL.Path is already percent-decoded).
+		t.lastClusterGet = r.Method + " " + r.URL.EscapedPath() + "?" + r.URL.RawQuery
 
 		if r.URL.Query().Get("id.type") != "name" {
 			w.Header().Set("Content-Type", "application/json")
@@ -187,11 +190,11 @@ func (t *ToolTestSuite) SetupSuite() {
 			return
 		}
 
-		seg := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
-		name, err := url.PathUnescape(seg)
-		if err != nil {
-			name = seg
-		}
+		// r.URL.Path is already percent-decoded by net/http, so the path segment
+		// is the cluster name as grpc-gateway would see it. Do NOT call
+		// url.PathUnescape here: that would double-decode names containing a
+		// literal '%' (e.g. "a%2Fb" would wrongly become "a/b").
+		name := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
 		if name == "non-existent" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -200,8 +203,10 @@ func (t *ToolTestSuite) SetupSuite() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{
-			"name": "my-cluster",
+		// Echo the requested name back so tests can assert that the path
+		// segment round-trips (including names with URL-special characters).
+		_, _ = fmt.Fprintf(w, `{
+			"name": %s,
 			"server": "https://cluster1.example.com",
 			"project": "production",
 			"connectionState": {"status": "Successful"},
@@ -210,7 +215,7 @@ func (t *ToolTestSuite) SetupSuite() {
 				"applicationsCount": 42,
 				"connectionState": {"status": "Successful"}
 			}
-		}`))
+		}`, strconv.Quote(name))
 	})
 
 	// Repositories list
