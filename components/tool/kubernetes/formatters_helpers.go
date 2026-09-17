@@ -94,20 +94,6 @@ func uStringSlice(m map[string]any, key string) []string {
 	return out
 }
 
-func uStringMap(m map[string]any, key string) map[string]string {
-	raw := uMap(m, key)
-	if raw == nil {
-		return nil
-	}
-	out := make(map[string]string, len(raw))
-	for k, v := range raw {
-		if s, ok := v.(string); ok {
-			out[k] = s
-		}
-	}
-	return out
-}
-
 // uMapSlice extracts key as a []any and keeps only the map[string]any elements,
 // skipping non-map entries.
 func uMapSlice(m map[string]any, key string) []map[string]any {

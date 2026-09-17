@@ -23,14 +23,9 @@ import (
 
 type listFormatter func(runtime.Object) json.RawMessage
 
-// describeFormatter produces a curated describeOutput for a single resource.
-// When nil, DescribeTool falls back to the raw metadata/spec/status/data dump.
-type describeFormatter func(*unstructured.Unstructured) describeOutput
-
 type formatterEntry struct {
-	newObj   func() runtime.Object // nil for unstructured-only kinds
-	format   listFormatter         // list view (required)
-	describe describeFormatter     // optional curated describe view
+	newObj func() runtime.Object // nil for unstructured-only kinds
+	format listFormatter         // list view (required)
 }
 
 var formatterRegistry = initFormatterRegistry()
