@@ -7,7 +7,6 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -95,107 +94,6 @@ func TestFormatAlertmanagerList_Degraded(t *testing.T) {
 	assert.Equal(t, "Degraded", out["status"])
 }
 
-func TestDescribeAlertmanager(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1",
-		"kind":       "Alertmanager",
-		"metadata":   map[string]any{"name": "main", "namespace": "monitoring"},
-		"spec": map[string]any{
-			"replicas": float64(3),
-			"version":  "v0.27.0",
-			"image":    "quay.io/prometheus/alertmanager:v0.27.0",
-			"paused":   false,
-			"logLevel": "info",
-			"resources": map[string]any{
-				"requests": map[string]any{"memory": "200Mi"},
-			},
-			"storage": map[string]any{"volumeClaimTemplate": map[string]any{}},
-		},
-		"status": map[string]any{
-			"paused":              false,
-			"replicas":            float64(3),
-			"updatedReplicas":     float64(3),
-			"availableReplicas":   float64(3),
-			"unavailableReplicas": float64(0),
-			"conditions": []any{
-				map[string]any{
-					"type":               "Available",
-					"status":             "True",
-					"reason":             "AllReplicasReady",
-					"message":            "all replicas ready",
-					"lastTransitionTime": "2024-01-01T00:00:00Z",
-				},
-			},
-		},
-	}}
-
-	out := describeAlertmanager(u)
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-
-	assert.Equal(t, "Alertmanager", m["kind"])
-	assert.Equal(t, "monitoring.coreos.com/v1", m["apiVersion"])
-
-	meta := m["metadata"].(map[string]any)
-	assert.Equal(t, "main", meta["name"])
-	assert.Equal(t, "monitoring", meta["namespace"])
-
-	spec := m["spec"].(map[string]any)
-	assert.Equal(t, float64(3), spec["replicas"])
-	assert.Equal(t, "v0.27.0", spec["version"])
-	assert.Equal(t, "quay.io/prometheus/alertmanager:v0.27.0", spec["image"])
-	assert.Equal(t, "info", spec["logLevel"])
-
-	status := m["status"].(map[string]any)
-	assert.Equal(t, float64(3), status["availableReplicas"])
-	conds := status["conditions"].([]any)
-	assert.Len(t, conds, 1)
-	assert.Equal(t, "Available", conds[0].(map[string]any)["type"])
-	assert.Equal(t, "True", conds[0].(map[string]any)["status"])
-	assert.Equal(t, "AllReplicasReady", conds[0].(map[string]any)["reason"])
-}
-
-func TestDescribeAlertmanager_ExcludeSpec(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1",
-		"kind":       "Alertmanager",
-		"metadata":   map[string]any{"name": "main", "namespace": "monitoring"},
-		"spec":       map[string]any{"replicas": float64(3)},
-		"status":     map[string]any{"availableReplicas": float64(3)},
-	}}
-
-	out := describeAlertmanager(u)
-	assert.NoError(t, out.applyFieldExclusions([]string{"spec"}))
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-	_, ok := m["spec"]
-	assert.False(t, ok)
-	assert.NotNil(t, m["status"])
-	assert.NotNil(t, m["metadata"])
-}
-
-func TestDescribeAlertmanager_ExcludeMetadata(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1",
-		"kind":       "Alertmanager",
-		"metadata":   map[string]any{"name": "main", "namespace": "monitoring"},
-		"spec":       map[string]any{"replicas": float64(3)},
-		"status":     map[string]any{"availableReplicas": float64(3)},
-	}}
-
-	out := describeAlertmanager(u)
-	assert.NoError(t, out.applyFieldExclusions([]string{"metadata"}))
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-	_, ok := m["metadata"]
-	assert.False(t, ok)
-	assert.NotNil(t, m["spec"])
-	assert.NotNil(t, m["status"])
-}
-
 func TestFormatAlertmanagerConfigList(t *testing.T) {
 	u := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "monitoring.coreos.com/v1alpha1",
@@ -219,120 +117,6 @@ func TestFormatAlertmanagerConfigList(t *testing.T) {
 	assert.Equal(t, "slack", out["receiver"])
 	assert.Equal(t, []any{"slack", "email"}, out["receivers"])
 	assert.Equal(t, float64(2), out["routes"])
-}
-
-func TestDescribeAlertmanagerConfig(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1alpha1",
-		"kind":       "AlertmanagerConfig",
-		"metadata":   map[string]any{"name": "amc", "namespace": "monitoring"},
-		"spec": map[string]any{
-			"route": map[string]any{
-				"receiver":       "slack",
-				"groupBy":        []any{"alertname", "cluster"},
-				"groupWait":      "30s",
-				"groupInterval":  "5m",
-				"repeatInterval": "4h",
-				"routes": []any{
-					map[string]any{"receiver": "email"},
-				},
-			},
-			"receivers": []any{
-				map[string]any{
-					"name":         "slack",
-					"slackConfigs": []any{map[string]any{"channel": "#alerts"}},
-					"webhookConfigs": []any{
-						map[string]any{"url": "https://hooks.example.com"},
-					},
-				},
-				map[string]any{"name": "email"},
-			},
-			"inhibitRules": []any{
-				map[string]any{"sourceMatch": []any{map[string]any{"name": "severity", "value": "critical"}}},
-			},
-		},
-		"status": map[string]any{
-			"bindings": []any{
-				map[string]any{
-					"conditions": []any{
-						map[string]any{"type": "Reconciled", "status": "True", "reason": "OK"},
-					},
-				},
-			},
-		},
-	}}
-
-	out := describeAlertmanagerConfig(u)
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-
-	assert.Equal(t, "AlertmanagerConfig", m["kind"])
-	assert.Equal(t, "monitoring.coreos.com/v1alpha1", m["apiVersion"])
-
-	spec := m["spec"].(map[string]any)
-	route := spec["route"].(map[string]any)
-	assert.Equal(t, "slack", route["receiver"])
-	assert.Equal(t, []any{"alertname", "cluster"}, route["groupBy"])
-	assert.Equal(t, "30s", route["groupWait"])
-	assert.Len(t, route["routes"].([]any), 1)
-
-	receivers := spec["receivers"].([]any)
-	assert.Len(t, receivers, 2)
-	assert.Equal(t, "slack", receivers[0].(map[string]any)["name"])
-	assert.Equal(t, []any{"slack", "webhook"}, receivers[0].(map[string]any)["types"])
-
-	inhibitRules := spec["inhibitRules"].([]any)
-	assert.Len(t, inhibitRules, 1)
-
-	status := m["status"].(map[string]any)
-	conds := status["conditions"].([]any)
-	assert.Len(t, conds, 1)
-	assert.Equal(t, "Reconciled", conds[0].(map[string]any)["type"])
-	assert.Equal(t, "True", conds[0].(map[string]any)["status"])
-}
-
-func TestDescribeAlertmanagerConfig_NoRedaction(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1alpha1",
-		"kind":       "AlertmanagerConfig",
-		"metadata":   map[string]any{"name": "amc", "namespace": "monitoring"},
-		"spec": map[string]any{
-			"route": map[string]any{"receiver": "slack"},
-			"receivers": []any{
-				map[string]any{
-					"name": "slack",
-					"slackConfigs": []any{
-						map[string]any{
-							"apiURL": map[string]any{
-								"key":  "url",
-								"name": "slack-webhook-secret",
-							},
-						},
-					},
-				},
-			},
-		},
-	}}
-
-	out := describeAlertmanagerConfig(u)
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	raw := string(data)
-
-	// The CRD references Secrets by name only (secretKeyRef) and never holds
-	// secret data. The curated view surfaces only receiver names and
-	// config-type tags, so no secret reference or payload is emitted and no
-	// redaction is required.
-	assert.NotContains(t, raw, "REDACTED")
-	assert.NotContains(t, raw, "slack-webhook-secret")
-	assert.NotContains(t, raw, "apiURL")
-
-	m := mustUnmarshal(t, data)
-	receivers := m["spec"].(map[string]any)["receivers"].([]any)
-	assert.Len(t, receivers, 1)
-	assert.Equal(t, "slack", receivers[0].(map[string]any)["name"])
-	assert.Equal(t, []any{"slack"}, receivers[0].(map[string]any)["types"])
 }
 
 func TestFormatPrometheusRuleList(t *testing.T) {
@@ -441,55 +225,6 @@ func TestFormatPrometheusRuleList_AlertsCapped(t *testing.T) {
 	assert.Equal(t, true, out["alertsMore"])
 }
 
-func TestDescribePrometheusRule(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1",
-		"kind":       "PrometheusRule",
-		"metadata":   map[string]any{"name": "rules", "namespace": "monitoring"},
-		"spec": map[string]any{
-			"groups": []any{
-				map[string]any{
-					"name":     "group1",
-					"interval": "30s",
-					"rules": []any{
-						map[string]any{
-							"alert":       "HighErrorRate",
-							"expr":        "sum(rate(errors[5m])) > 0",
-							"for":         "5m",
-							"labels":      map[string]any{"severity": "critical", "team": "sre"},
-							"annotations": map[string]any{"summary": "high error rate"},
-						},
-					},
-				},
-			},
-		},
-	}}
-
-	out := describePrometheusRule(u)
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-
-	assert.Equal(t, "PrometheusRule", m["kind"])
-	assert.Equal(t, "monitoring.coreos.com/v1", m["apiVersion"])
-
-	groups := m["spec"].(map[string]any)["groups"].([]any)
-	assert.Len(t, groups, 1)
-	group := groups[0].(map[string]any)
-	assert.Equal(t, "group1", group["name"])
-	assert.Equal(t, "30s", group["interval"])
-
-	rules := group["rules"].([]any)
-	assert.Len(t, rules, 1)
-	rule := rules[0].(map[string]any)
-	assert.Equal(t, "HighErrorRate", rule["alert"])
-	assert.Equal(t, "sum(rate(errors[5m])) > 0", rule["expr"])
-	assert.Equal(t, "5m", rule["for"])
-	assert.Equal(t, "critical", rule["severity"])
-	assert.Equal(t, map[string]any{"severity": "critical", "team": "sre"}, rule["labels"])
-	assert.Equal(t, map[string]any{"summary": "high error rate"}, rule["annotations"])
-}
-
 func TestFormatSilenceList(t *testing.T) {
 	u := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "monitoring.coreos.com/v1alpha1",
@@ -537,68 +272,6 @@ func TestFormatSilenceList_NoStatus(t *testing.T) {
 	assert.Empty(t, out["state"])
 }
 
-func TestDescribeSilence(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1alpha1",
-		"kind":       "Silence",
-		"metadata":   map[string]any{"name": "silence-1", "namespace": "monitoring"},
-		"spec": map[string]any{
-			"matchers": []any{
-				map[string]any{"name": "alertname", "value": "HighErrorRate", "isRegex": false},
-			},
-			"startsAt":  "2024-01-01T00:00:00Z",
-			"endsAt":    "2024-01-02T00:00:00Z",
-			"createdBy": "admin",
-			"comment":   "maintenance window",
-		},
-		"status": map[string]any{
-			"state": "active",
-			"conditions": []any{
-				map[string]any{"type": "Reconciled", "status": "True"},
-			},
-		},
-	}}
-
-	out := describeSilence(u)
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-
-	assert.Equal(t, "Silence", m["kind"])
-	assert.Equal(t, "monitoring.coreos.com/v1alpha1", m["apiVersion"])
-
-	spec := m["spec"].(map[string]any)
-	assert.Equal(t, "2024-01-01T00:00:00Z", spec["startsAt"])
-	assert.Equal(t, "2024-01-02T00:00:00Z", spec["endsAt"])
-	assert.Equal(t, "admin", spec["createdBy"])
-	assert.Equal(t, "maintenance window", spec["comment"])
-	assert.Len(t, spec["matchers"].([]any), 1)
-
-	status := m["status"].(map[string]any)
-	assert.Equal(t, "active", status["state"])
-	assert.Len(t, status["conditions"].([]any), 1)
-}
-
-func TestDescribeSilence_ExcludeStatus(t *testing.T) {
-	u := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "monitoring.coreos.com/v1alpha1",
-		"kind":       "Silence",
-		"metadata":   map[string]any{"name": "silence-1", "namespace": "monitoring"},
-		"spec":       map[string]any{"startsAt": "2024-01-01T00:00:00Z"},
-		"status":     map[string]any{"state": "active"},
-	}}
-
-	out := describeSilence(u)
-	assert.NoError(t, out.applyFieldExclusions([]string{"status"}))
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-	_, ok := m["status"]
-	assert.False(t, ok)
-	assert.NotNil(t, m["spec"])
-	assert.NotNil(t, m["metadata"])
-}
-
 func TestRegistryMonitoringEntries(t *testing.T) {
 	gvks := []schema.GroupVersionKind{
 		{Group: "monitoring.coreos.com", Version: "v1", Kind: "Alertmanager"},
@@ -611,7 +284,6 @@ func TestRegistryMonitoringEntries(t *testing.T) {
 		assert.True(t, ok, "%s should be registered", gvk.Kind)
 		assert.Nil(t, entry.newObj, "%s should be unstructured-only", gvk.Kind)
 		assert.NotNil(t, entry.format, "%s should have a list formatter", gvk.Kind)
-		assert.NotNil(t, entry.describe, "%s should have a describe formatter", gvk.Kind)
 	}
 }
 
@@ -644,42 +316,6 @@ func TestFormatListItem_FallbackMissingAPIVersion(t *testing.T) {
 	assert.Equal(t, "default", out["namespace"])
 	_, ok := out["status"]
 	assert.False(t, ok)
-}
-
-func TestDescribeRawPathUnchangedForConfigMap(t *testing.T) {
-	cmGVK := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
-	entry, ok := formatterRegistry[cmGVK]
-	assert.True(t, ok)
-	assert.Nil(t, entry.describe, "ConfigMap must keep the raw describe path")
-
-	cm := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "v1",
-		"kind":       "ConfigMap",
-		"metadata":   map[string]any{"name": "cm1", "namespace": "default"},
-		"data":       map[string]any{"key1": "value1"},
-	}}
-
-	out := describeOutput{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       cm.GetKind(),
-			APIVersion: cm.GetAPIVersion(),
-		},
-		Metadata: unstructuredMetadata(cm),
-		Spec:     cm.Object["spec"],
-		Status:   cm.Object["status"],
-		Data:     cm.Object["data"],
-	}
-
-	data, err := json.Marshal(out)
-	assert.NoError(t, err)
-	m := mustUnmarshal(t, data)
-
-	assert.Equal(t, "ConfigMap", m["kind"])
-	assert.Equal(t, "v1", m["apiVersion"])
-	meta := m["metadata"].(map[string]any)
-	assert.Equal(t, "cm1", meta["name"])
-	assert.Equal(t, "default", meta["namespace"])
-	assert.Equal(t, map[string]any{"key1": "value1"}, m["data"])
 }
 
 func TestUnstructuredHelpers(t *testing.T) {

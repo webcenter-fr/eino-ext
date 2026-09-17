@@ -23,56 +23,55 @@ type DescribeParams struct {
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
 }
 
-type describeOutput struct {
-	metav1.TypeMeta `json:",inline"`
-	Metadata        any `json:"metadata,omitempty"`
-	Spec            any `json:"spec,omitempty"`
-	Status          any `json:"status,omitempty"`
-	Data            any `json:"data,omitempty"`
-}
+// describeExcludableFields are the top-level fields a caller may ask the
+// describe tool to omit from the output.
+var describeExcludableFields = []string{"metadata", "spec", "status", "data"}
 
-// unstructuredMetadata builds a *metav1.ObjectMeta from an unstructured
-// resource. Shared by the raw describe path and the curated describe
-// formatters so the metadata block is consistent across all kinds.
-func unstructuredMetadata(o *unstructured.Unstructured) *metav1.ObjectMeta {
-	return &metav1.ObjectMeta{
-		Name:              o.GetName(),
-		Namespace:         o.GetNamespace(),
-		Labels:            o.GetLabels(),
-		Annotations:       o.GetAnnotations(),
-		OwnerReferences:   o.GetOwnerReferences(),
-		ResourceVersion:   o.GetResourceVersion(),
-		CreationTimestamp: o.GetCreationTimestamp(),
-		DeletionTimestamp: o.GetDeletionTimestamp(),
-	}
-}
-
-func (o *describeOutput) applyFieldExclusions(excludeFields []string) error {
-	allowed := []string{"metadata", "spec", "status", "data"}
+// validateExcludeFields validates every requested exclusion against the
+// top-level fields the describe tool can omit.
+func validateExcludeFields(excludeFields []string) error {
 	for _, excludeField := range excludeFields {
 		switch excludeField {
-		case "metadata":
-			o.Metadata = nil
-		case "spec":
-			o.Spec = nil
-		case "status":
-			o.Status = nil
-		case "data":
-			o.Data = nil
+		case "metadata", "spec", "status", "data":
+			continue
 		default:
 			return errors.Errorf("parameter 'excludeFieldsOutput' has invalid value %q; allowed values are: %s. Remove or fix it and retry",
-				excludeField, strings.Join(allowed, ", "))
+				excludeField, strings.Join(describeExcludableFields, ", "))
 		}
 	}
 	return nil
 }
 
+// marshalRawDescribeOutput marshals the full unstructured resource content as
+// JSON, deleting only the top-level fields requested via excludeFields. Unlike
+// a fixed metadata/spec/status/data struct, this preserves every field the API
+// server returns — including non-standard top-level fields such as webhooks
+// (ValidatingWebhookConfiguration / MutatingWebhookConfiguration), rules
+// (ClusterRole / Role), roleRef and subjects (RoleBinding /
+// ClusterRoleBinding), or value/globalDefault (PriorityClass).
+func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields []string) (string, error) {
+	if err := validateExcludeFields(excludeFields); err != nil {
+		return "", err
+	}
+
+	obj := o.DeepCopy().Object
+	for _, field := range excludeFields {
+		delete(obj, field)
+	}
+
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to marshal output")
+	}
+	return string(data), nil
+}
+
 const describeDescription = `
 ** General Purpose **
-It describes any Kubernetes resource. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types and CRDs.
+It describes any Kubernetes resource and returns its full JSON content as stored in the cluster. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types and CRDs.
 
 ** Output **
-Returns a JSON object with metadata, spec, status, and data fields.
+Returns the full JSON object for the resource: apiVersion, kind, metadata, and every remaining top-level field (spec, status, data, webhooks, rules, roleRef, subjects, ...).
 `
 
 // DescribeTool is an eino tool for describing Kubernetes resources.
@@ -119,33 +118,7 @@ func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (stri
 		}
 	}
 
-	if entry, ok := formatterRegistry[resolved.GVK]; ok && entry.describe != nil {
-		return marshalDescribeOutput(entry.describe(o), params.ExcludeFieldsOutput)
-	}
-
-	return marshalDescribeOutput(describeOutput{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       o.GetKind(),
-			APIVersion: o.GetAPIVersion(),
-		},
-		Metadata: unstructuredMetadata(o),
-		Spec:     o.Object["spec"],
-		Status:   o.Object["status"],
-		Data:     o.Object["data"],
-	}, params.ExcludeFieldsOutput)
-}
-
-// marshalDescribeOutput applies field exclusions and marshals a describeOutput
-// to JSON. Shared by the curated and raw describe paths.
-func marshalDescribeOutput(output describeOutput, excludeFields []string) (string, error) {
-	if err := output.applyFieldExclusions(excludeFields); err != nil {
-		return "", err
-	}
-	data, err := json.Marshal(output)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to marshal output")
-	}
-	return string(data), nil
+	return marshalRawDescribeOutput(o, params.ExcludeFieldsOutput)
 }
 
 // NewDescribeTool creates a new DescribeTool.
