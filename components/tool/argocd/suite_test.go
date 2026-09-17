@@ -3,6 +3,8 @@ package argocd
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -13,6 +15,11 @@ type ToolTestSuite struct {
 	suite.Suite
 	server  *httptest.Server
 	configs Configs
+
+	// lastClusterGet records the most recent cluster-get request line as
+	// "METHOD /path?query" so tests can assert the name-based id encoding
+	// (GET /api/v1/clusters/<name>?id.type=name) required by issue #6.
+	lastClusterGet string
 }
 
 func TestToolSuite(t *testing.T) {
@@ -167,9 +174,24 @@ func (t *ToolTestSuite) SetupSuite() {
 		}`))
 	})
 
-	// Cluster get
+	// Cluster get. ArgoCD's REST route is GET /api/v1/clusters/{id.value}; a name
+	// lookup is expressed as the path segment plus ?id.type=name. The broken form
+	// GET /api/v1/clusters/?name=... (issue #6) is rejected with 400.
 	mux.HandleFunc("/api/v1/clusters/", func(w http.ResponseWriter, r *http.Request) {
-		name := r.URL.Query().Get("name")
+		t.lastClusterGet = r.Method + " " + r.URL.Path + "?" + r.URL.RawQuery
+
+		if r.URL.Query().Get("id.type") != "name" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error": "invalid id.type", "message": "expected id.type=name"}`))
+			return
+		}
+
+		seg := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/")
+		name, err := url.PathUnescape(seg)
+		if err != nil {
+			name = seg
+		}
 		if name == "non-existent" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)

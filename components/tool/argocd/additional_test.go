@@ -88,6 +88,11 @@ func (t *ToolTestSuite) TestClusterDescribe() {
 	assert.NotEmpty(t.T(), describeResult)
 	assert.Contains(t.T(), describeResult, `"name":"my-cluster"`)
 
+	// Regression guard for issue #6: the describe request must use the name-based id
+	// form GET /api/v1/clusters/<name>?id.type=name, never the broken
+	// GET /api/v1/clusters/?name=<name> (empty path segment).
+	assert.Equal(t.T(), "GET /api/v1/clusters/my-cluster?id.type=name", t.lastClusterGet)
+
 	describeResult, err = describeTool.InvokableRun(ctx, `{"instance": "test", "name": "my-cluster", "excludeFieldsOutput": ["metadata"]}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), describeResult)
