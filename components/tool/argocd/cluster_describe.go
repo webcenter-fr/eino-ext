@@ -49,9 +49,14 @@ func (t *ClusterDescribeTool) Invoke(ctx context.Context, params *ClusterDescrib
 		return "", err
 	}
 
-	cluster, err := c.Cluster().Get("", &api.ClusterQueryOptions{Name: params.Name})
+	// ArgoCD's REST route for ClusterService.Get is GET /api/v1/clusters/{id.value}.
+	// A name lookup must be expressed as the path segment plus ?id.type=name (the same
+	// encoding the ArgoCD CLI uses for `argocd cluster get <name>`). Passing "" here
+	// and relying on ?name=<name> produces GET /api/v1/clusters/?name=<name>, which
+	// ArgoCD turns into "permission denied" for every caller (issue #6).
+	cluster, err := c.Cluster().Get(params.Name, &api.ClusterQueryOptions{IdType: "name"})
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get cluster")
+		return "", errors.Wrapf(err, "failed to get cluster %q (ArgoCD returns 403 both when the cluster does not exist and when the token lacks the 'clusters.get' permission)", params.Name)
 	}
 	// Direct Name field shadows embedded ObjectMeta.Name, copy it over
 	cluster.ObjectMeta.Name = cluster.Name
