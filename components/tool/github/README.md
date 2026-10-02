@@ -40,6 +40,40 @@ adk.AddSessionValue(ctx, github.CloneSessionKey, sessionID)
 When the key is absent (plain `context.Background()`, unit tests, non-ADK usage), the
 fallback segment `default` is used, yielding `<CloneDir>/default/<owner>/<repo>`.
 
+Non-empty session ids are hashed to a fixed 16-hex-char segment
+(`fileutil.SessionDirName`), so distinct ids never collide after sanitising.
+Existing on-disk clone namespaces therefore move to the hashed names.
+
+With `RequireSession: true` (a `Config` field, shared by all instances), a tool
+call whose context carries no session id fails closed instead of falling back to
+the `default` namespace. Multi-user hosts should enable it.
+
+### Clone cleanup (GC)
+
+Clone namespaces accumulate under `CloneDir` until they are cleaned up. Three
+helpers manage the lifecycle:
+
+```go
+// StartCloneGC starts a background goroutine that, every interval, sweeps
+// <CloneDir> for session namespaces whose mtime is older than ttl and removes
+// them. ttl == 0 or interval <= 0 (or unusable configs) is a no-op; the
+// goroutine stops on ctx cancellation.
+github.StartCloneGC(ctx, configs, 1*time.Hour, 5*time.Minute)
+
+// TouchCloneSession refreshes the current session's namespace mtime so
+// StartCloneGC keeps it. Tools call it automatically on every read and on
+// every authorized execute; it is never called on a dry-run (previews do not
+// mutate). It is a no-op when the namespace does not exist.
+github.TouchCloneSession(ctx, configs)
+
+// CloneSessionDir returns the current session's namespace path
+// <CloneDir>/<sessionSegment>.
+dir, err := github.CloneSessionDir(ctx, configs)
+```
+
+A session that only reads, or whose last operation failed, is still kept alive
+because every read tool touches the namespace after resolving the clone.
+
 ## Tools
 
 ### Read Tools
@@ -52,8 +86,8 @@ fallback segment `default` is used, yielding `<CloneDir>/default/<owner>/<repo>`
 | `github_pr_get` | Get pull request details |
 | `github_org_repo_list` | List repositories in an organization |
 | `github_repo_search` | Search repositories by query |
-| `github_repo_clone` | Clone a repository to the local filesystem (read-classified; self-gates via `DryRun`/`Confirmed`) |
-| `github_repo_pull` | Update an existing clone to the latest remote state, non-destructively (fast-forward only; read-classified) |
+| `github_repo_clone` | Clone a repository to the local filesystem (plain read, no confirmation required) — `DryRun` still returns a preview |
+| `github_repo_pull` | Update an existing clone to the latest remote state, non-destructively (fast-forward only; plain read, no confirmation required) — `DryRun` still returns a preview |
 | `github_file_read` | Read file contents from a cloned repo |
 | `github_file_search` | Grep (regex) within a cloned repo |
 | `github_file_list` | List files/dirs in a cloned repo |
@@ -115,12 +149,15 @@ tools, mw, err := github.NewAllToolsWithSafety(ctx, configs, &safety.Config{
 
 ## Security
 
-- **Path safety**: Clone target always under `Config.CloneDir`; session, owner, and repo segments are sanitized (no traversal).
+- **Path safety**: Clone target always under `Config.CloneDir`; session ids are hashed and owner/repo segments are sanitized (no traversal). `RequireSession` fails closed when no session id is present.
 - **SSRF protection**: Webhook URLs must use HTTPS; loopback/private/metadata IPs are blocked.
 - **Secret redaction**: GitHub tokens are redacted from all tool output.
 - **Confirmation gating**: All write tools require `Confirmed=true` (or use `DryRun` to preview).
 - **Timeouts**: Every API call bounded by `Config.Timeout` (default 30s).
 - **Pagination caps**: List/search tools cap results to prevent resource exhaustion.
+- **Copy size limits**: Directory copy/move is capped by `Config.MaxCopyBytes`
+  (default 50MB); when the limit is exceeded, the partial destination is removed
+  unless it pre-existed (a merged destination is left intact).
 
 ## Prompts
 

@@ -75,7 +75,10 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 		return "", errors.Errorf("source and destination are the same path %q", params.Source)
 	}
 
-	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 
 	if params.DryRun {
 		if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
@@ -89,6 +92,10 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 	}
 
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
+		return "", err
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
 		return "", err
 	}
 
@@ -106,7 +113,7 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 		}
 		// os.Rename fails across mount points (EXDEV); fall back to copy+delete.
 		if isDir {
-			if _, _, copyErr := fileutil.CopyDir(srcSafePath, dstSafePath, true); copyErr != nil {
+			if _, _, copyErr := fileutil.CopyDir(srcSafePath, dstSafePath, true, t.maxCopyBytes); copyErr != nil {
 				return "", errors.Wrapf(copyErr, "failed to copy directory %q to %q for cross-device move", params.Source, params.Destination)
 			}
 			if rmErr := os.RemoveAll(srcSafePath); rmErr != nil {

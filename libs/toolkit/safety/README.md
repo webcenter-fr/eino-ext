@@ -68,8 +68,8 @@ The gate pattern requires write tools to go through a two-step confirmation:
 Read tools and non-write operations skip the gate. The `ErrGateRequired`
 sentinel error signals the LLM to retry with the proper gate parameters.
 
-> `ShouldGate` is deprecated: it trusts the model-supplied `Confirmed` field
-> and MUST NOT be used as an authorization boundary.
+> `ShouldGate` was removed: it trusted the model-supplied `Confirmed` field and
+> was not an authorization boundary. Use `ShouldGateWithAuthorization`.
 
 ## Authorization
 

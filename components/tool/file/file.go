@@ -32,6 +32,9 @@ func newConfig(cfg *Config) (*Config, error) {
 	if cfg.MaxWriteBytes == 0 {
 		cfg.MaxWriteBytes = fileutil.DefaultMaxWriteBytes
 	}
+	if cfg.MaxCopyBytes == 0 {
+		cfg.MaxCopyBytes = fileutil.DefaultMaxCopyBytes
+	}
 	if err := validate.Struct(cfg); err != nil {
 		return nil, err
 	}

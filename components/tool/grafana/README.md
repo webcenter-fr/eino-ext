@@ -7,7 +7,7 @@ eino tools for interacting with Grafana instances via the HTTP API (v9+).
 - **HTTP API** — uses `net/http` with Bearer token auth (no dedicated Go client library).
 - **Multi-instance** — `Configs map[string]Config`, matching the argocd/kubernetes pattern.
 - **Dashboard protection** — per-instance blocklist (UID, title prefix, folder, tag) prevents modification or deletion of protected dashboards.
-- **Safety** — the write tool enforces a dry-run/confirmed gate via `confirm.RequireConfirmation`.
+- **Safety** — the write tool enforces a dry-run/confirmed gate via `confirm.RequireConfirmationCtx`.
 - **Data source secrets redaction** — data source tools exclude top-level secrets and recursively redact sensitive `jsonData` keys. Data sources are read-only (no write tool).
 
 ## Configuration

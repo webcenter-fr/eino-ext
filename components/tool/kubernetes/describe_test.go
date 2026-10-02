@@ -68,6 +68,42 @@ func TestMarshalRawDescribeOutput_ExcludeFields(t *testing.T) {
 	assert.NotNil(t, m["webhooks"], "non-excludable fields must be preserved")
 }
 
+func TestMarshalRawDescribeOutput_StripsManagedFields(t *testing.T) {
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "example.com/v1",
+		"kind":       "Widget",
+		"metadata": map[string]any{
+			"name":          "w1",
+			"managedFields": []any{map[string]any{"manager": "kubectl", "operation": "Update"}},
+		},
+		"spec": map[string]any{"size": float64(1)},
+	}}
+
+	m := rawDescribeJSON(t, u, nil)
+
+	meta, ok := m["metadata"].(map[string]any)
+	require.True(t, ok, "metadata must remain an object")
+	assert.Equal(t, "w1", meta["name"])
+	_, hasManagedFields := meta["managedFields"]
+	assert.False(t, hasManagedFields, "metadata.managedFields must be stripped")
+
+	// Control: an object without managedFields is unchanged.
+	u2 := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata":   map[string]any{"name": "cm1"},
+		"data":       map[string]any{"key": "value"},
+	}}
+	m2 := rawDescribeJSON(t, u2, nil)
+	assert.Equal(t, map[string]any{"name": "cm1"}, m2["metadata"])
+
+	// The input object must not be mutated (deep copy still holds).
+	origMeta, ok := u.Object["metadata"].(map[string]any)
+	require.True(t, ok)
+	_, stillThere := origMeta["managedFields"]
+	assert.True(t, stillThere, "input object must not be mutated")
+}
+
 func TestMarshalRawDescribeOutput_InvalidExcludeField(t *testing.T) {
 	u := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "v1",

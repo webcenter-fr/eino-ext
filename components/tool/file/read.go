@@ -67,7 +67,7 @@ func (t *ReadTool) Invoke(ctx context.Context, params *ReadParams) (string, erro
 		return "", errors.Errorf("parameter 'startLine' (%d) must be <= 'endLine' (%d)", params.StartLine, params.EndLine)
 	}
 
-	safePath, err := resolvePath(t.cfg.Workdir, ctx, params.Path, false)
+	safePath, err := resolvePath(t.cfg, ctx, params.Path, false)
 	if err != nil {
 		return "", err
 	}
@@ -107,6 +107,11 @@ func (t *ReadTool) Invoke(ctx context.Context, params *ReadParams) (string, erro
 
 	if fileutil.IsBinary(data) {
 		return "", errors.Errorf("file %q appears to be binary; refusing to read", params.Path)
+	}
+
+	// Keep a read-only session alive against the GC.
+	if err := TouchSession(ctx, t.cfg); err != nil {
+		return "", err
 	}
 
 	output := &ReadOutput{

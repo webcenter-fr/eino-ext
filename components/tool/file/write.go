@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
@@ -30,9 +31,11 @@ operation was an append or overwrite.
 
 // WriteParams holds the parameters for the file_write tool.
 type WriteParams struct {
-	Path    string `json:"path"    validate:"required" jsonschema:"(required) Relative file path inside the session directory."`
-	Content string `json:"content" validate:"required" jsonschema:"(required) File content to write."`
-	Append  bool   `json:"append,omitempty" jsonschema:"(optional) If true, append content to the existing file instead of overwriting."`
+	Path      string `json:"path"    validate:"required" jsonschema:"(required) Relative file path inside the session directory."`
+	Content   string `json:"content" validate:"required" jsonschema:"(required) File content to write."`
+	Append    bool   `json:"append,omitempty" jsonschema:"(optional) If true, append content to the existing file instead of overwriting."`
+	DryRun    bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the write without making changes."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 // WriteOutput is the JSON result returned by the file_write tool.
@@ -65,12 +68,39 @@ func (t *WriteTool) Invoke(ctx context.Context, params *WriteParams) (string, er
 		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes", len(params.Content), maxWrite)
 	}
 
-	safePath, err := resolvePath(t.cfg.Workdir, ctx, params.Path, true)
+	root, err := sessionDir(t.cfg, ctx)
 	if err != nil {
 		return "", err
 	}
 
-	// Reject if target exists and is a directory or symlink.
+	if _, err := fileutil.ValidateRelativePath(root, params.Path); err != nil {
+		return "", err
+	}
+
+	if params.DryRun {
+		return writePreview(root, params.Path, params.Content, params.Append, t.cfg.MaxReadBytes)
+	}
+
+	// Read-only rejection before the confirmation gate so malformed targets
+	// fail fast without requiring authorization (and without mutation).
+	ts, err := statReadOnly(root, params.Path, 0)
+	if err != nil {
+		return "", err
+	}
+	if ts.exists && ts.isDir {
+		return "", errors.Errorf("path %q is a directory; cannot write a file over a directory", params.Path)
+	}
+
+	if err := confirm.RequireConfirmationCtx(ctx, "file_write", false, params.Confirmed); err != nil {
+		return "", err
+	}
+
+	safePath, err := resolvePath(t.cfg, ctx, params.Path, true)
+	if err != nil {
+		return "", err
+	}
+
+	// Reject if target exists and is a directory or symlink (defense in depth).
 	if fi, statErr := os.Lstat(safePath); statErr == nil {
 		if fi.IsDir() {
 			return "", errors.Errorf("path %q is a directory; cannot write a file over a directory", params.Path)
@@ -78,6 +108,10 @@ func (t *WriteTool) Invoke(ctx context.Context, params *WriteParams) (string, er
 		if fi.Mode()&os.ModeSymlink != 0 {
 			return "", errors.Errorf("path %q is a symlink; symlinks are not allowed", params.Path)
 		}
+	}
+
+	if err := TouchSession(ctx, t.cfg); err != nil {
+		return "", err
 	}
 
 	mode := "overwrite"

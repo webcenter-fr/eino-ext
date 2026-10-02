@@ -30,6 +30,14 @@ type Config struct {
 	// TLSSkipVerify disables TLS certificate verification. Useful for GitHub Enterprise
 	// Server instances with self-signed certificates.
 	TLSSkipVerify bool `validate:"omitempty" jsonschema:"description=Skip TLS certificate verification"`
+
+	// RequireSession fails closed when no session id is present in the invocation
+	// context: instead of falling back to the "default" namespace, tools return an
+	// error. Multi-user hosts MUST enable this. Default false.
+	RequireSession bool `validate:"omitempty" jsonschema:"description=Fail closed when no session id is present (multi-user hosts should enable)"`
+
+	// MaxCopyBytes caps the total bytes for a directory copy/move. Default 50MB.
+	MaxCopyBytes int64 `validate:"omitempty,gte=1" jsonschema:"description=Maximum total bytes for directory copy/move (default 50MB)"`
 }
 
 // GetConfig retrieves the configuration for a given instance name.

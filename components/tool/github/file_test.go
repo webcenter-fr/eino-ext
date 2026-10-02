@@ -1277,6 +1277,29 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectory() {
 	s.Equal(string(src), string(dst), "copied directory tree must preserve file contents")
 }
 
+func (s *GitHubToolTestSuite) TestFileCopyDirectoryLimit() {
+	ctx := context.Background()
+	cloneDir, cleanup := s.setupClone()
+	defer cleanup()
+
+	configs := s.fileConfigs(cloneDir)
+	cfg := configs["test"]
+	cfg.MaxCopyBytes = 5
+	configs["test"] = cfg
+
+	tool, err := NewFileCopyTool(ctx, configs)
+	s.NoError(err)
+
+	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	s.Error(err)
+	s.Contains(err.Error(), "exceeds the maximum")
+
+	// The fresh partial destination must be removed.
+	repoPath := testRepoPath(cloneDir)
+	_, statErr := os.Stat(filepath.Join(repoPath, "sub2"))
+	s.True(os.IsNotExist(statErr), "partial destination must be removed when the limit is exceeded")
+}
+
 func (s *GitHubToolTestSuite) TestFileCopyDirectoryDryRun() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()

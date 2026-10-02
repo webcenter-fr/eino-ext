@@ -25,32 +25,6 @@ func ExtractGateParams(rawJSON string) (GateParams, error) {
 	return gp, nil
 }
 
-// ShouldGate checks whether a tool call must be gated (require dry-run/confirmed flow).
-//
-// Deprecated: ShouldGate trusts the model-supplied Confirmed field and MUST NOT
-// be used as an authorization boundary. Use ShouldGateWithAuthorization instead,
-// which requires host-app authorization from context before real execution.
-//
-// Rules:
-//   - Read-only tools (not in writeTools) always pass — no gate required.
-//   - Write tools with DryRun=true always pass — dry-run is always allowed.
-//   - Write tools with Confirmed=true pass — trusted unconditionally (INSECURE).
-//   - Write tools with neither DryRun nor Confirmed are rejected.
-//
-// Returns nil if the call is allowed, or an error explaining the required flow.
-func ShouldGate(toolName string, writeTools map[string]bool, gp GateParams) error {
-	if !writeTools[toolName] {
-		return nil // read-only tool, no gate required
-	}
-	if gp.DryRun {
-		return nil // dry-run is always allowed for write tools
-	}
-	if !gp.Confirmed {
-		return ErrGateRequired
-	}
-	return nil
-}
-
 // ShouldGateWithAuthorization checks whether a write tool call may proceed,
 // authorizing real execution from the context instead of trusting the
 // model-supplied Confirmed field.

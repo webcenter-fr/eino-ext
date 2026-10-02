@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 )
 
 const repoCloneDescription = `
@@ -29,13 +28,12 @@ It returns the local path where the repository was cloned and the HEAD commit in
 
 // RepoCloneParams defines the parameters for cloning a GitHub repository.
 type RepoCloneParams struct {
-	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Branch    string `json:"branch,omitempty" jsonschema:"(optional) Branch to checkout. Defaults to the default branch."`
-	Depth     int    `json:"depth,omitempty" jsonschema:"(optional) Clone depth (shallow clone). 0 = full clone."`
-	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, return the resolved path without cloning."`
-	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute the clone. Set this after the user has approved the dry-run result."`
+	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo     string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Branch   string `json:"branch,omitempty" jsonschema:"(optional) Branch to checkout. Defaults to the default branch."`
+	Depth    int    `json:"depth,omitempty" jsonschema:"(optional) Clone depth (shallow clone). 0 = full clone."`
+	DryRun   bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, return the resolved path without cloning."`
 }
 
 // RepoCloneTool is an eino tool for cloning GitHub repositories.
@@ -50,14 +48,13 @@ func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (re
 		return "", err
 	}
 
-	targetPath := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	targetPath, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 
 	if params.DryRun {
 		return fmt.Sprintf(`{"dryRun": true, "wouldCloneTo": %q, "owner": %q, "repo": %q, "branch": %q}`, targetPath, params.Owner, params.Repo, params.Branch), nil
-	}
-
-	if err := confirm.RequireConfirmationForAction("clone", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	tok, err := t.token(params.Instance)
@@ -100,6 +97,10 @@ func (t *RepoCloneTool) Invoke(ctx context.Context, params *RepoCloneParams) (re
 	head, err := repo.Head()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get HEAD after clone")
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
+		return "", err
 	}
 
 	return fmt.Sprintf(`{"clonedTo": %q, "headCommit": %q, "headRef": %q}`, targetPath, head.Hash().String(), head.Name().String()), nil

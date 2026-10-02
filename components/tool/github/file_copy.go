@@ -73,7 +73,10 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 		return "", errors.Errorf("source and destination are the same path %q", params.Source)
 	}
 
-	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 
 	if params.DryRun {
 		if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
@@ -87,6 +90,10 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 	}
 
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
+		return "", err
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
 		return "", err
 	}
 
@@ -105,7 +112,7 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 
 	if isDir {
 		output.Type = "dir"
-		fileCount, totalBytes, err := fileutil.CopyDir(srcSafePath, dstSafePath, true)
+		fileCount, totalBytes, err := fileutil.CopyDir(srcSafePath, dstSafePath, true, t.maxCopyBytes)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to copy directory %q to %q", params.Source, params.Destination)
 		}

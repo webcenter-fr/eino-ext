@@ -16,6 +16,8 @@ dynamic clients.
 - **Full-content describe** — the `describe` tool returns the complete resource
   JSON (all top-level fields, not just metadata/spec/status/data).
   `excludeFieldsOutput` (`metadata`/`spec`/`status`/`data`) still applies.
+  `metadata.managedFields` is always omitted (large, server-managed, and rarely
+  useful to an agent).
 - **Dynamic CRUD** — create, apply, patch, and delete tools use the dynamic client
   with kind-based resolution.
 - **Safety** — write tools enforce a dry-run/confirmed gate internally. Pod exec

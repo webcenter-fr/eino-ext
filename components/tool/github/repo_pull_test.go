@@ -133,7 +133,7 @@ func TestRepoPullFastForwardAndUpToDate(t *testing.T) {
 	// Remote gains a commit after the clone; the pull fast-forwards to it.
 	r.pushCommit(t, "second", "v2\n")
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
 	require.NoError(t, err)
 
 	var out repoPullResult
@@ -147,7 +147,7 @@ func TestRepoPullFastForwardAndUpToDate(t *testing.T) {
 	assert.Equal(t, r.head(t), cloneHead(t, testRepoPath(cloneDir)))
 
 	// A second pull is a no-op reported as already up to date.
-	result, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main", "confirmed": true}`)
+	result, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal([]byte(result), &out))
 	assert.True(t, out.Pulled)
@@ -170,7 +170,7 @@ func TestRepoPullDirtyWorktree(t *testing.T) {
 
 	r.pushCommit(t, "second", "v2\n")
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "uncommitted changes")
 
@@ -186,7 +186,7 @@ func TestRepoPullMissingClone(t *testing.T) {
 	tool, err := NewRepoPullTool(ctx, pullConfigs(t.TempDir()))
 	require.NoError(t, err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo"}`)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "github_repo_clone")
 }
@@ -215,7 +215,7 @@ func TestRepoPullNonFastForward(t *testing.T) {
 	localHash, err := wt.Commit("local commit", &git.CommitOptions{Author: commitIdentity})
 	require.NoError(t, err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "commits not present on the remote")
 
@@ -252,20 +252,6 @@ func TestRepoPullDryRun(t *testing.T) {
 	assert.Equal(t, "v1\n", string(data))
 }
 
-func TestRepoPullNotConfirmed(t *testing.T) {
-	ctx := context.Background()
-	r := newPullRemote(t)
-	cloneDir := t.TempDir()
-	clonePullFixture(t, r.remotePath, cloneDir, defaultSession, "testowner", "testrepo")
-
-	tool, err := NewRepoPullTool(ctx, pullConfigs(cloneDir))
-	require.NoError(t, err)
-
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Confirmed")
-}
-
 func TestRepoPullDetachedHead(t *testing.T) {
 	ctx := context.Background()
 	r := newPullRemote(t)
@@ -285,12 +271,12 @@ func TestRepoPullDetachedHead(t *testing.T) {
 	require.NoError(t, wt.Checkout(&git.CheckoutOptions{Hash: head.Hash()}))
 
 	// Detached HEAD without an explicit branch is an error.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo"}`)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "detached")
 
 	// With an explicit branch the pull succeeds.
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "branch": "main"}`)
 	require.NoError(t, err)
 	var out repoPullResult
 	require.NoError(t, json.Unmarshal([]byte(result), &out))
@@ -299,13 +285,18 @@ func TestRepoPullDetachedHead(t *testing.T) {
 }
 
 func TestRepoPullSessionNamespacing(t *testing.T) {
-	// clonePath always places the clone under <CloneDir>/<session>/<owner>/<repo>;
-	// an empty session falls back to "default" and dangerous session values are
-	// sanitized to a single traversal-free segment.
+	// clonePath always places the clone under <CloneDir>/<session>/<owner>/<repo>.
+	// An empty session falls back to the literal "default" segment; a non-empty
+	// session id is hashed via fileutil.SessionDirName (item 4) so distinct ids
+	// never collide after sanitising.
 	assert.Equal(t, "/root/default/o/r", clonePath("/root", "", "o", "r"))
-	assert.Equal(t, "/root/s1/o/r", clonePath("/root", "s1", "o", "r"))
-	// "sess/../x" must never survive sanitization: no separator and no "..".
-	assert.Equal(t, "/root/sess__x/o/r", clonePath("/root", "sess/../x", "o", "r"))
+	assert.Equal(t, "/root/"+fileutil.SessionDirName("s1")+"/o/r", clonePath("/root", "s1", "o", "r"))
+
+	// A traversal-ish id hashes to a fixed hex segment: no separator and no "..".
+	seg := clonePath("/root", "sess/../x", "o", "r")
+	assert.NotContains(t, seg, "..")
+	assert.NotContains(t, seg, "sess")
+	assert.Contains(t, seg, fileutil.SessionDirName("sess/../x"))
 
 	// A plain context.Background() has no adk run session, so SessionFromContext
 	// returns "" and clonePath falls back to the "default" namespace (asserted
@@ -319,10 +310,10 @@ func TestRepoPullValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, args := range []string{
-		`{"owner": "testowner", "repo": "testrepo"}`,                                     // missing instance
-		`{"instance": "test", "repo": "testrepo"}`,                                       // missing owner
-		`{"instance": "test", "owner": "testowner"}`,                                     // missing repo
-		`{"instance": "invalid-instance", "owner": "o", "repo": "r", "confirmed": true}`, // unknown instance
+		`{"owner": "testowner", "repo": "testrepo"}`,                  // missing instance
+		`{"instance": "test", "repo": "testrepo"}`,                    // missing owner
+		`{"instance": "test", "owner": "testowner"}`,                  // missing repo
+		`{"instance": "invalid-instance", "owner": "o", "repo": "r"}`, // unknown instance
 	} {
 		_, err := tool.InvokableRun(ctx, args)
 		require.Error(t, err, "args: %s", args)

@@ -3,8 +3,6 @@ package file
 import (
 	"context"
 	"os"
-	"path/filepath"
-	"strings"
 	"syscall"
 
 	"emperror.dev/errors"
@@ -12,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
@@ -43,6 +42,8 @@ and move status.
 type MoveParams struct {
 	Source      string `json:"source"      validate:"required" jsonschema:"(required) Relative source file or directory path."`
 	Destination string `json:"destination" validate:"required" jsonschema:"(required) Relative destination file or directory path."`
+	DryRun      bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the move without making changes."`
+	Confirmed   bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 // MoveOutput is the JSON result returned by the file_move tool.
@@ -72,45 +73,32 @@ func (t *MoveTool) Invoke(ctx context.Context, params *MoveParams) (string, erro
 		return "", errors.Errorf("source and destination are the same path %q", params.Source)
 	}
 
-	srcSafePath, err := resolvePath(t.cfg.Workdir, ctx, params.Source, false)
+	root, err := sessionDir(t.cfg, ctx)
 	if err != nil {
 		return "", err
 	}
 
-	dstSafePath, err := resolvePath(t.cfg.Workdir, ctx, params.Destination, true)
+	if params.DryRun {
+		return transferPreview(root, params.Source, params.Destination, "wouldMove")
+	}
+
+	srcSafePath, dstSafePath, isDir, err := validateTransferPaths(t.cfg, ctx, params.Source, params.Destination)
 	if err != nil {
 		return "", err
 	}
 
-	cleanSrc := filepath.Clean(srcSafePath)
-	cleanDst := filepath.Clean(dstSafePath)
-	if cleanDst == cleanSrc {
-		return "", errors.Errorf("source and destination resolve to the same path %q", params.Source)
-	}
-	if strings.HasPrefix(cleanDst, cleanSrc+string(filepath.Separator)) {
-		return "", errors.Errorf("destination %q is inside the source directory %q", params.Destination, params.Source)
+	if err := confirm.RequireConfirmationCtx(ctx, "file_move", false, params.Confirmed); err != nil {
+		return "", err
 	}
 
-	srcFi, err := os.Lstat(srcSafePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", errors.Wrapf(err, "source path %q not found", params.Source)
-		}
-		return "", errors.Wrapf(err, "failed to stat source path %q", params.Source)
+	// Create destination parents only on the authorized execute path (the path
+	// itself was already resolved and validated above).
+	if _, err := resolvePath(t.cfg, ctx, params.Destination, true); err != nil {
+		return "", err
 	}
-	isDir := srcFi.IsDir()
 
-	// Reject type mismatches if destination exists.
-	if dstFi, statErr := os.Lstat(dstSafePath); statErr == nil {
-		if dstFi.Mode()&os.ModeSymlink != 0 {
-			return "", errors.Errorf("destination %q is a symlink; symlinks are not allowed", params.Destination)
-		}
-		if dstFi.IsDir() && !isDir {
-			return "", errors.Errorf("destination %q is a directory but source is a file", params.Destination)
-		}
-		if !dstFi.IsDir() && isDir {
-			return "", errors.Errorf("destination %q is a file but source is a directory", params.Destination)
-		}
+	if err := TouchSession(ctx, t.cfg); err != nil {
+		return "", err
 	}
 
 	moveErr := os.Rename(srcSafePath, dstSafePath)
@@ -121,7 +109,7 @@ func (t *MoveTool) Invoke(ctx context.Context, params *MoveParams) (string, erro
 		}
 		// Cross-device fallback: copy + delete.
 		if isDir {
-			if _, _, copyErr := fileutil.CopyDir(srcSafePath, dstSafePath, false); copyErr != nil {
+			if _, _, copyErr := fileutil.CopyDir(srcSafePath, dstSafePath, false, t.cfg.MaxCopyBytes); copyErr != nil {
 				return "", errors.Wrapf(copyErr, "failed to copy directory %q to %q for cross-device move", params.Source, params.Destination)
 			}
 			if rmErr := os.RemoveAll(srcSafePath); rmErr != nil {
