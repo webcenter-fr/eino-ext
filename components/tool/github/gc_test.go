@@ -92,3 +92,32 @@ func TestStartCloneGCNoop(t *testing.T) {
 	StartCloneGC(ctx, configs, time.Hour, -time.Second)
 	StartCloneGC(ctx, Configs{}, time.Hour, time.Millisecond)
 }
+
+func TestStartCloneGCSweepsStaleDirs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cloneDir := t.TempDir()
+	stale := cloneSessionPath(cloneDir, "stale-session")
+	require.NoError(t, os.MkdirAll(stale, 0o755))
+	old := time.Now().Add(-2 * time.Hour)
+	require.NoError(t, os.Chtimes(stale, old, old))
+
+	// A fresh namespace that the sweep must keep.
+	fresh := cloneSessionPath(cloneDir, "fresh-session")
+	require.NoError(t, os.MkdirAll(fresh, 0o755))
+
+	StartCloneGC(ctx, Configs{"a": {Token: "t", CloneDir: cloneDir}}, time.Hour, 5*time.Millisecond)
+
+	assert.Eventually(t, func() bool {
+		_, statErr := os.Stat(stale)
+		return os.IsNotExist(statErr)
+	}, 2*time.Second, 5*time.Millisecond, "stale clone namespace must be swept")
+
+	_, err := os.Stat(fresh)
+	require.NoError(t, err, "fresh clone namespace must survive the sweep")
+
+	// The goroutine stops on ctx cancellation (no way to observe directly; the
+	// select/return structure is exercised by reaching here without deadlock).
+	cancel()
+}

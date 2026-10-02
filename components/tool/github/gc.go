@@ -69,8 +69,8 @@ func TouchCloneSession(ctx context.Context, configs Configs) error {
 
 // StartCloneGC starts a background goroutine that every interval sweeps
 // <CloneDir> for session subdirectories whose mtime is older than ttl and
-// removes them. ttl==0 or interval<=0 -> no-op; the goroutine stops on ctx
-// cancellation.
+// removes them. ttl==0, interval<=0, or an unusable configs set (empty or
+// disagreeing instances) -> no-op; the goroutine stops on ctx cancellation.
 func StartCloneGC(ctx context.Context, configs Configs, ttl, interval time.Duration) {
 	cloneDir, err := cloneDirFromConfigs(configs)
 	if err != nil || ttl == 0 || interval <= 0 {

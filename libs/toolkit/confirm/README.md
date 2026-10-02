@@ -23,11 +23,13 @@ func RequireConfirmationForActionCtx(ctx context.Context, toolName, action strin
   that handle the dry-run path separately and only need to enforce confirmation
   before executing.
 
-The old non-context helpers are deprecated:
+The old non-context helpers were removed:
 
-- `RequireConfirmation` — trusts the model-supplied confirmed flag and MUST
-  NOT be used as an authorization boundary. Use `RequireConfirmationCtx`.
-- `RequireConfirmationForAction` — same; use `RequireConfirmationForActionCtx`.
+- `RequireConfirmation` and `RequireConfirmationForAction` — deleted; they
+  trusted the model-supplied confirmed flag and were not authorization
+  boundaries. Use `RequireConfirmationCtx` / `RequireConfirmationForActionCtx`,
+  which additionally require `safety.WithExecutionAuthorized` for real
+  execution.
 
 ## Usage
 

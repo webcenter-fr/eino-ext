@@ -1,5 +1,42 @@
 # Breaking Changes
 
+## tool/file: write tools now require host authorization to execute
+
+The four file write tools (`file_write`, `file_delete`, `file_copy`,
+`file_move`) expose `dryRun`/`confirmed` and require
+`safety.WithExecutionAuthorized(ctx, "<tool>")` for real execution, matching
+every other `WriteToolNames()` registry. Direct callers must now set
+`confirmed:true` plus a grant.
+
+## tool/file and tool/github: session directory naming changed
+
+Session directories now use a 16-hex-char SHA-256 prefix
+(`fileutil.SessionDirName`) instead of `SanitizePathSegment`, so existing
+on-disk session directories move; `RequireSession` (default false) makes a
+missing session fail closed.
+
+## libs/toolkit/fileutil: `CopyDir` signature changed
+
+Added a trailing `maxBytes int64` parameter (pass `0` for unlimited).
+
+## tool/github: `github_repo_clone` / `github_repo_pull` no longer require `confirmed`
+
+They are plain reads; the `Confirmed` parameter is removed. Callers that passed
+`confirmed:true` should drop it (a `dryRun` preview remains available).
+
+## tool/kubernetes: `kubernetes_describe` no longer returns `metadata.managedFields`
+
+The field is stripped from describe output by default (`excludeFieldsOutput` is
+unchanged and still top-level-only).
+
+## libs/toolkit: deprecated helpers removed
+
+`safety.ShouldGate`, `confirm.RequireConfirmation`, and
+`confirm.RequireConfirmationForAction` are deleted. Use
+`safety.ShouldGateWithAuthorization`, `confirm.RequireConfirmationCtx`, and
+`confirm.RequireConfirmationForActionCtx` respectively.
+(`Config.AllowModelConfirmation` is retained.)
+
 ## safety middleware: write tools now require host authorization to execute
 
 The safety middleware and every write tool now authorize real execution from
