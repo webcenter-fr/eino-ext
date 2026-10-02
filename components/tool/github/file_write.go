@@ -90,8 +90,15 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), fileutil.DefaultMaxWriteBytes)
 	}
 
-	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
+		return "", err
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
 		return "", err
 	}
 

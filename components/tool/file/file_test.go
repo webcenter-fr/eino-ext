@@ -2,15 +2,26 @@ package file
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
+
+// authorized returns a context marking toolName as authorized to execute, the
+// same grant the safety middleware sets after host approval.
+func authorized(toolName string) context.Context {
+	return safety.WithExecutionAuthorized(context.Background(), toolName)
+}
 
 // testSessionDir is the session directory that tool invocations resolve to in
 // unit tests: a plain context.Background() carries no adk run session, so the
@@ -279,7 +290,7 @@ func TestFileWriteNewFile(t *testing.T) {
 	tools, cfg := newTestTools(t, nil)
 	write := toolByName(t, tools, "file_write")
 
-	result, err := write.InvokableRun(context.Background(), `{"path": "hello.txt", "content": "hello"}`)
+	result, err := write.InvokableRun(authorized("file_write"), `{"path": "hello.txt", "content": "hello", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -303,7 +314,7 @@ func TestFileWriteOverwrite(t *testing.T) {
 	path := filepath.Join(testSessionDir(cfg.Workdir), "f.txt")
 	mustWriteFile(t, path, []byte("old content"))
 
-	if _, err := write.InvokableRun(context.Background(), `{"path": "f.txt", "content": "new"}`); err != nil {
+	if _, err := write.InvokableRun(authorized("file_write"), `{"path": "f.txt", "content": "new", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -319,10 +330,10 @@ func TestFileWriteAppend(t *testing.T) {
 	path := filepath.Join(testSessionDir(cfg.Workdir), "log.txt")
 	mustWriteFile(t, path, []byte("one"))
 
-	if _, err := write.InvokableRun(context.Background(), `{"path": "log.txt", "content": " two", "append": true}`); err != nil {
+	if _, err := write.InvokableRun(authorized("file_write"), `{"path": "log.txt", "content": " two", "append": true, "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := write.InvokableRun(context.Background(), `{"path": "log.txt", "content": " three", "append": true}`); err != nil {
+	if _, err := write.InvokableRun(authorized("file_write"), `{"path": "log.txt", "content": " three", "append": true, "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -335,7 +346,7 @@ func TestFileWriteAppendNewFile(t *testing.T) {
 	tools, cfg := newTestTools(t, nil)
 	write := toolByName(t, tools, "file_write")
 
-	if _, err := write.InvokableRun(context.Background(), `{"path": "new.txt", "content": "created by append", "append": true}`); err != nil {
+	if _, err := write.InvokableRun(authorized("file_write"), `{"path": "new.txt", "content": "created by append", "append": true, "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(testSessionDir(cfg.Workdir), "new.txt"))
@@ -348,7 +359,7 @@ func TestFileWriteCreatesParentDirs(t *testing.T) {
 	tools, cfg := newTestTools(t, nil)
 	write := toolByName(t, tools, "file_write")
 
-	if _, err := write.InvokableRun(context.Background(), `{"path": "deep/nested/file.txt", "content": "nested"}`); err != nil {
+	if _, err := write.InvokableRun(authorized("file_write"), `{"path": "deep/nested/file.txt", "content": "nested", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(testSessionDir(cfg.Workdir), "deep", "nested", "file.txt"))
@@ -461,7 +472,7 @@ func TestFileDeleteFile(t *testing.T) {
 	path := filepath.Join(testSessionDir(cfg.Workdir), "gone.txt")
 	mustWriteFile(t, path, []byte("bye"))
 
-	result, err := del.InvokableRun(context.Background(), `{"path": "gone.txt"}`)
+	result, err := del.InvokableRun(authorized("file_delete"), `{"path": "gone.txt", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,7 +497,7 @@ func TestFileDeleteDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := del.InvokableRun(context.Background(), `{"path": "adir"}`)
+	result, err := del.InvokableRun(authorized("file_delete"), `{"path": "adir", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -508,7 +519,7 @@ func TestFileDeleteNestedDirectory(t *testing.T) {
 
 	mustWriteFile(t, filepath.Join(testSessionDir(cfg.Workdir), "tree", "deep", "nested.txt"), []byte("n"))
 
-	if _, err := del.InvokableRun(context.Background(), `{"path": "tree"}`); err != nil {
+	if _, err := del.InvokableRun(authorized("file_delete"), `{"path": "tree", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(testSessionDir(cfg.Workdir), "tree")); !os.IsNotExist(err) {
@@ -587,7 +598,7 @@ func TestFileCopyFile(t *testing.T) {
 	sessionDir := testSessionDir(cfg.Workdir)
 	mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("copy me"))
 
-	result, err := cp.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt"}`)
+	result, err := cp.InvokableRun(authorized("file_copy"), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -612,7 +623,7 @@ func TestFileCopyFileOverwrite(t *testing.T) {
 	mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("new content"))
 	mustWriteFile(t, filepath.Join(sessionDir, "dst.txt"), []byte("old content"))
 
-	if _, err := cp.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt"}`); err != nil {
+	if _, err := cp.InvokableRun(authorized("file_copy"), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	dst, err := os.ReadFile(filepath.Join(sessionDir, "dst.txt"))
@@ -628,7 +639,7 @@ func TestFileCopyFileCreatesParentDirs(t *testing.T) {
 	sessionDir := testSessionDir(cfg.Workdir)
 	mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("deep"))
 
-	if _, err := cp.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "deep/nested/dst.txt"}`); err != nil {
+	if _, err := cp.InvokableRun(authorized("file_copy"), `{"source": "src.txt", "destination": "deep/nested/dst.txt", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	dst, err := os.ReadFile(filepath.Join(sessionDir, "deep", "nested", "dst.txt"))
@@ -645,7 +656,7 @@ func TestFileCopyDirectory(t *testing.T) {
 	mustWriteFile(t, filepath.Join(sessionDir, "sub", "a.txt"), []byte("aaaa"))
 	mustWriteFile(t, filepath.Join(sessionDir, "sub", "b.txt"), []byte("bb"))
 
-	result, err := cp.InvokableRun(context.Background(), `{"source": "sub", "destination": "sub2"}`)
+	result, err := cp.InvokableRun(authorized("file_copy"), `{"source": "sub", "destination": "sub2", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -671,7 +682,7 @@ func TestFileCopyDirectoryMerge(t *testing.T) {
 	mustWriteFile(t, filepath.Join(sessionDir, "sub2", "a.txt"), []byte("old"))
 	mustWriteFile(t, filepath.Join(sessionDir, "sub2", "extra.txt"), []byte("extra"))
 
-	if _, err := cp.InvokableRun(context.Background(), `{"source": "sub", "destination": "sub2"}`); err != nil {
+	if _, err := cp.InvokableRun(authorized("file_copy"), `{"source": "sub", "destination": "sub2", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	a, err := os.ReadFile(filepath.Join(sessionDir, "sub2", "a.txt"))
@@ -810,7 +821,7 @@ func TestFileCopySkipsSymlinkInsideTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := cp.InvokableRun(context.Background(), `{"source": "sub", "destination": "sub2"}`); err != nil {
+	if _, err := cp.InvokableRun(authorized("file_copy"), `{"source": "sub", "destination": "sub2", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -835,7 +846,7 @@ func TestFileMoveFile(t *testing.T) {
 	sessionDir := testSessionDir(cfg.Workdir)
 	mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("moving on"))
 
-	result, err := mv.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt"}`)
+	result, err := mv.InvokableRun(authorized("file_move"), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -862,7 +873,7 @@ func TestFileMoveFileRename(t *testing.T) {
 	sessionDir := testSessionDir(cfg.Workdir)
 	mustWriteFile(t, filepath.Join(sessionDir, "original.txt"), []byte("content"))
 
-	if _, err := mv.InvokableRun(context.Background(), `{"source": "original.txt", "destination": "renamed.txt"}`); err != nil {
+	if _, err := mv.InvokableRun(authorized("file_move"), `{"source": "original.txt", "destination": "renamed.txt", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(sessionDir, "original.txt")); !os.IsNotExist(statErr) {
@@ -880,7 +891,7 @@ func TestFileMoveDirectory(t *testing.T) {
 	sessionDir := testSessionDir(cfg.Workdir)
 	mustWriteFile(t, filepath.Join(sessionDir, "sub", "a.txt"), []byte("aaa"))
 
-	result, err := mv.InvokableRun(context.Background(), `{"source": "sub", "destination": "sub2"}`)
+	result, err := mv.InvokableRun(authorized("file_move"), `{"source": "sub", "destination": "sub2", "confirmed": true}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -908,7 +919,7 @@ func TestFileMoveOverwrite(t *testing.T) {
 	mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("fresh"))
 	mustWriteFile(t, filepath.Join(sessionDir, "dst.txt"), []byte("stale"))
 
-	if _, err := mv.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt"}`); err != nil {
+	if _, err := mv.InvokableRun(authorized("file_move"), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	dst, err := os.ReadFile(filepath.Join(sessionDir, "dst.txt"))
@@ -1124,5 +1135,290 @@ func TestWriteToolNames(t *testing.T) {
 	got := WriteToolNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("WriteToolNames() = %v, want %v", got, want)
+	}
+}
+
+// ---- dry-run no-mutation ----
+
+// fileSnapshotEntry captures the size, mtime, and mode of a path for
+// no-mutation assertions.
+type fileSnapshotEntry struct {
+	Size  int64
+	Mtime time.Time
+	Mode  os.FileMode
+}
+
+// snapshotTree records an ordered map of relPath -> stat for every entry under
+// root, including the root itself.
+func snapshotTree(t *testing.T, root string) map[string]fileSnapshotEntry {
+	t.Helper()
+	snap := make(map[string]fileSnapshotEntry)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		fi, statErr := os.Lstat(path)
+		if statErr != nil {
+			return statErr
+		}
+		snap[filepath.ToSlash(rel)] = fileSnapshotEntry{Size: fi.Size(), Mtime: fi.ModTime(), Mode: fi.Mode()}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot %q: %v", root, err)
+	}
+	return snap
+}
+
+func assertNoMutation(t *testing.T, before, after map[string]fileSnapshotEntry) {
+	t.Helper()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("dry-run mutated the filesystem:\nbefore=%v\nafter=%v", before, after)
+	}
+}
+
+func TestFileWriteDryRunNoMutation(t *testing.T) {
+	tests := []struct {
+		name string
+		args string
+	}{
+		{name: "create", args: `{"path": "new.txt", "content": "hello", "dryRun": true}`},
+		{name: "overwrite", args: `{"path": "existing.txt", "content": "replaced", "dryRun": true}`},
+		{name: "append", args: `{"path": "existing.txt", "content": "tail", "append": true, "dryRun": true}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tools, cfg := newTestTools(t, nil)
+			write := toolByName(t, tools, "file_write")
+			sessionDir := mustCreateSessionDir(t, cfg.Workdir)
+			mustWriteFile(t, filepath.Join(sessionDir, "existing.txt"), []byte("original"))
+
+			before := snapshotTree(t, sessionDir)
+			result, err := write.InvokableRun(context.Background(), tt.args)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(result, `"dryRun":true`) || !strings.Contains(result, "wouldWrite") {
+				t.Fatalf("expected write preview, got %s", result)
+			}
+			assertNoMutation(t, before, snapshotTree(t, sessionDir))
+		})
+	}
+}
+
+func TestFileDeleteDryRunNoMutation(t *testing.T) {
+	t.Run("file", func(t *testing.T) {
+		tools, cfg := newTestTools(t, nil)
+		del := toolByName(t, tools, "file_delete")
+		sessionDir := mustCreateSessionDir(t, cfg.Workdir)
+		mustWriteFile(t, filepath.Join(sessionDir, "gone.txt"), []byte("bye"))
+
+		before := snapshotTree(t, sessionDir)
+		result, err := del.InvokableRun(context.Background(), `{"path": "gone.txt", "dryRun": true}`)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "wouldDelete") || !strings.Contains(result, `"type":"file"`) {
+			t.Fatalf("expected file delete preview, got %s", result)
+		}
+		assertNoMutation(t, before, snapshotTree(t, sessionDir))
+	})
+
+	t.Run("directory list is capped", func(t *testing.T) {
+		tools, cfg := newTestTools(t, nil)
+		del := toolByName(t, tools, "file_delete")
+		sessionDir := mustCreateSessionDir(t, cfg.Workdir)
+		for i := 0; i < maxPreviewFiles+10; i++ {
+			mustWriteFile(t, filepath.Join(sessionDir, "dir", fmt.Sprintf("f%03d.txt", i)), []byte("x"))
+		}
+
+		before := snapshotTree(t, sessionDir)
+		result, err := del.InvokableRun(context.Background(), `{"path": "dir", "dryRun": true}`)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, `"truncated":true`) {
+			t.Fatalf("expected capped directory preview, got %s", result)
+		}
+		assertNoMutation(t, before, snapshotTree(t, sessionDir))
+	})
+}
+
+func TestFileCopyDryRunNoMutation(t *testing.T) {
+	tests := []struct {
+		name        string
+		prepare     func(t *testing.T, sessionDir string)
+		source      string
+		destination string
+	}{
+		{
+			name: "file",
+			prepare: func(t *testing.T, sessionDir string) {
+				mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("copy me"))
+			},
+			source: "src.txt", destination: "dst.txt",
+		},
+		{
+			name: "directory",
+			prepare: func(t *testing.T, sessionDir string) {
+				mustWriteFile(t, filepath.Join(sessionDir, "sub", "a.txt"), []byte("aaaa"))
+			},
+			source: "sub", destination: "sub2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tools, cfg := newTestTools(t, nil)
+			cp := toolByName(t, tools, "file_copy")
+			sessionDir := mustCreateSessionDir(t, cfg.Workdir)
+			tt.prepare(t, sessionDir)
+
+			before := snapshotTree(t, sessionDir)
+			result, err := cp.InvokableRun(context.Background(),
+				fmt.Sprintf(`{"source": %q, "destination": %q, "dryRun": true}`, tt.source, tt.destination))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(result, "wouldCopy") {
+				t.Fatalf("expected copy preview, got %s", result)
+			}
+			assertNoMutation(t, before, snapshotTree(t, sessionDir))
+		})
+	}
+}
+
+func TestFileMoveDryRunNoMutation(t *testing.T) {
+	tests := []struct {
+		name        string
+		prepare     func(t *testing.T, sessionDir string)
+		source      string
+		destination string
+	}{
+		{
+			name: "file",
+			prepare: func(t *testing.T, sessionDir string) {
+				mustWriteFile(t, filepath.Join(sessionDir, "src.txt"), []byte("move me"))
+			},
+			source: "src.txt", destination: "dst.txt",
+		},
+		{
+			name: "directory",
+			prepare: func(t *testing.T, sessionDir string) {
+				mustWriteFile(t, filepath.Join(sessionDir, "sub", "a.txt"), []byte("aaaa"))
+			},
+			source: "sub", destination: "sub2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tools, cfg := newTestTools(t, nil)
+			mv := toolByName(t, tools, "file_move")
+			sessionDir := mustCreateSessionDir(t, cfg.Workdir)
+			tt.prepare(t, sessionDir)
+
+			before := snapshotTree(t, sessionDir)
+			result, err := mv.InvokableRun(context.Background(),
+				fmt.Sprintf(`{"source": %q, "destination": %q, "dryRun": true}`, tt.source, tt.destination))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(result, "wouldMove") {
+				t.Fatalf("expected move preview, got %s", result)
+			}
+			assertNoMutation(t, before, snapshotTree(t, sessionDir))
+		})
+	}
+}
+
+// ---- authorization ----
+
+func TestFileWriteRequiresAuthorization(t *testing.T) {
+	tools, _ := newTestTools(t, nil)
+	write := toolByName(t, tools, "file_write")
+
+	_, err := write.InvokableRun(context.Background(), `{"path": "f.txt", "content": "x", "confirmed": true}`)
+	if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+		t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+	}
+}
+
+func TestFileDeleteRequiresAuthorization(t *testing.T) {
+	tools, cfg := newTestTools(t, nil)
+	del := toolByName(t, tools, "file_delete")
+	mustWriteFile(t, filepath.Join(testSessionDir(cfg.Workdir), "gone.txt"), []byte("bye"))
+
+	_, err := del.InvokableRun(context.Background(), `{"path": "gone.txt", "confirmed": true}`)
+	if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+		t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+	}
+}
+
+func TestFileCopyRequiresAuthorization(t *testing.T) {
+	tools, cfg := newTestTools(t, nil)
+	cp := toolByName(t, tools, "file_copy")
+	mustWriteFile(t, filepath.Join(testSessionDir(cfg.Workdir), "src.txt"), []byte("x"))
+
+	_, err := cp.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`)
+	if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+		t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+	}
+}
+
+func TestFileMoveRequiresAuthorization(t *testing.T) {
+	tools, cfg := newTestTools(t, nil)
+	mv := toolByName(t, tools, "file_move")
+	mustWriteFile(t, filepath.Join(testSessionDir(cfg.Workdir), "src.txt"), []byte("x"))
+
+	_, err := mv.InvokableRun(context.Background(), `{"source": "src.txt", "destination": "dst.txt", "confirmed": true}`)
+	if !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+		t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
+	}
+}
+
+func TestFileWriteNotConfirmed(t *testing.T) {
+	tools, _ := newTestTools(t, nil)
+	write := toolByName(t, tools, "file_write")
+
+	_, err := write.InvokableRun(context.Background(), `{"path": "f.txt", "content": "x"}`)
+	if err == nil || !strings.Contains(err.Error(), "confirmed must be true") {
+		t.Fatalf("expected 'confirmed must be true' error, got %v", err)
+	}
+}
+
+// ---- RequireSession ----
+
+func TestFileWriteRequireSessionFailsClosed(t *testing.T) {
+	tools, err := NewAllTools(context.Background(), &Config{Workdir: t.TempDir(), RequireSession: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := toolByName(t, tools, "file_write")
+
+	_, err = write.InvokableRun(context.Background(), `{"path": "f.txt", "content": "x", "dryRun": true}`)
+	if err == nil || !strings.Contains(err.Error(), "session is required") {
+		t.Fatalf("expected fail-closed session error, got %v", err)
+	}
+}
+
+// ---- copy size limit ----
+
+func TestFileCopyDirectoryTooLarge(t *testing.T) {
+	tools, cfg := newTestTools(t, &Config{Workdir: t.TempDir(), MaxCopyBytes: 5})
+	cp := toolByName(t, tools, "file_copy")
+
+	sessionDir := testSessionDir(cfg.Workdir)
+	mustWriteFile(t, filepath.Join(sessionDir, "sub", "a.txt"), []byte("aaaa"))
+	mustWriteFile(t, filepath.Join(sessionDir, "sub", "b.txt"), []byte("bbbb"))
+
+	_, err := cp.InvokableRun(authorized("file_copy"), `{"source": "sub", "destination": "sub2", "confirmed": true}`)
+	if err == nil || !strings.Contains(err.Error(), "exceeds the maximum") {
+		t.Fatalf("expected size-limit error, got %v", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(sessionDir, "sub2")); !os.IsNotExist(statErr) {
+		t.Fatalf("partial destination must be removed, got %v", statErr)
 	}
 }

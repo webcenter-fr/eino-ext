@@ -62,7 +62,10 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 	}
 
 	if params.DryRun {
-		clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+		clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+		if err != nil {
+			return "", err
+		}
 		if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
 			return "", err
 		}
@@ -111,8 +114,15 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 		return "", err
 	}
 
-	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
+		return "", err
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
 		return "", err
 	}
 

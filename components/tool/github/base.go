@@ -29,6 +29,8 @@ type baseTool struct {
 	cloneDir       string
 	tokens         map[string]string
 	baseURLs       map[string]string
+	requireSession bool
+	maxCopyBytes   int64
 }
 
 // client returns the GitHub API client for the given instance name, or an error
@@ -60,12 +62,34 @@ func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 	cloneDir := ""
 	tokens := make(map[string]string)
 	baseURLs := make(map[string]string)
+	requireSession := false
+	requireSessionSet := false
+	maxCopyBytes := int64(0)
+	maxCopyBytesSet := false
 	for name, cfg := range configs {
 		if cloneDir == "" {
 			cloneDir = cfg.CloneDir
 		}
 		if cfg.CloneDir != "" && cfg.CloneDir != cloneDir {
 			return nil, errors.Errorf("all instances must share the same CloneDir (got %q and %q)", cloneDir, cfg.CloneDir)
+		}
+		if !requireSessionSet {
+			requireSession = cfg.RequireSession
+			requireSessionSet = true
+		} else if cfg.RequireSession != requireSession {
+			return nil, errors.Errorf("all instances must share the same RequireSession (got %v and %v)", cfg.RequireSession, requireSession)
+		}
+		// Default MaxCopyBytes before the consistency check so 0 and the
+		// explicit default are treated as equal.
+		instanceMaxCopyBytes := cfg.MaxCopyBytes
+		if instanceMaxCopyBytes == 0 {
+			instanceMaxCopyBytes = fileutil.DefaultMaxCopyBytes
+		}
+		if !maxCopyBytesSet {
+			maxCopyBytes = instanceMaxCopyBytes
+			maxCopyBytesSet = true
+		} else if instanceMaxCopyBytes != maxCopyBytes {
+			return nil, errors.Errorf("all instances must share the same MaxCopyBytes (got %d and %d)", instanceMaxCopyBytes, maxCopyBytes)
 		}
 		tokens[name] = cfg.Token
 		baseURLs[name] = cfg.BaseURL
@@ -86,6 +110,8 @@ func newBaseTool(ctx context.Context, configs Configs) (*baseTool, error) {
 		cloneDir:       cloneDir,
 		tokens:         tokens,
 		baseURLs:       baseURLs,
+		requireSession: requireSession,
+		maxCopyBytes:   maxCopyBytes,
 	}, nil
 }
 

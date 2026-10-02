@@ -61,8 +61,15 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 		return "", errors.Wrapf(err, "invalid search pattern %q", params.Pattern)
 	}
 
-	clonePath_ := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {
+		return "", err
+	}
+
+	if err := t.touchCloneSession(ctx); err != nil {
 		return "", err
 	}
 

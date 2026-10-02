@@ -49,12 +49,16 @@ func validateExcludeFields(excludeFields []string) error {
 // (ValidatingWebhookConfiguration / MutatingWebhookConfiguration), rules
 // (ClusterRole / Role), roleRef and subjects (RoleBinding /
 // ClusterRoleBinding), or value/globalDefault (PriorityClass).
+//
+// metadata.managedFields is always omitted: it is large, server-managed, and
+// rarely useful to an agent. excludeFieldsOutput cannot re-enable it.
 func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields []string) (string, error) {
 	if err := validateExcludeFields(excludeFields); err != nil {
 		return "", err
 	}
 
 	obj := o.DeepCopy().Object
+	unstructured.RemoveNestedField(obj, "metadata", "managedFields")
 	for _, field := range excludeFields {
 		delete(obj, field)
 	}

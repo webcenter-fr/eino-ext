@@ -52,8 +52,8 @@ fallback segment `default` is used, yielding `<CloneDir>/default/<owner>/<repo>`
 | `github_pr_get` | Get pull request details |
 | `github_org_repo_list` | List repositories in an organization |
 | `github_repo_search` | Search repositories by query |
-| `github_repo_clone` | Clone a repository to the local filesystem (read-classified; self-gates via `DryRun`/`Confirmed`) |
-| `github_repo_pull` | Update an existing clone to the latest remote state, non-destructively (fast-forward only; read-classified) |
+| `github_repo_clone` | Clone a repository to the local filesystem (plain read, no confirmation required) — `DryRun` still returns a preview |
+| `github_repo_pull` | Update an existing clone to the latest remote state, non-destructively (fast-forward only; plain read, no confirmation required) — `DryRun` still returns a preview |
 | `github_file_read` | Read file contents from a cloned repo |
 | `github_file_search` | Grep (regex) within a cloned repo |
 | `github_file_list` | List files/dirs in a cloned repo |
@@ -115,7 +115,7 @@ tools, mw, err := github.NewAllToolsWithSafety(ctx, configs, &safety.Config{
 
 ## Security
 
-- **Path safety**: Clone target always under `Config.CloneDir`; session, owner, and repo segments are sanitized (no traversal).
+- **Path safety**: Clone target always under `Config.CloneDir`; session ids are hashed and owner/repo segments are sanitized (no traversal). `RequireSession` fails closed when no session id is present.
 - **SSRF protection**: Webhook URLs must use HTTPS; loopback/private/metadata IPs are blocked.
 - **Secret redaction**: GitHub tokens are redacted from all tool output.
 - **Confirmation gating**: All write tools require `Confirmed=true` (or use `DryRun` to preview).

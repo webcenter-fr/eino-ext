@@ -48,37 +48,6 @@ func TestExtractGateParams(t *testing.T) {
 	}
 }
 
-func TestShouldGate(t *testing.T) {
-	writeTools := map[string]bool{"create": true, "delete": true}
-
-	tests := []struct {
-		name      string
-		toolName  string
-		gp        GateParams
-		wantError bool
-	}{
-		{name: "read tool passes", toolName: "list", wantError: false},
-		{name: "write dryRun passes", toolName: "create", gp: GateParams{DryRun: true}, wantError: false},
-		{name: "write confirmed passes", toolName: "create", gp: GateParams{Confirmed: true}, wantError: false},
-		{name: "write both passes", toolName: "create", gp: GateParams{DryRun: true, Confirmed: true}, wantError: false},
-		{name: "write neither fails", toolName: "create", gp: GateParams{}, wantError: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ShouldGate(tt.toolName, writeTools, tt.gp)
-			if tt.wantError && err == nil {
-				t.Fatal("expected error")
-			}
-			if !tt.wantError && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.wantError && !strings.Contains(err.Error(), "SAFETY GATE") {
-				t.Fatalf("expected SAFETY GATE in error, got: %v", err)
-			}
-		})
-	}
-}
-
 // --- Audit tests ---
 
 func TestChannelSink(t *testing.T) {

@@ -211,8 +211,15 @@ func (m *Middleware) preflight(ctx context.Context, toolName, callID, args strin
 
 	var gateErr error
 	if m.cfg.AllowModelConfirmation {
-		// Legacy, insecure path: trust model-supplied confirmed=true.
-		gateErr = safety.ShouldGate(toolName, m.writeTools, gp)
+		// Legacy, insecure path: trust model-supplied confirmed=true. This branch
+		// is intentionally not an authorization boundary (replaces the removed
+		// safety.ShouldGate).
+		switch {
+		case gp.DryRun:
+		case gp.Confirmed:
+		default:
+			gateErr = safety.ErrGateRequired
+		}
 	} else {
 		gateErr = safety.ShouldGateWithAuthorization(ctx, toolName, m.writeTools, gp, json.RawMessage(args), m.cfg.ExecutionAuthorizer)
 	}

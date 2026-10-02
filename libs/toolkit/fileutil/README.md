@@ -13,6 +13,7 @@ logic; callers wrap returned errors with component-specific context using
 const DefaultMaxReadBytes       = 1 << 20  // 1MB  — truncation threshold for reads
 const DefaultMaxWriteBytes      = 10 << 20 // 10MB — max content size for writes
 const DefaultMaxSearchFileBytes = 10 << 20 // 10MB — skip files larger than this in search
+const DefaultMaxCopyBytes       = 50 << 20 // 50MB — max total bytes for directory copy/move
 ```
 
 ## Functions
@@ -66,7 +67,7 @@ paths under `/proc/`, `/sys/`, `/dev/`.
 
 ```go
 func CopyFileContents(src, dst string) error
-func CopyDir(src, dst string, skipDotGit bool) (fileCount int, totalBytes int64, err error)
+func CopyDir(src, dst string, skipDotGit bool, maxBytes int64) (fileCount int, totalBytes int64, err error)
 func WalkDirFiles(root string, skipDotGit bool) ([]string, error)
 ```
 
@@ -75,15 +76,21 @@ func WalkDirFiles(root string, skipDotGit bool) ([]string, error)
 - `CopyDir` — recursively copies a directory tree, creating destination
   directories as needed. Symlinks inside the tree are always skipped (os.Open
   follows symlinks, which would leak external content into the destination).
-  `.git` directories are skipped when `skipDotGit` is true.
+  `.git` directories are skipped when `skipDotGit` is true. `maxBytes` caps the
+  total bytes copied (`<= 0` means unlimited); on overflow it returns an error
+  and removes the partial destination only when it did not pre-exist (a merged
+  destination is left intact).
 - `WalkDirFiles` — returns slash-normalized relative paths of all regular
   files in the tree, skipping symlinks (and `.git` when `skipDotGit` is true).
 
-### Session and segment helpers
+### Session, segment, and GC helpers
 
 ```go
 func SessionFromContext(ctx context.Context, key string) string
 func SanitizePathSegment(s string, fallback string) string
+func SessionDirName(id string) string
+func TouchDir(dir string) error
+func SweepStaleDirs(root string, ttl time.Duration)
 ```
 
 - `SessionFromContext` — reads the session ID from adk session values under
@@ -91,6 +98,14 @@ func SanitizePathSegment(s string, fallback string) string
 - `SanitizePathSegment` — removes NUL bytes, path separators, and control
   characters, collapses `..` sequences, and substitutes `fallback` when the
   result would be empty or ".".
+- `SessionDirName` — returns a fixed-length (16 hex chars) SHA-256 prefix of a
+  session id. Hashing guarantees distinct ids never collide, unlike
+  `SanitizePathSegment`.
+- `TouchDir` — refreshes a directory's mtime; a no-op when the directory does
+  not exist. Used to keep an active session alive against `SweepStaleDirs`.
+- `SweepStaleDirs` — removes immediate subdirectories of `root` older than
+  `ttl`; regular files and symlinks are never removed and `ttl <= 0` is a
+  no-op.
 
 ## Usage
 

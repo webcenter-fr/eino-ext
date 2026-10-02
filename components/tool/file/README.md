@@ -14,12 +14,22 @@ without keeping everything in context.
 | `file_copy` | write | Copy a file or directory |
 | `file_move` | write | Move or rename a file or directory |
 
+All four write tools expose `dryRun` and `confirmed`:
+
+- `dryRun:true` returns a read-only preview (no filesystem mutation).
+- `confirmed:true` executes, but only when the context carries
+  `safety.WithExecutionAuthorized(ctx, "<tool>")`; otherwise it fails closed
+  with `safety.ErrExecutionNotAuthorized`.
+- Neither flag returns the canonical "confirmed must be true" error.
+
 ## Usage
 
 ```go
 cfg := &file.Config{
-    Workdir:    "/tmp/eino-files",
-    SessionTTL: 1 * time.Hour, // optional: enable GC for stale sessions
+    Workdir:        "/tmp/eino-files",
+    SessionTTL:     1 * time.Hour, // optional: enable GC for stale sessions
+    RequireSession: true,          // multi-user hosts: fail closed without a session
+    MaxCopyBytes:   50 << 20,      // optional: cap directory copy/move (default 50MB)
 }
 tools, err := file.NewAllTools(ctx, cfg)
 
@@ -41,12 +51,22 @@ Set it at run start:
 adk.AddSessionValue(ctx, file.FileSessionKey, sessionID)
 ```
 
+Non-empty session ids are hashed to a fixed 16-hex-char segment
+(`fileutil.SessionDirName`), so distinct ids never collide after sanitising.
+Existing on-disk session directories therefore move to the hashed names.
+
+With `RequireSession: true`, a tool call whose context carries no session id
+fails closed instead of falling back to the shared `session` namespace.
+Multi-user hosts should enable it.
+
 ## Garbage Collection
 
 When `SessionTTL` is set, a background goroutine (started via `StartGC`)
 periodically scans `Workdir` for session subdirectories and removes those
-whose modification time is older than `SessionTTL`. The currently active
-session is protected by its recent modification time.
+whose modification time is older than `SessionTTL`. Every tool invocation
+refreshes its session directory mtime via `TouchSession` (reads included), so
+a session that only writes to a nested path, only overwrites an existing file,
+or only reads stays alive.
 
 ```go
 // Start GC with a 5-minute scan interval.
@@ -72,9 +92,10 @@ tooling.
 - Symlinks at any path component are rejected.
 - Binary files are detected and refused by `file_read`.
 - Content size limits prevent resource exhaustion (`MaxReadBytes`,
-  `MaxWriteBytes`).
+  `MaxWriteBytes`, `MaxCopyBytes`).
 - The session root cannot be deleted.
 - GC only removes directories, never regular files in Workdir.
+- `RequireSession` fails closed when no session id is present.
 
 ## Requirements
 

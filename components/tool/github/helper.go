@@ -55,22 +55,46 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
+// cloneSessionPath returns <cloneDir>/<sessionSegment>, the per-session clone
+// namespace root. An empty session falls back to the literal "default" segment;
+// a non-empty session is hashed via fileutil.SessionDirName so distinct ids
+// never collide after sanitising.
+func cloneSessionPath(cloneDir, session string) string {
+	segment := defaultSession
+	if session != "" {
+		segment = fileutil.SessionDirName(session)
+	}
+	return fmt.Sprintf("%s/%s", cloneDir, segment)
+}
+
 // clonePath returns the safe, session-scoped local path for cloning a repository.
 func clonePath(cloneDir, session, owner, repo string) string {
-	if session == "" {
-		session = defaultSession
-	}
-	return fmt.Sprintf("%s/%s/%s/%s",
-		cloneDir,
-		fileutil.SanitizePathSegment(session, "repo"),
+	return fmt.Sprintf("%s/%s/%s",
+		cloneSessionPath(cloneDir, session),
 		fileutil.SanitizePathSegment(owner, "repo"),
 		fileutil.SanitizePathSegment(repo, "repo"))
 }
 
 // clonePathForSession returns the session-scoped clone path for owner/repo,
-// deriving the session from the invocation context.
-func (b *baseTool) clonePathForSession(ctx context.Context, owner, repo string) string {
-	return clonePath(b.cloneDir, fileutil.SessionFromContext(ctx, CloneSessionKey), owner, repo)
+// deriving the session from the invocation context. With RequireSession set and
+// no session present it fails closed instead of using the "default" namespace.
+func (b *baseTool) clonePathForSession(ctx context.Context, owner, repo string) (string, error) {
+	session := fileutil.SessionFromContext(ctx, CloneSessionKey)
+	if session == "" && b.requireSession {
+		return "", errors.Errorf("a session is required but none was found in the invocation context; set the adk session value %q", CloneSessionKey)
+	}
+	return clonePath(b.cloneDir, session, owner, repo), nil
+}
+
+// touchCloneSession updates the mtime of the per-session clone namespace so
+// StartCloneGC keeps the active session's clones. It is a no-op when the
+// namespace does not exist.
+func (b *baseTool) touchCloneSession(ctx context.Context) error {
+	session := fileutil.SessionFromContext(ctx, CloneSessionKey)
+	if session == "" && b.requireSession {
+		return errors.Errorf("a session is required but none was found in the invocation context; set the adk session value %q", CloneSessionKey)
+	}
+	return fileutil.TouchDir(cloneSessionPath(b.cloneDir, session))
 }
 
 // defaultMaxPages is the fallback page cap used when a caller does not specify

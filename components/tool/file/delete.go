@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/goccy/go-json"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -30,7 +31,9 @@ deletion status.
 
 // DeleteParams holds the parameters for the file_delete tool.
 type DeleteParams struct {
-	Path string `json:"path" validate:"required" jsonschema:"(required) Relative file or directory path inside the session directory to delete."`
+	Path      string `json:"path" validate:"required" jsonschema:"(required) Relative file or directory path inside the session directory to delete."`
+	DryRun    bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the deletion without making changes."`
+	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 // DeleteOutput is the JSON result returned by the file_delete tool.
@@ -60,7 +63,7 @@ func (t *DeleteTool) Invoke(ctx context.Context, params *DeleteParams) (string, 
 		return "", errors.Errorf("path %q refers to the session root; deleting the entire session directory is not allowed", params.Path)
 	}
 
-	safePath, err := resolvePath(t.cfg.Workdir, ctx, params.Path, false)
+	safePath, err := resolvePath(t.cfg, ctx, params.Path, false)
 	if err != nil {
 		return "", err
 	}
@@ -71,6 +74,18 @@ func (t *DeleteTool) Invoke(ctx context.Context, params *DeleteParams) (string, 
 			return "", errors.Wrapf(err, "path %q not found", params.Path)
 		}
 		return "", errors.Wrapf(err, "failed to stat path %q", params.Path)
+	}
+
+	if params.DryRun {
+		return deletePreview(params.Path, fi.IsDir(), safePath)
+	}
+
+	if err := confirm.RequireConfirmationCtx(ctx, "file_delete", false, params.Confirmed); err != nil {
+		return "", err
+	}
+
+	if err := TouchSession(ctx, t.cfg); err != nil {
+		return "", err
 	}
 
 	deletedType := "file"

@@ -12,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 )
 
 const repoPullDescription = `
@@ -35,12 +34,11 @@ It returns the local path, branch, previous HEAD commit, and new HEAD commit
 
 // RepoPullParams defines the parameters for pulling updates into a cloned GitHub repository.
 type RepoPullParams struct {
-	Instance  string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner     string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
-	Repo      string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
-	Branch    string `json:"branch,omitempty" jsonschema:"(optional) Branch to update. Defaults to the currently checked-out branch."`
-	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the pull without making changes."`
-	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
+	Instance string `json:"instance" validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner    string `json:"owner" validate:"required" jsonschema:"(required) Repository owner."`
+	Repo     string `json:"repo" validate:"required" jsonschema:"(required) Repository name."`
+	Branch   string `json:"branch,omitempty" jsonschema:"(optional) Branch to update. Defaults to the currently checked-out branch."`
+	DryRun   bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the pull without making changes."`
 }
 
 // RepoPullTool is an eino tool for updating an already-cloned GitHub repository
@@ -56,14 +54,13 @@ func (t *RepoPullTool) Invoke(ctx context.Context, params *RepoPullParams) (stri
 		return "", err
 	}
 
-	targetPath := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	targetPath, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
+	if err != nil {
+		return "", err
+	}
 
 	if params.DryRun {
 		return t.dryRun(ctx, params, targetPath)
-	}
-
-	if err := confirm.RequireConfirmationForAction("pull", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	tok, err := t.token(params.Instance)
@@ -132,6 +129,10 @@ func (t *RepoPullTool) Invoke(ctx context.Context, params *RepoPullParams) (stri
 		return "", errors.Wrap(err, "failed to get HEAD after pull")
 	}
 	afterHash := after.Hash()
+
+	if err := t.touchCloneSession(ctx); err != nil {
+		return "", err
+	}
 
 	return fmt.Sprintf(
 		`{"pulled": true, "alreadyUpToDate": %t, "path": %q, "branch": %q, "previousHead": %q, "headCommit": %q}`,

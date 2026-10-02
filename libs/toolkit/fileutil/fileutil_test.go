@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateRelativePath(t *testing.T) {
@@ -335,7 +336,7 @@ func TestCopyDir(t *testing.T) {
 			src := setup(t, tt.withDotGit)
 			dst := filepath.Join(t.TempDir(), "dst")
 
-			fileCount, totalBytes, err := CopyDir(src, dst, tt.skipDotGit)
+			fileCount, totalBytes, err := CopyDir(src, dst, tt.skipDotGit, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -365,11 +366,177 @@ func TestCopyDir(t *testing.T) {
 	}
 
 	t.Run("missing source errors", func(t *testing.T) {
-		_, _, err := CopyDir(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "dst"), false)
+		_, _, err := CopyDir(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "dst"), false, 0)
 		if err == nil {
 			t.Fatal("expected error for missing source, got nil")
 		}
 	})
+}
+
+func TestCopyDirMaxBytes(t *testing.T) {
+	setup := func(t *testing.T) (src string) {
+		t.Helper()
+		src = t.TempDir()
+		if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("aaaa"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(src, "b.txt"), []byte("bbbb"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return src
+	}
+
+	t.Run("fresh destination is removed on limit exceeded", func(t *testing.T) {
+		src := setup(t)
+		dst := filepath.Join(t.TempDir(), "dst")
+
+		_, _, err := CopyDir(src, dst, false, 5)
+		if err == nil || !strings.Contains(err.Error(), "exceeds the maximum") {
+			t.Fatalf("expected size-limit error, got %v", err)
+		}
+		if _, statErr := os.Lstat(dst); !os.IsNotExist(statErr) {
+			t.Fatalf("fresh partial destination must be removed, got err=%v", statErr)
+		}
+	})
+
+	t.Run("pre-existing destination survives on limit exceeded", func(t *testing.T) {
+		src := setup(t)
+		dst := t.TempDir()
+		keep := filepath.Join(dst, "keep.txt")
+		if err := os.WriteFile(keep, []byte("keep"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _, err := CopyDir(src, dst, false, 5)
+		if err == nil || !strings.Contains(err.Error(), "exceeds the maximum") {
+			t.Fatalf("expected size-limit error, got %v", err)
+		}
+		if _, statErr := os.Stat(keep); statErr != nil {
+			t.Fatalf("pre-existing destination content must survive, got %v", statErr)
+		}
+	})
+}
+
+func TestCopyDirUnlimited(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("aaaa"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "dst")
+
+	for _, maxBytes := range []int64{0, -1} {
+		_ = os.RemoveAll(dst)
+		fileCount, totalBytes, err := CopyDir(src, dst, false, maxBytes)
+		if err != nil {
+			t.Fatalf("maxBytes=%d: unexpected error: %v", maxBytes, err)
+		}
+		if fileCount != 1 || totalBytes != 4 {
+			t.Fatalf("maxBytes=%d: got count=%d bytes=%d, want 1/4", maxBytes, fileCount, totalBytes)
+		}
+	}
+}
+
+func TestSessionDirName(t *testing.T) {
+	// Distinct session ids that SanitizePathSegment would collapse to the same
+	// value must not collide.
+	a := SessionDirName("ab\x1fc")
+	b := SessionDirName("a\x1fbc")
+	c := SessionDirName("abc")
+	if a == b || a == c || b == c {
+		t.Fatalf("distinct session ids must hash to distinct segments: a=%q b=%q c=%q", a, b, c)
+	}
+	// Determinism and fixed length.
+	if got := SessionDirName("abc"); got != c {
+		t.Fatalf("SessionDirName is not deterministic: %q != %q", got, c)
+	}
+	if len(c) != 16 {
+		t.Fatalf("SessionDirName length = %d, want 16", len(c))
+	}
+	// Empty and control-only inputs are stable and do not panic.
+	empty := SessionDirName("")
+	if len(empty) != 16 || empty != SessionDirName("") {
+		t.Fatalf("SessionDirName(\"\") must be a stable 16-char segment, got %q", empty)
+	}
+}
+
+func TestTouchDir(t *testing.T) {
+	t.Run("updates mtime", func(t *testing.T) {
+		dir := t.TempDir()
+		old := time.Now().Add(-2 * time.Hour)
+		if err := os.Chtimes(dir, old, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := TouchDir(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fi, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.ModTime().After(old.Add(time.Minute)) {
+			t.Fatalf("mtime was not refreshed: %v", fi.ModTime())
+		}
+	})
+
+	t.Run("no-op on missing dir", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "missing")
+		if err := TouchDir(dir); err != nil {
+			t.Fatalf("expected no error for missing dir, got %v", err)
+		}
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("TouchDir must not create the directory, got %v", err)
+		}
+	})
+}
+
+func TestSweepStaleDirs(t *testing.T) {
+	root := t.TempDir()
+
+	oldDir := filepath.Join(root, "old-session")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldDir, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	freshDir := filepath.Join(root, "fresh-session")
+	if err := os.MkdirAll(freshDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Regular files and symlinks directly in root are ignored.
+	file := filepath.Join(root, "not-a-session.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(file, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link-session")
+	if err := os.Symlink(freshDir, link); err != nil {
+		t.Fatal(err)
+	}
+
+	SweepStaleDirs(root, time.Hour)
+
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatalf("stale directory must be removed, got %v", err)
+	}
+	if _, err := os.Stat(freshDir); err != nil {
+		t.Fatalf("fresh directory must remain, got %v", err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("regular file must remain, got %v", err)
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("symlink must remain, got %v", err)
+	}
+
+	// ttl <= 0 is a no-op; missing root is a no-op.
+	SweepStaleDirs(root, 0)
+	SweepStaleDirs(filepath.Join(root, "does-not-exist"), time.Hour)
 }
 
 func TestWalkDirFiles(t *testing.T) {

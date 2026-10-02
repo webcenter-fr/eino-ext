@@ -2,17 +2,37 @@ package file
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
-// StartGC starts a background goroutine that periodically scans the Workdir
-// for session subdirectories and removes those whose modification time is
-// older than cfg.SessionTTL. As long as a session is actively used, its
-// directory modtime stays fresh (every tool invocation creates files or
-// directories inside it), so the modtime check is what protects the active
-// session. Set SessionTTL generously (e.g. 1 hour) to avoid races.
+// SessionDir returns the session directory <Workdir>/<session> for the session
+// carried in ctx. With cfg.RequireSession set and no session present it returns
+// an error (fail closed); otherwise it falls back to the "session" segment.
+func SessionDir(ctx context.Context, cfg *Config) (string, error) {
+	return sessionDir(cfg, ctx)
+}
+
+// TouchSession updates the session directory's mtime so the GC (StartGC) keeps
+// it. It is a no-op when the session directory does not exist. Every tool
+// Invoke on the execute path calls this, and read.go calls it too so read-only
+// sessions stay alive.
+func TouchSession(ctx context.Context, cfg *Config) error {
+	dir, err := sessionDir(cfg, ctx)
+	if err != nil {
+		return err
+	}
+	return fileutil.TouchDir(dir)
+}
+
+// StartGC starts a background goroutine that, every interval, sweeps the
+// Workdir for session subdirectories whose mtime is older than SessionTTL and
+// removes them. Sessions are kept alive by TouchSession, which every tool
+// invocation calls on its session directory; a session that only writes to a
+// nested path, only overwrites an existing file, or only reads is still kept
+// fresh because the touch targets the session directory itself rather than
+// relying on indirect mtime updates.
 //
 // The goroutine runs every interval until ctx is cancelled. If cfg.SessionTTL
 // is zero or interval is not positive, StartGC returns immediately (no-op).
@@ -39,40 +59,8 @@ func StartGC(ctx context.Context, cfg *Config, interval time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				cleanStaleSessions(cfg)
+				fileutil.SweepStaleDirs(cfg.Workdir, cfg.SessionTTL)
 			}
 		}
 	}()
-}
-
-// cleanStaleSessions scans cfg.Workdir for session subdirectories and removes
-// those whose modification time is older than cfg.SessionTTL. Regular files in
-// Workdir are never removed. Read errors are silently ignored: the GC is
-// best-effort and must never crash the goroutine.
-func cleanStaleSessions(cfg *Config) {
-	entries, err := os.ReadDir(cfg.Workdir)
-	if err != nil {
-		// Workdir may not exist yet; that's fine.
-		return
-	}
-
-	cutoff := time.Now().Add(-cfg.SessionTTL)
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		fullPath := filepath.Join(cfg.Workdir, entry.Name())
-		fi, err := os.Stat(fullPath)
-		if err != nil {
-			continue
-		}
-
-		if fi.ModTime().After(cutoff) {
-			continue // still fresh
-		}
-
-		_ = os.RemoveAll(fullPath)
-	}
 }

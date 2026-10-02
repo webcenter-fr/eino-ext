@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 func TestStartGCNoopWhenTTLZero(t *testing.T) {
@@ -26,10 +28,9 @@ func TestStartGCNoopWhenIntervalNotPositive(t *testing.T) {
 	StartGC(ctx, &Config{Workdir: t.TempDir(), SessionTTL: time.Hour}, -time.Second)
 }
 
-func TestCleanStaleSessionsRemovesOldDirs(t *testing.T) {
+func TestStartGCRemovesStaleDirs(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a session directory with an old modtime.
 	oldSession := filepath.Join(dir, "old-session")
 	if err := os.MkdirAll(oldSession, 0o755); err != nil {
 		t.Fatal(err)
@@ -39,62 +40,52 @@ func TestCleanStaleSessionsRemovesOldDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a session directory with a recent modtime.
 	recentSession := filepath.Join(dir, "recent-session")
 	if err := os.MkdirAll(recentSession, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg := &Config{Workdir: dir, SessionTTL: 1 * time.Hour}
-	cleanStaleSessions(cfg)
+	// A single sweep via the shared helper is deterministic (no ticker wait).
+	fileutil.SweepStaleDirs(dir, time.Hour)
 
-	// Old session should be removed.
 	if _, err := os.Stat(oldSession); !os.IsNotExist(err) {
 		t.Errorf("expected old session to be removed, but it still exists")
 	}
-
-	// Recent session should still exist.
 	if _, err := os.Stat(recentSession); err != nil {
 		t.Errorf("expected recent session to still exist, got error: %v", err)
 	}
 }
 
-func TestCleanStaleSessionsIgnoresFiles(t *testing.T) {
+func TestStartGCIgnoresFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a regular file in Workdir (not a session directory).
 	f, err := os.Create(filepath.Join(dir, "not-a-session.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = f.Close()
 
-	// Set its modtime to be old.
 	oldTime := time.Now().Add(-2 * time.Hour)
 	if err := os.Chtimes(f.Name(), oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg := &Config{Workdir: dir, SessionTTL: 1 * time.Hour}
-	cleanStaleSessions(cfg)
+	fileutil.SweepStaleDirs(dir, time.Hour)
 
-	// File should still exist (GC only removes directories).
 	if _, err := os.Stat(f.Name()); err != nil {
 		t.Errorf("expected file to still exist, got error: %v", err)
 	}
 }
 
-func TestCleanStaleSessionsEmptyWorkdir(t *testing.T) {
+func TestStartGCEmptyWorkdir(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &Config{Workdir: dir, SessionTTL: 1 * time.Hour}
 	// Should not panic.
-	cleanStaleSessions(cfg)
+	fileutil.SweepStaleDirs(dir, time.Hour)
 }
 
-func TestCleanStaleSessionsNonexistentWorkdir(t *testing.T) {
-	cfg := &Config{Workdir: "/nonexistent/path/for/testing", SessionTTL: 1 * time.Hour}
+func TestStartGCNonexistentWorkdir(t *testing.T) {
 	// Should not panic.
-	cleanStaleSessions(cfg)
+	fileutil.SweepStaleDirs("/nonexistent/path/for/testing", time.Hour)
 }
 
 func TestStartGCStopsOnContextCancel(t *testing.T) {
@@ -114,4 +105,79 @@ func TestStartGCStopsOnContextCancel(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// If we reach here without timeout, the goroutine stopped cleanly.
+}
+
+func TestTouchSessionKeepsNestedWriteAlive(t *testing.T) {
+	workdir := t.TempDir()
+	cfg := &Config{Workdir: workdir, SessionTTL: time.Hour}
+
+	sessionDir := mustCreateSessionDir(t, workdir)
+	// Pre-existing nested path: overwriting it would not update the session
+	// directory mtime on its own, which is exactly the bug item 2 fixes.
+	if err := os.MkdirAll(filepath.Join(sessionDir, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "a", "b", "c.txt"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(sessionDir, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := TouchSession(context.Background(), cfg); err != nil {
+		t.Fatalf("TouchSession: %v", err)
+	}
+
+	// Control: a sibling session directory with an old mtime is removed.
+	staleSibling := filepath.Join(workdir, "stale-sibling")
+	if err := os.MkdirAll(staleSibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(staleSibling, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	fileutil.SweepStaleDirs(workdir, time.Hour)
+
+	if _, err := os.Stat(sessionDir); err != nil {
+		t.Fatalf("touched session directory must survive GC, got %v", err)
+	}
+	if _, err := os.Stat(staleSibling); !os.IsNotExist(err) {
+		t.Fatalf("stale sibling must be removed, got %v", err)
+	}
+}
+
+func TestTouchSessionNoopWhenMissing(t *testing.T) {
+	workdir := t.TempDir()
+	cfg := &Config{Workdir: workdir}
+
+	if err := TouchSession(context.Background(), cfg); err != nil {
+		t.Fatalf("expected no error for missing session dir, got %v", err)
+	}
+	if _, err := os.Stat(testSessionDir(workdir)); !os.IsNotExist(err) {
+		t.Fatalf("TouchSession must not create the session directory, got %v", err)
+	}
+}
+
+func TestSessionDirRequireSessionFailsClosed(t *testing.T) {
+	cfg := &Config{Workdir: t.TempDir(), RequireSession: true}
+
+	if _, err := SessionDir(context.Background(), cfg); err == nil {
+		t.Fatal("expected an error when RequireSession is set and no session is present")
+	}
+	if _, err := sessionDir(cfg, context.Background()); err == nil {
+		t.Fatal("expected sessionDir to fail closed")
+	}
+
+	// With RequireSession off, the empty session falls back to "session".
+	cfg.RequireSession = false
+	dir, err := SessionDir(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dir != testSessionDir(cfg.Workdir) {
+		t.Fatalf("SessionDir = %q, want %q", dir, testSessionDir(cfg.Workdir))
+	}
 }

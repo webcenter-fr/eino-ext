@@ -9,11 +9,14 @@ package fileutil
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/adk"
@@ -69,6 +72,16 @@ func SanitizePathSegment(s string, fallback string) string {
 		s = fallback
 	}
 	return s
+}
+
+// SessionDirName returns a fixed-length, filesystem-safe directory segment for a
+// session id: the first 16 hex characters of its SHA-256 digest. Hashing (rather
+// than sanitising) guarantees distinct session ids never collide, unlike
+// SanitizePathSegment which drops control characters and separators (so
+// "ab\x1fc" and "a\x1fbc" would otherwise both sanitise to "abc").
+func SessionDirName(id string) string {
+	h := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(h[:])[:16]
 }
 
 // ValidateRelativePath resolves a relative path under root and returns the
@@ -285,7 +298,18 @@ func CopyFileContents(src, dst string) error {
 // root) into the destination (CWE-59). When skipDotGit is true, directories
 // named .git are skipped as well. Returns the number of files copied and the
 // total bytes written.
-func CopyDir(src, dst string, skipDotGit bool) (fileCount int, totalBytes int64, err error) {
+//
+// maxBytes caps the total bytes copied; maxBytes <= 0 means unlimited. When the
+// running total would exceed maxBytes, CopyDir aborts with an error and removes
+// the partial destination if it did not pre-exist. A destination that pre-existed
+// (merge semantics) is left in place and returned with the error, so pre-existing
+// files are never destroyed.
+func CopyDir(src, dst string, skipDotGit bool, maxBytes int64) (fileCount int, totalBytes int64, err error) {
+	// Record whether dst pre-existed so the limit-exceeded cleanup below never
+	// removes pre-existing content during a merge.
+	_, dstStatErr := os.Lstat(dst)
+	dstPreexisted := dstStatErr == nil
+
 	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -311,6 +335,14 @@ func CopyDir(src, dst string, skipDotGit bool) (fileCount int, totalBytes int64,
 			return nil
 		}
 
+		fi, infoErr := d.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		if maxBytes > 0 && totalBytes+fi.Size() > maxBytes {
+			return errors.Errorf("directory copy size %d bytes exceeds the maximum %d bytes", totalBytes+fi.Size(), maxBytes)
+		}
+
 		srcFile, openErr := os.Open(path)
 		if openErr != nil {
 			return openErr
@@ -334,7 +366,15 @@ func CopyDir(src, dst string, skipDotGit bool) (fileCount int, totalBytes int64,
 		fileCount++
 		return nil
 	})
-	return fileCount, totalBytes, err
+	if err != nil {
+		// Remove only a destination this call created; a pre-existing
+		// (merged) destination is left untouched.
+		if !dstPreexisted {
+			_ = os.RemoveAll(dst)
+		}
+		return fileCount, totalBytes, err
+	}
+	return fileCount, totalBytes, nil
 }
 
 // WalkDirFiles returns the relative paths (from root, slash-normalized) of all
@@ -370,6 +410,58 @@ func WalkDirFiles(root string, skipDotGit bool) ([]string, error) {
 		return nil
 	})
 	return files, err
+}
+
+// TouchDir updates the modification time of dir to now. It is a no-op when dir
+// does not exist, so callers may touch a lazily created session directory
+// without creating it. Other stat/chtimes failures are wrapped with
+// emperror.dev/errors.
+func TouchDir(dir string) error {
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return errors.Wrapf(err, "failed to stat directory %q", dir)
+	}
+	now := time.Now()
+	if err := os.Chtimes(dir, now, now); err != nil {
+		return errors.Wrapf(err, "failed to touch directory %q", dir)
+	}
+	return nil
+}
+
+// SweepStaleDirs removes the immediate subdirectories of root whose
+// modification time is older than ttl. Regular files and symlinks directly in
+// root are never removed, and a ttl <= 0 is a no-op. Read/stat errors are
+// silently ignored: the sweep is best-effort and must never crash the caller.
+func SweepStaleDirs(root string, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		// root may not exist yet; that's fine.
+		return
+	}
+
+	cutoff := time.Now().Add(-ttl)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		fullPath := filepath.Join(root, entry.Name())
+		fi, statErr := os.Lstat(fullPath)
+		if statErr != nil {
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if fi.ModTime().After(cutoff) {
+			continue // still fresh
+		}
+		_ = os.RemoveAll(fullPath)
+	}
 }
 
 // ApplyLineRange extracts the 1-indexed [startLine, endLine] range of lines
