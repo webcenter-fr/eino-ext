@@ -31,12 +31,24 @@ type Config struct {
 // Params defines the parameters for shell command execution.
 type Params struct {
 	Command           []string `json:"command" validate:"required,min=1" jsonschema:"(required) The command to execute as an array of strings"`
+	Stdin             string   `json:"stdin,omitempty" validate:"omitempty" jsonschema:"(optional) Text to pipe to the command's standard input (stdin)"`
 	Profile           string   `json:"profile,omitempty" validate:"omitempty" jsonschema:"(optional) Profile name to override default container image"`
 	DryRun            bool     `json:"dryRun,omitempty" jsonschema:"(optional) If true, preview the command without executing"`
 	Confirmed         bool     `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute"`
 	FilterPattern     string   `json:"filterPattern,omitempty" validate:"omitempty" jsonschema:"(optional) A Go RE2 regex applied on each output line. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'error|panic'. Invalid regex returns an error."`
 	Timeout           string   `json:"timeout,omitempty" validate:"omitempty" jsonschema:"(optional) Timeout duration string (e.g. '30s', '5m')"`
 	AllowLocalNetwork *bool    `json:"allowLocalNetwork,omitempty" jsonschema:"(optional) Override to allow local network access for this call"`
+}
+
+// RawExecParams is a trusted, gate-free shell execution request used by the
+// pipe tool (and future compositors). It applies the blocklist and resolves the
+// profile, but skips dry-run/confirmation/filter — the composing caller owns
+// those. It is NOT intended for direct end-user invocation.
+type RawExecParams struct {
+	Command []string      // required, non-empty
+	Profile string        // optional; "" means auto-detect
+	Stdin   string        // optional text piped to the command
+	Timeout time.Duration // <= 0 falls back to Config.DefaultTimeout / defaultExecTimeout
 }
 
 // Tool is an eino tool for executing shell commands.

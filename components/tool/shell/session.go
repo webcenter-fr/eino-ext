@@ -81,12 +81,13 @@ func (sm *sessionManager) getOrCreate(ctx context.Context, profileName, baseImag
 	return s, nil
 }
 
-func (sm *sessionManager) exec(ctx context.Context, ses *session, command []string) (string, string, int, error) {
+func (sm *sessionManager) exec(ctx context.Context, ses *session, command []string, stdin string) (string, string, int, error) {
 	ses.mu.Lock()
 	defer ses.mu.Unlock()
 
 	ses.container = ses.container.WithExec(command, dagger.ContainerWithExecOpts{
 		Expect: dagger.ReturnTypeAny,
+		Stdin:  stdin,
 	})
 
 	synced, err := ses.container.Sync(ctx)
