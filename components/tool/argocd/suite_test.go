@@ -41,20 +41,23 @@ func (t *ToolTestSuite) SetupSuite() {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			// Flat JSON — goargocdclient embeds ObjectMeta directly
+			// Nested metadata — matches the real ArgoCD REST wire format.
 			_, _ = w.Write([]byte(`{
 			"items": [
 					{
-						"name": "my-app",
-						"namespace": "argocd",
+						"metadata": {"name": "my-app", "namespace": "argocd"},
 						"spec": {"project": "default", "source": {"repoURL": "https://git.example.com/repo", "path": "overlays/prod"}},
 						"status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced", "revision": "abc123"}}
 					},
 					{
-						"name": "other-app",
-						"namespace": "argocd",
+						"metadata": {"name": "other-app", "namespace": "argocd"},
 						"spec": {"project": "production", "source": {"repoURL": "https://git.example.com/other"}},
 						"status": {"health": {"status": "Degraded"}, "sync": {"status": "OutOfSync"}}
+					},
+					{
+						"metadata": {"name": "kafka-hpd1", "namespace": "argocd"},
+						"spec": {"project": "data", "source": {"repoURL": "https://git.example.com/kafka"}},
+						"status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced", "revision": "def456"}}
 					}
 				]
 			}`))
@@ -62,7 +65,7 @@ func (t *ToolTestSuite) SetupSuite() {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
-				"name": "my-new-app",
+				"metadata": {"name": "my-new-app"},
 				"spec": {"project": "default"}
 			}`))
 		default:
@@ -77,8 +80,7 @@ func (t *ToolTestSuite) SetupSuite() {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
-				"name": "my-app",
-				"namespace": "argocd",
+				"metadata": {"name": "my-app", "namespace": "argocd"},
 				"spec": {"project": "default", "source": {"repoURL": "https://git.example.com/repo", "path": "overlays/prod"}},
 				"status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced", "revision": "abc123"}}
 			}`))
@@ -90,12 +92,23 @@ func (t *ToolTestSuite) SetupSuite() {
 		}
 	})
 
+	// Application get for the substring-filter regression fixture
+	mux.HandleFunc("/api/v1/applications/kafka-hpd1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"metadata": {"name": "kafka-hpd1", "namespace": "argocd"},
+			"spec": {"project": "data", "source": {"repoURL": "https://git.example.com/kafka"}},
+			"status": {"health": {"status": "Healthy"}, "sync": {"status": "Synced", "revision": "def456"}}
+		}`))
+	})
+
 	// Application sync
 	mux.HandleFunc("/api/v1/applications/my-app/sync", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
-			"name": "my-app",
+			"metadata": {"name": "my-app"},
 			"status": {"sync": {"status": "Synced"}}
 		}`))
 	})
@@ -113,8 +126,8 @@ func (t *ToolTestSuite) SetupSuite() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
 			"items": [
-				{"name": "default", "spec": {"description": "Default project"}},
-				{"name": "production", "spec": {"description": "Production project"}}
+				{"metadata": {"name": "default"}, "spec": {"description": "Default project"}},
+				{"metadata": {"name": "production"}, "spec": {"description": "Production project"}}
 			]
 		}`))
 	})
@@ -124,7 +137,7 @@ func (t *ToolTestSuite) SetupSuite() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
-			"name": "default",
+			"metadata": {"name": "default"},
 			"spec": {"description": "Default project", "sourceRepos": ["*"]}
 		}`))
 	})
