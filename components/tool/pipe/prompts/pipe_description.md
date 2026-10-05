@@ -5,7 +5,7 @@ It runs an ordered pipeline of steps in a single tool call, piping each step's s
 ** Steps **
 Each step sets exactly one of:
 - `shell`: `{ "command": ["grep", "error"] }` — runs the command in the isolated Dagger sandbox. The previous step's stdout is piped to the command's stdin.
-- `tool`: `{ "name": "my_reader", "args": { ... } }` — invokes a registered tool. If `args` is omitted, the previous step's stdout is passed verbatim as the tool's raw JSON arguments, so the previous step MUST emit valid JSON for that tool.
+- `tool`: `{ "name": "my_reader", "args": { ... } }` — invokes a registered tool. If `args` is omitted, the previous step's stdout is passed verbatim as the tool's raw JSON arguments, so the previous step MUST emit valid JSON for that tool. If there is no previous step (or it produced no output), an empty JSON object (`{}`) is passed.
 
 ** IMPORTANT RULES **
 - Steps run in order; the final step's output is the tool result.

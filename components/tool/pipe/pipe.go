@@ -78,7 +78,18 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 	sr, sw := schema.Pipe[string](100)
 	go func() {
 		defer sw.Close()
+		if result == "" {
+			// Never leave the stream empty: eino's compose fails to
+			// concatenate zero-chunk streams ("stream reader is empty,
+			// concat fail"), so emit a single empty chunk instead.
+			sw.Send("", nil)
+			return
+		}
 		scanner := bufio.NewScanner(strings.NewReader(result))
+		// The result is capped at MaxOutputBytes, so a scanner maximum of
+		// MaxOutputBytes+1 never truncates; the default 64KB token limit
+		// would silently drop the tail of long lines (e.g. `jq -c` output).
+		scanner.Buffer(make([]byte, 0, 64*1024), t.cfg.MaxOutputBytes+1)
 		for scanner.Scan() {
 			if closed := sw.Send(scanner.Text(), nil); closed {
 				return
@@ -212,6 +223,11 @@ func (t *Tool) runToolStep(ctx context.Context, step *ToolStep, stdin string) (s
 			return "", errors.Wrap(err, "failed to marshal tool args")
 		}
 		argsJSON = string(b)
+	} else if argsJSON == "" {
+		// No piped input (e.g. this is the first step) and no explicit args:
+		// pass an empty JSON object. InferTool-based tools unmarshal their
+		// arguments with sonic, which rejects the empty string.
+		argsJSON = "{}"
 	}
 
 	return tl.InvokableRun(ctx, argsJSON)

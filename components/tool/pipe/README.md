@@ -49,7 +49,9 @@ Each `Step` sets **exactly one** of `shell` or `tool`:
   sandbox. The previous step's stdout is piped to the command's stdin.
 - `tool`: `{ "name": "my_reader", "args": { ... } }` — invokes a tool from
   `Config.Tools`. If `args` is omitted, the previous step's stdout is passed
-  verbatim as the tool's raw JSON arguments.
+  verbatim as the tool's raw JSON arguments. When there is no previous step (or
+  it produced no output), an empty JSON object (`{}`) is passed instead, so
+  tools with all-optional arguments work without explicit `args`.
 
 ### JSON contract
 

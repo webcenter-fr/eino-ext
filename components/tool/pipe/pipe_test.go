@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -292,6 +293,48 @@ func TestPipeUnknownToolListsAvailable(t *testing.T) {
 	assert.Contains(t, err.Error(), "beta")
 }
 
+// innerParams is the argument type of the real InferTool tool used below.
+type innerParams struct {
+	Value string `json:"value"`
+}
+
+func TestPipeToolStepWithoutArgs(t *testing.T) {
+	t.Run("first step without args receives an empty JSON object", func(t *testing.T) {
+		var gotArgs string
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"echo": &fakeTool{fn: func(_ context.Context, args string) (string, error) {
+				gotArgs = args
+				return args, nil
+			}},
+		}, nil)
+
+		out, err := pipeTool.Invoke(authorizedCtx(), &Params{
+			Confirmed: true,
+			Steps:     []Step{{Tool: &ToolStep{Name: "echo"}}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "{}", gotArgs)
+		assert.Equal(t, "{}", out)
+	})
+
+	t.Run("real InferTool tool accepts the synthesized args", func(t *testing.T) {
+		// eino's InferTool unmarshals arguments with sonic, which rejects the
+		// empty string; this proves the synthesized "{}" actually unmarshals.
+		inner, err := utils.InferTool("inner", "inner", func(_ context.Context, p *innerParams) (string, error) {
+			return "value=" + p.Value, nil
+		})
+		require.NoError(t, err)
+
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{"inner": inner}, nil)
+		out, err := pipeTool.Invoke(authorizedCtx(), &Params{
+			Confirmed: true,
+			Steps:     []Step{{Tool: &ToolStep{Name: "inner"}}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "value=", out)
+	})
+}
+
 func TestPipeInvokeConfirmation(t *testing.T) {
 	f := &fakeShell{}
 	pipeTool := newTestTool(f, nil, nil)
@@ -369,6 +412,59 @@ func TestPipeInvokeAsStreamDryRun(t *testing.T) {
 	}
 	assert.Contains(t, out.String(), `"dryRun": true`)
 	assert.Zero(t, f.callCount())
+}
+
+func TestPipeInvokeAsStreamLongLine(t *testing.T) {
+	// 128KB exceeds bufio.Scanner's default 64KB token limit: the stream must
+	// not silently truncate it.
+	long := strings.Repeat("x", 128*1024)
+	f := &fakeShell{fn: func(shell.RawExecParams) fakeResult {
+		return fakeResult{stdout: long}
+	}}
+	pipeTool := newTestTool(f, nil, nil)
+
+	sr, err := pipeTool.InvokeAsStream(authorizedCtx(), &Params{
+		Confirmed: true,
+		Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
+	})
+	require.NoError(t, err)
+	defer sr.Close()
+
+	var out strings.Builder
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr != nil {
+			break
+		}
+		out.WriteString(chunk)
+	}
+	assert.Equal(t, long, out.String())
+}
+
+func TestPipeInvokeAsStreamEmptyResult(t *testing.T) {
+	f := &fakeShell{fn: func(shell.RawExecParams) fakeResult {
+		return fakeResult{stdout: ""}
+	}}
+	pipeTool := newTestTool(f, nil, nil)
+
+	sr, err := pipeTool.InvokeAsStream(authorizedCtx(), &Params{
+		Confirmed: true,
+		Steps:     []Step{{Shell: &ShellStep{Command: []string{"true"}}}},
+	})
+	require.NoError(t, err)
+	defer sr.Close()
+
+	var chunks []string
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr != nil {
+			break
+		}
+		chunks = append(chunks, chunk)
+	}
+	// Exactly one (empty) chunk: eino's compose fails to concatenate
+	// zero-chunk streams ("stream reader is empty, concat fail").
+	assert.Equal(t, []string{""}, chunks)
 }
 
 func TestPipeClose(t *testing.T) {
