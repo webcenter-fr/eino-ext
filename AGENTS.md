@@ -1,6 +1,13 @@
 # Rules
 
 - Always follow the CONTRIBUTING.md
+- Run tests with `make test`, never bare `go test ./...`: the Kubernetes suite
+  needs the kubebuilder binaries (etcd + kube-apiserver) downloaded by
+  `make envtest` into `./bin` and exported via `KUBEBUILDER_ASSETS`. A bare
+  `go test` fails with `fork/exec /usr/local/kubebuilder/bin/etcd: no such
+  file or directory`.
+- Use `make lint` (golangci-lint) and `bash scripts/check_components.sh` for
+  the other gates, as the CI does.
 
 ## Code Quality Standards
 

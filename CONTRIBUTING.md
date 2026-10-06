@@ -202,7 +202,20 @@ Before opening a pull request:
 ```bash
 go build ./...
 go vet ./...
-go test ./...
+make test
+```
+
+**Always run `make test`, not bare `go test ./...`.** The Kubernetes tool
+suite (`components/tool/kubernetes`) spins up a real local control plane
+(`kube-apiserver` + `etcd`) through controller-runtime's `envtest`, which needs
+the kubebuilder binaries. `make test` downloads them automatically on first run
+(`make envtest` → `setup-envtest` under `./bin`) and exports
+`KUBEBUILDER_ASSETS`. Without that, `TestToolSuite` fails at setup with
+`fork/exec /usr/local/kubebuilder/bin/etcd: no such file or directory`. If you
+already have the assets, you can point at them directly:
+
+```bash
+KUBEBUILDER_ASSETS="$(setup-envtest use -p path latest)" go test ./components/tool/kubernetes/...
 ```
 
 ## Component Design Principles
@@ -343,7 +356,9 @@ configs := builder.Build()
 
 ## Checklist before PR
 
-- [ ] `go build ./...`, `go vet ./...`, `go test ./...` pass.
+- [ ] `go build ./...`, `go vet ./...`, `make test` (not bare `go test`; see
+      the Validation section — the Kubernetes suite needs the kubebuilder
+      assets) pass.
 - [ ] Every new `Config` has `validate`+`jsonschema` tags AND its `New...`
       calls `validate.Struct(cfg)` after defaults.
 - [ ] Every new component has: table-driven test, README, package comment,

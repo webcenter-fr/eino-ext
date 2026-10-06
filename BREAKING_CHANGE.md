@@ -1,5 +1,23 @@
 # Breaking Changes
 
+## tool/shell and tool/pipe: no confirmation, not write tools anymore
+
+`shell_exec` and `pipe_exec` are no longer gated by the safety middleware:
+their `WriteToolNames()` now returns an empty list and both tools execute
+directly without user confirmation, because they run in the isolated Dagger
+sandbox and never mutate production systems directly.
+
+- Both parameter structs lose the `Confirmed` field; calls that passed
+  `confirmed:true` should drop it. The `dryRun=true` preview is still available.
+- `WriteToolNames()` now returns an empty list for both packages.
+  `profilesupervisor` and `NewAllToolsWithSafety` auto-population rely on it,
+  so shell sub-agents are no longer gated either.
+- The command blocklist is still enforced on every execution, and write tools
+  used as `pipe` tool steps still fail closed by default. Opt in to a per-step
+  gate via `pipe.Config.WriteToolNames` + `pipe.Config.ExecutionAuthorizer`
+  (mirrors the safety middleware's dry-run/confirmed + host-authorization flow);
+  `NewAllToolsWithSafety` forwards the middleware's authorizer to the pipe.
+
 ## tool/file: write tools now require host authorization to execute
 
 The four file write tools (`file_write`, `file_delete`, `file_copy`,

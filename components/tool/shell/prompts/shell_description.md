@@ -9,7 +9,7 @@ The optional `stdin` parameter pipes text to the command's standard input (e.g. 
 ** IMPORTANT RULES **
 - Use this tool to run commands in a sandboxed environment — never touch the host filesystem.
 - Commands matching a known destructive pattern (e.g., 'rm', 'kill', 'shutdown') are automatically blocked.
-- This is a WRITE tool: you must call it with dryRun=true first to preview the command, then re-call with confirmed=true after user approval.
+- This tool executes directly inside the sandbox — no user confirmation is required. You can set dryRun=true to preview a command without executing it.
 - Each session maintains a persistent container across multiple commands — you can install tools once and reuse them in subsequent commands.
 
 ** Security **

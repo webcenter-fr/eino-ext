@@ -27,7 +27,8 @@
 // Security:
 //   - Command blocklist prevents destructive commands (rm, kill, etc.).
 //   - Egress network policy restricts outbound traffic.
-//   - Safety middleware gates all executions behind dry-run/confirmed flow.
+//   - No confirmation gate: commands execute directly in the disposable sandbox
+//     (shell_exec is not a write tool). dryRun=true still returns a preview.
 //
 // Parameters:
 //   - Command: the command to execute as an array of strings.

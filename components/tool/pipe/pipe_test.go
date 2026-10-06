@@ -2,6 +2,7 @@ package pipe
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -70,11 +71,7 @@ func newTestTool(s shellExecutor, tools map[string]tool.InvokableTool, cfg *Conf
 	if cfg.MaxOutputBytes <= 0 {
 		cfg.MaxOutputBytes = defaultMaxOutputBytes
 	}
-	return &Tool{shell: s, tools: tools, cfg: cfg}
-}
-
-func authorizedCtx() context.Context {
-	return toolkitsafety.WithExecutionAuthorized(context.Background(), "pipe_exec")
+	return &Tool{shell: s, tools: tools, writeTools: makeWriteToolsMap(cfg.WriteToolNames), cfg: cfg}
 }
 
 func TestPipeInvoke(t *testing.T) {
@@ -96,7 +93,7 @@ func TestPipeInvoke(t *testing.T) {
 				}},
 			},
 			params: &Params{
-				Confirmed: true,
+
 				Steps: []Step{
 					{Tool: &ToolStep{Name: "echo", Args: map[string]any{"x": 1}}},
 					{Shell: &ShellStep{Command: []string{"cat"}}},
@@ -119,7 +116,7 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: `{"x":1}`}
 			},
 			params: &Params{
-				Confirmed: true,
+
 				Steps: []Step{
 					{Shell: &ShellStep{Command: []string{"emit-json"}}},
 					{Tool: &ToolStep{Name: "echo"}},
@@ -138,7 +135,7 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: "previous"}
 			},
 			params: &Params{
-				Confirmed: true,
+
 				Steps: []Step{
 					{Shell: &ShellStep{Command: []string{"emit"}}},
 					{Tool: &ToolStep{Name: "echo", Args: map[string]any{"a": "b"}}},
@@ -152,20 +149,20 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: "single"}
 			},
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo", "single"}}}},
+
+				Steps: []Step{{Shell: &ShellStep{Command: []string{"echo", "single"}}}},
 			},
 			wantOut: "single",
 		},
 		{
 			name:    "empty steps fails validation",
-			params:  &Params{Confirmed: true},
+			params:  &Params{},
 			wantErr: "steps",
 		},
 		{
 			name: "both shell and tool set fails",
 			params: &Params{
-				Confirmed: true,
+
 				Steps: []Step{{
 					Shell: &ShellStep{Command: []string{"echo"}},
 					Tool:  &ToolStep{Name: "x"},
@@ -176,8 +173,8 @@ func TestPipeInvoke(t *testing.T) {
 		{
 			name: "neither shell nor tool set fails",
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{}},
+
+				Steps: []Step{{}},
 			},
 			wantErr: "exactly one",
 		},
@@ -187,8 +184,8 @@ func TestPipeInvoke(t *testing.T) {
 				"known": &fakeTool{fn: func(context.Context, string) (string, error) { return "", nil }},
 			},
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{Tool: &ToolStep{Name: "nope"}}},
+
+				Steps: []Step{{Tool: &ToolStep{Name: "nope"}}},
 			},
 			wantErr: "not found",
 		},
@@ -198,8 +195,8 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: "partial", stderr: "boom", code: 1}
 			},
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{Shell: &ShellStep{Command: []string{"false"}}}},
+
+				Steps: []Step{{Shell: &ShellStep{Command: []string{"false"}}}},
 			},
 			wantErr: "exited with code 1",
 		},
@@ -211,8 +208,8 @@ func TestPipeInvoke(t *testing.T) {
 				}},
 			},
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{Tool: &ToolStep{Name: "bad", Args: map[string]any{}}}},
+
+				Steps: []Step{{Tool: &ToolStep{Name: "bad", Args: map[string]any{}}}},
 			},
 			wantErr: "step 0",
 		},
@@ -223,8 +220,8 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: "toolong"}
 			},
 			params: &Params{
-				Confirmed: true,
-				Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
+
+				Steps: []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
 			},
 			wantErr: "MaxOutputBytes",
 		},
@@ -248,9 +245,9 @@ func TestPipeInvoke(t *testing.T) {
 				return fakeResult{stdout: "ok"}
 			},
 			params: &Params{
-				Confirmed: true,
-				Timeout:   "not-a-duration",
-				Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
+
+				Timeout: "not-a-duration",
+				Steps:   []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
 			},
 			wantOut: "ok",
 		},
@@ -261,7 +258,7 @@ func TestPipeInvoke(t *testing.T) {
 			f := &fakeShell{fn: tt.shellFn}
 			pipeTool := newTestTool(f, tt.tools, tt.cfg)
 
-			out, err := pipeTool.Invoke(authorizedCtx(), tt.params)
+			out, err := pipeTool.Invoke(context.Background(), tt.params)
 
 			if tt.wantErr != "" {
 				require.Error(t, err)
@@ -283,9 +280,9 @@ func TestPipeUnknownToolListsAvailable(t *testing.T) {
 		"beta":  &fakeTool{fn: func(context.Context, string) (string, error) { return "", nil }},
 	}, nil)
 
-	_, err := pipeTool.Invoke(authorizedCtx(), &Params{
-		Confirmed: true,
-		Steps:     []Step{{Tool: &ToolStep{Name: "missing"}}},
+	_, err := pipeTool.Invoke(context.Background(), &Params{
+
+		Steps: []Step{{Tool: &ToolStep{Name: "missing"}}},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
@@ -308,9 +305,9 @@ func TestPipeToolStepWithoutArgs(t *testing.T) {
 			}},
 		}, nil)
 
-		out, err := pipeTool.Invoke(authorizedCtx(), &Params{
-			Confirmed: true,
-			Steps:     []Step{{Tool: &ToolStep{Name: "echo"}}},
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+
+			Steps: []Step{{Tool: &ToolStep{Name: "echo"}}},
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "{}", gotArgs)
@@ -326,44 +323,12 @@ func TestPipeToolStepWithoutArgs(t *testing.T) {
 		require.NoError(t, err)
 
 		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{"inner": inner}, nil)
-		out, err := pipeTool.Invoke(authorizedCtx(), &Params{
-			Confirmed: true,
-			Steps:     []Step{{Tool: &ToolStep{Name: "inner"}}},
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+
+			Steps: []Step{{Tool: &ToolStep{Name: "inner"}}},
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "value=", out)
-	})
-}
-
-func TestPipeInvokeConfirmation(t *testing.T) {
-	f := &fakeShell{}
-	pipeTool := newTestTool(f, nil, nil)
-	params := &Params{
-		Steps: []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
-	}
-
-	t.Run("not confirmed fails", func(t *testing.T) {
-		_, err := pipeTool.Invoke(context.Background(), params)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "confirmed must be true")
-		assert.Zero(t, f.callCount())
-	})
-
-	t.Run("confirmed without authorization fails closed", func(t *testing.T) {
-		p := *params
-		p.Confirmed = true
-		_, err := pipeTool.Invoke(context.Background(), &p)
-		require.ErrorIs(t, err, toolkitsafety.ErrExecutionNotAuthorized)
-		assert.Zero(t, f.callCount())
-	})
-
-	t.Run("confirmed with authorization runs", func(t *testing.T) {
-		p := *params
-		p.Confirmed = true
-		out, err := pipeTool.Invoke(authorizedCtx(), &p)
-		require.NoError(t, err)
-		assert.Equal(t, "", out)
-		assert.Equal(t, 1, f.callCount())
 	})
 }
 
@@ -373,9 +338,9 @@ func TestPipeInvokeAsStream(t *testing.T) {
 	}}
 	pipeTool := newTestTool(f, nil, nil)
 
-	sr, err := pipeTool.InvokeAsStream(authorizedCtx(), &Params{
-		Confirmed: true,
-		Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
+	sr, err := pipeTool.InvokeAsStream(context.Background(), &Params{
+
+		Steps: []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
 	})
 	require.NoError(t, err)
 	defer sr.Close()
@@ -423,9 +388,9 @@ func TestPipeInvokeAsStreamLongLine(t *testing.T) {
 	}}
 	pipeTool := newTestTool(f, nil, nil)
 
-	sr, err := pipeTool.InvokeAsStream(authorizedCtx(), &Params{
-		Confirmed: true,
-		Steps:     []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
+	sr, err := pipeTool.InvokeAsStream(context.Background(), &Params{
+
+		Steps: []Step{{Shell: &ShellStep{Command: []string{"echo"}}}},
 	})
 	require.NoError(t, err)
 	defer sr.Close()
@@ -447,9 +412,9 @@ func TestPipeInvokeAsStreamEmptyResult(t *testing.T) {
 	}}
 	pipeTool := newTestTool(f, nil, nil)
 
-	sr, err := pipeTool.InvokeAsStream(authorizedCtx(), &Params{
-		Confirmed: true,
-		Steps:     []Step{{Shell: &ShellStep{Command: []string{"true"}}}},
+	sr, err := pipeTool.InvokeAsStream(context.Background(), &Params{
+
+		Steps: []Step{{Shell: &ShellStep{Command: []string{"true"}}}},
 	})
 	require.NoError(t, err)
 	defer sr.Close()
@@ -493,6 +458,150 @@ func (c *closableShell) Close() error {
 
 func TestWriteToolNames(t *testing.T) {
 	names := WriteToolNames()
-	require.Len(t, names, 1)
-	assert.Equal(t, "pipe_exec", names[0])
+	assert.Empty(t, names)
+}
+
+// fakeAuthorizer approves the listed tool names and denies everything else,
+// recording the names it was consulted for.
+type fakeAuthorizer struct {
+	approve map[string]bool
+	denyErr error
+	calls   []string
+}
+
+func (f *fakeAuthorizer) AuthorizeExecute(_ context.Context, toolName string, _ json.RawMessage) error {
+	f.calls = append(f.calls, toolName)
+	if f.denyErr != nil {
+		return f.denyErr
+	}
+	if f.approve[toolName] {
+		return nil
+	}
+	return assert.AnError
+}
+
+func TestPipeWriteToolStepGate(t *testing.T) {
+	gatedCfg := func(auth toolkitsafety.ExecutionAuthorizer) *Config {
+		return &Config{
+			DefaultTimeout:      defaultPipeTimeout,
+			MaxOutputBytes:      defaultMaxOutputBytes,
+			WriteToolNames:      []string{"kw"},
+			ExecutionAuthorizer: auth,
+		}
+	}
+
+	t.Run("unlisted write tool fails closed via its own authorization", func(t *testing.T) {
+		// No WriteToolNames/authorizer: the pipe passes the args through and
+		// the inner tool's own confirmation layer finds no scope grant.
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(ctx context.Context, args string) (string, error) {
+				if !toolkitsafety.ExecutionAuthorizedFor(ctx, "kw") {
+					return "", toolkitsafety.ErrExecutionNotAuthorized
+				}
+				return "mutated", nil
+			}},
+		}, nil)
+
+		_, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"confirmed": true}}}},
+		})
+		require.ErrorIs(t, err, toolkitsafety.ErrExecutionNotAuthorized)
+	})
+
+	t.Run("dry-run write step runs preview and appends guidance", func(t *testing.T) {
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(_ context.Context, args string) (string, error) {
+				return "preview:" + args, nil
+			}},
+		}, gatedCfg(nil))
+
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"dryRun": true}}}},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, out, `"dryRun":true`)
+		assert.Contains(t, out, "DRY-RUN RESULT")
+	})
+
+	t.Run("confirmed without authorizer fails closed", func(t *testing.T) {
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(context.Context, string) (string, error) { return "", nil }},
+		}, gatedCfg(nil))
+
+		_, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"confirmed": true}}}},
+		})
+		require.ErrorIs(t, err, toolkitsafety.ErrExecutionNotAuthorized)
+	})
+
+	t.Run("neither dryRun nor confirmed requires the gate", func(t *testing.T) {
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(context.Context, string) (string, error) { return "", nil }},
+		}, gatedCfg(nil))
+
+		_, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{}}}},
+		})
+		require.ErrorIs(t, err, toolkitsafety.ErrGateRequired)
+	})
+
+	t.Run("confirmed with approving authorizer executes with authorization", func(t *testing.T) {
+		var innerAuthorized bool
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(ctx context.Context, args string) (string, error) {
+				innerAuthorized = toolkitsafety.ExecutionAuthorizedFor(ctx, "kw")
+				return "done:" + args, nil
+			}},
+		}, gatedCfg(&fakeAuthorizer{approve: map[string]bool{"kw": true}}))
+
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"confirmed": true}}}},
+		})
+		require.NoError(t, err)
+		assert.True(t, innerAuthorized)
+		assert.Contains(t, out, "done:")
+	})
+
+	t.Run("confirmed with denying authorizer fails", func(t *testing.T) {
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(context.Context, string) (string, error) { return "", nil }},
+		}, gatedCfg(&fakeAuthorizer{denyErr: assert.AnError}))
+
+		_, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"confirmed": true}}}},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not authorized")
+	})
+
+	t.Run("allow model confirmation skips the authorizer", func(t *testing.T) {
+		cfg := gatedCfg(nil)
+		cfg.AllowModelConfirmation = true
+		var innerAuthorized bool
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"kw": &fakeTool{fn: func(ctx context.Context, args string) (string, error) {
+				innerAuthorized = toolkitsafety.ExecutionAuthorizedFor(ctx, "kw")
+				return "ok", nil
+			}},
+		}, cfg)
+
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "kw", Args: map[string]any{"confirmed": true}}}},
+		})
+		require.NoError(t, err)
+		assert.True(t, innerAuthorized)
+		assert.Equal(t, "ok", out)
+	})
+
+	t.Run("non-listed tools run ungated", func(t *testing.T) {
+		pipeTool := newTestTool(&fakeShell{}, map[string]tool.InvokableTool{
+			"ro": &fakeTool{fn: func(context.Context, string) (string, error) { return "read", nil }},
+		}, gatedCfg(nil))
+
+		out, err := pipeTool.Invoke(context.Background(), &Params{
+			Steps: []Step{{Tool: &ToolStep{Name: "ro", Args: map[string]any{}}}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "read", out)
+	})
 }

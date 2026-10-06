@@ -38,7 +38,7 @@ func TestShellParamsValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "dry run without confirmed",
+			name:    "dry run preview",
 			params:  Params{Command: []string{"make"}, DryRun: true},
 			wantErr: false,
 		},
@@ -121,14 +121,12 @@ func TestConfigDefaults(t *testing.T) {
 
 func TestWriteToolNames(t *testing.T) {
 	names := WriteToolNames()
-	require.Len(t, names, 1)
-	assert.Equal(t, "shell_exec", names[0])
+	assert.Empty(t, names)
 }
 
-// TestDryRunNoMutation asserts the WriteToolNames contract: a dry-run invoke
-// returns a preview and performs no Dagger/session work (it returns before
-// profile resolution), so a zero-value Tool (nil blocklist, nil sessions) is
-// sufficient.
+// TestDryRunNoMutation asserts that a dry-run invoke returns a preview and
+// performs no Dagger/session work (it returns before profile resolution), so a
+// zero-value Tool (nil blocklist, nil sessions) is sufficient.
 func TestDryRunNoMutation(t *testing.T) {
 	tool := &Tool{}
 

@@ -27,10 +27,18 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 	}
 
 	results := shell.Check(ctx, cfg.Shell)
+	msg := fmt.Sprintf("%d tools registered", len(cfg.Tools))
+	if len(cfg.WriteToolNames) > 0 && cfg.ExecutionAuthorizer == nil && !cfg.AllowModelConfirmation {
+		results = append(results, checkup.Result{
+			Component: "pipe_exec",
+			Status:    checkup.StatusLimited,
+			Message:   "write tool steps gated without an ExecutionAuthorizer: they may only dry-run",
+		})
+	}
 	results = append(results, checkup.Result{
 		Component: "pipe_exec",
 		Status:    checkup.StatusOK,
-		Message:   fmt.Sprintf("%d tools registered", len(cfg.Tools)),
+		Message:   msg,
 	})
 	return results
 }
