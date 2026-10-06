@@ -10,7 +10,7 @@ import (
 
 func rawDescribeJSON(t *testing.T, u *unstructured.Unstructured, exclude []string) map[string]any {
 	t.Helper()
-	s, err := marshalRawDescribeOutput(u, exclude)
+	s, err := marshalRawDescribeOutput(u, exclude, nil)
 	require.NoError(t, err)
 	return mustUnmarshal(t, []byte(s))
 }
@@ -111,10 +111,37 @@ func TestMarshalRawDescribeOutput_InvalidExcludeField(t *testing.T) {
 		"metadata":   map[string]any{"name": "cm1"},
 	}}
 
-	_, err := marshalRawDescribeOutput(u, []string{"bogus"})
+	_, err := marshalRawDescribeOutput(u, []string{"bogus"}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bogus")
 	assert.Contains(t, err.Error(), "metadata, spec, status, data")
+}
+
+func TestMarshalRawDescribeOutput_Fields(t *testing.T) {
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "example.com/v1",
+		"kind":       "Widget",
+		"metadata":   map[string]any{"name": "w1"},
+		"spec":       map[string]any{"kafka": map[string]any{"storage": "10Gi", "replicas": float64(3)}},
+		"status":     map[string]any{"ready": true},
+	}}
+
+	s, err := marshalRawDescribeOutput(u, nil, []string{"spec.kafka.storage"})
+	require.NoError(t, err)
+	m := mustUnmarshal(t, []byte(s))
+
+	_, hasMetadata := m["metadata"]
+	assert.False(t, hasMetadata, "projection must drop unrequested fields")
+	_, hasStatus := m["status"]
+	assert.False(t, hasStatus, "projection must drop unrequested fields")
+
+	spec, ok := m["spec"].(map[string]any)
+	require.True(t, ok)
+	kafka, ok := spec["kafka"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "10Gi", kafka["storage"])
+	_, hasReplicas := kafka["replicas"]
+	assert.False(t, hasReplicas, "only the requested leaf must be kept")
 }
 
 func TestMarshalRawDescribeOutput_ClusterScopedNoSpec(t *testing.T) {

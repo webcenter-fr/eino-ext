@@ -179,6 +179,12 @@ func doConsolidatedDescribe() test.TestStep[*corev1.ConfigMap] {
 			assert.NoError(t, err)
 			assert.NotEmpty(t, cm)
 
+			// Project output to a single field
+			cm, err = describeTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "kind": "configmaps", "name": "%s", "namespace": "%s", "fields": ["data"]}`, expectedCm.Name, key.Namespace))
+			assert.NoError(t, err)
+			assert.Contains(t, cm, "data")
+			assert.NotContains(t, cm, "metadata")
+
 			// When cluster not exist, it should return error
 			_, err = describeTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "invalid-cluster", "kind": "configmaps", "name": "%s", "namespace": "%s"}`, expectedCm.Name, key.Namespace))
 			assert.Error(t, err)

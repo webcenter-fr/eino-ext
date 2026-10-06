@@ -125,7 +125,7 @@ func probeCluster(ctx context.Context, cfg *rest.Config, cluster string) checkup
 func probeKind(ctx context.Context, dc dynamic.Interface, mapper *cachedMapper, cluster, kind string) checkup.Results {
 	var results checkup.Results
 
-	resolved, err := mapper.Resolve(ctx, kind)
+	resolved, err := mapper.Resolve(ctx, kind, "")
 	if err != nil {
 		results = append(results, checkup.Result{
 			Component: "kubernetes_list",

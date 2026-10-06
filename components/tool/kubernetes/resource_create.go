@@ -41,17 +41,7 @@ func checkBlocklist(gvk schema.GroupVersionKind, gvr schema.GroupVersionResource
 }
 
 const resourceCreateDescription = `
-** General Purpose **
-It creates any Kubernetes resource from a JSON manifest using the dynamic client.
-Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
-The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
-
-** Safety **
-Always use dryRun=true first to validate the resource before creating.
-After reviewing the dry-run result, set confirmed=true to actually create the resource.
-
-** Output **
-It returns the created resource as a JSON object.
+Create a NEW resource from a full manifest.
 `
 
 // ResourceCreateParams defines the parameters for the ResourceCreate function.
@@ -92,16 +82,16 @@ func (t *ResourceCreateTool) Invoke(ctx context.Context, params *ResourceCreateP
 		return "", err
 	}
 
-	// Resolve kind to GVR via cached mapper.
-	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
-	if err != nil {
-		return "", err
-	}
-
 	// Parse the manifest JSON into an unstructured object.
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(params.Manifest), &obj.Object); err != nil {
 		return "", errors.Wrap(err, "parameter 'manifest' is not valid JSON; fix the manifest and retry")
+	}
+
+	// Resolve kind to GVR via cached mapper, using the manifest's apiVersion for disambiguation.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind, obj.GetAPIVersion())
+	if err != nil {
+		return "", err
 	}
 
 	// Validate required manifest fields.
