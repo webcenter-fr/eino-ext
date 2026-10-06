@@ -31,7 +31,7 @@ func (t *ToolTestSuite) TestApplicationList() {
 	var outputs []ApplicationListOutput
 	err = json.Unmarshal([]byte(listResult), &outputs)
 	assert.NoError(t.T(), err)
-	assert.Len(t.T(), outputs, 2)
+	assert.Len(t.T(), outputs, 3)
 
 	assert.Equal(t.T(), "my-app", outputs[0].Name)
 	assert.Equal(t.T(), "argocd", outputs[0].Namespace)
@@ -45,6 +45,13 @@ func (t *ToolTestSuite) TestApplicationList() {
 	assert.Equal(t.T(), "Degraded", outputs[1].Health)
 	assert.Equal(t.T(), "OutOfSync", outputs[1].SyncStatus)
 
+	assert.Equal(t.T(), "kafka-hpd1", outputs[2].Name)
+	assert.Equal(t.T(), "argocd", outputs[2].Namespace)
+	assert.Equal(t.T(), "data", outputs[2].Project)
+	assert.Equal(t.T(), "Healthy", outputs[2].Health)
+	assert.Equal(t.T(), "Synced", outputs[2].SyncStatus)
+	assert.Equal(t.T(), "def456", outputs[2].Revision)
+
 	listResult, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "my-app"}`)
 	assert.NoError(t.T(), err)
 	assert.NotEmpty(t.T(), listResult)
@@ -56,6 +63,59 @@ func (t *ToolTestSuite) TestApplicationList() {
 
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
+}
+
+// TestApplicationListFilterSubstring is the regression test for the reported
+// bug: the filter must match on the application name, which is only populated
+// when the nested "metadata" wire format is unmarshalled correctly.
+func (t *ToolTestSuite) TestApplicationListFilterSubstring() {
+	ctx := context.Background()
+
+	listTool, err := NewApplicationListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	for _, filter := range []string{"kafka", "hpd1"} {
+		listResult, err := listTool.InvokableRun(ctx, fmt.Sprintf(`{"instance": "test", "filter": %q}`, filter))
+		assert.NoError(t.T(), err)
+
+		var outputs []ApplicationListOutput
+		err = json.Unmarshal([]byte(listResult), &outputs)
+		assert.NoError(t.T(), err)
+		assert.Len(t.T(), outputs, 1, "filter %q should match exactly one application", filter)
+		assert.Equal(t.T(), "kafka-hpd1", outputs[0].Name)
+	}
+}
+
+func (t *ToolTestSuite) TestApplicationListFilterNoMatch() {
+	ctx := context.Background()
+
+	listTool, err := NewApplicationListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	listResult, err := listTool.InvokableRun(ctx, `{"instance": "test", "filter": "nonexistent"}`)
+	assert.NoError(t.T(), err)
+	assert.Equal(t.T(), "[]", strings.TrimSpace(listResult))
+}
+
+func (t *ToolTestSuite) TestApplicationListFilterInvalidRegex() {
+	ctx := context.Background()
+
+	listTool, err := NewApplicationListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	_, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "[invalid"}`)
+	assert.Error(t.T(), err)
+}
+
+func (t *ToolTestSuite) TestApplicationDescribeMetadataName() {
+	ctx := context.Background()
+
+	describeTool, err := NewApplicationDescribeTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	describeResult, err := describeTool.InvokableRun(ctx, `{"instance": "test", "name": "my-app"}`)
+	assert.NoError(t.T(), err)
+	assert.Contains(t.T(), describeResult, `"metadata":{"name":"my-app"`)
 }
 
 func (t *ToolTestSuite) TestApplicationDescribe() {
@@ -275,6 +335,34 @@ func (t *ToolTestSuite) TestProjectDescribe() {
 
 	_, err = describeTool.InvokableRun(ctx, `{"instance": "invalid-instance", "name": "default"}`)
 	assert.Error(t.T(), err)
+}
+
+func (t *ToolTestSuite) TestProjectListNames() {
+	ctx := context.Background()
+
+	listTool, err := NewProjectListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	listResult, err := listTool.InvokableRun(ctx, `{"instance": "test"}`)
+	assert.NoError(t.T(), err)
+
+	var outputs []ProjectListOutput
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 2)
+	assert.Equal(t.T(), "default", outputs[0].Name)
+	assert.Equal(t.T(), "production", outputs[1].Name)
+}
+
+func (t *ToolTestSuite) TestProjectDescribeMetadataName() {
+	ctx := context.Background()
+
+	describeTool, err := NewProjectDescribeTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	describeResult, err := describeTool.InvokableRun(ctx, `{"instance": "test", "name": "default"}`)
+	assert.NoError(t.T(), err)
+	assert.Contains(t.T(), describeResult, `"metadata":{"name":"default"`)
 }
 
 func (t *ToolTestSuite) TestInstanceList() {
