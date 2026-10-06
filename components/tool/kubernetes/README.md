@@ -6,7 +6,7 @@ dynamic clients.
 ## Design
 
 - **Consolidated** — reduced from ~57 separate tool schemas to 9. Uses a
-  `kind` parameter resolved via a cached RESTMapper that supports kubectl
+  `kind` parameter resolved via the discovery API, with support for kubectl
   shortnames and CRDs.
 - **Deterministic kind resolution** — an optional `apiVersion` (or a
   `resource.group` kind) disambiguates kinds that exist in several API groups;
@@ -90,9 +90,10 @@ ambiguous kind returns an error listing the candidate groups and versions
 instead of silently picking one. Apply/create resolve the manifest's
 `apiVersion` automatically.
 
-Resolution uses a cached RESTMapper (backed by discovery cache) that resets
-on cache misses to pick up newly installed CRDs. All operations are wrapped
-in `kretry` for transient API server errors.
+Resolution queries the discovery API directly (preferred resources, or the
+exact group/version when `apiVersion` is set), so newly installed CRDs are
+picked up immediately. All operations are wrapped in `kretry` for transient
+API server errors.
 
 ## Factory Functions
 

@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -151,7 +152,12 @@ func (cm *cachedMapper) resolveWithAPIVersion(kind, apiVersion string) (resolveR
 	}
 
 	resources, err := cm.discovery.ServerResourcesForGroupVersion(gv.String())
-	if err != nil || resources == nil {
+	if err != nil {
+		// Wrap (not replace) so the underlying cause survives and kretry can
+		// still classify transient failures (503, timeouts, ...) as retryable.
+		return resolveResult{}, errors.Wrapf(err, "kind %q not found in %s", kind, gv.String())
+	}
+	if resources == nil {
 		return resolveResult{}, errors.Errorf("kind %q not found in %s", kind, gv.String())
 	}
 	for _, r := range resources.APIResources {
@@ -221,15 +227,16 @@ func ambiguousKindError(kind string, candidates []gvrCandidate) error {
 
 	listed := make([]string, 0, len(sorted))
 	for _, c := range sorted {
-		listed = append(listed, c.plural+"."+c.group+" ("+c.version+")")
+		listed = append(listed, fmt.Sprintf("%s.%s (%s/%s)", c.plural, c.group, c.group, c.version))
 	}
 
 	example := sorted[0]
 	return errors.Errorf(
-		"kind %q is ambiguous: it exists in several API groups: %s. Retry with apiVersion set (e.g. %q) or kind %q.",
+		"kind %q is ambiguous: it exists in several API groups: %s. Retry with apiVersion set (e.g. %q) or kind %q (e.g. %q).",
 		kind, strings.Join(listed, ", "),
-		example.group+"/"+example.version,
-		example.plural+"."+example.group,
+		fmt.Sprintf("%s/%s", example.group, example.version),
+		"<plural>.<group>",
+		fmt.Sprintf("%s.%s", example.plural, example.group),
 	)
 }
 
