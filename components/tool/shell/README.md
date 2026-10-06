@@ -28,4 +28,14 @@
 //   - Command blocklist prevents destructive commands (rm, kill, etc.).
 //   - Egress network policy restricts outbound traffic.
 //   - Safety middleware gates all executions behind dry-run/confirmed flow.
+//
+// Parameters:
+//   - Command: the command to execute as an array of strings.
+//   - Stdin: optional text piped to the command's standard input.
+//   - FilterPattern: optional Go RE2 regex applied to each output line.
+//
+// Composability:
+//   - RawExec is a trusted, gate-free primitive that runs a command and returns
+//     raw stdout/stderr/exit code. It always enforces the blocklist and is
+//     intended for compositors such as the pipe tool, not direct end users.
 package shell

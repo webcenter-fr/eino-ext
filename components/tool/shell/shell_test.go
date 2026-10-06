@@ -6,6 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
 func TestShellParamsValidation(t *testing.T) {
@@ -39,17 +42,48 @@ func TestShellParamsValidation(t *testing.T) {
 			params:  Params{Command: []string{"make"}, DryRun: true},
 			wantErr: false,
 		},
+		{
+			name:    "valid with stdin",
+			params:  Params{Command: []string{"cat"}, Stdin: "piped input"},
+			wantErr: false,
+		},
+		{
+			name:    "valid without stdin",
+			params:  Params{Command: []string{"cat"}},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// params validation occurs inside Invoke/InvokeAsStream
-			// so test through the tool when available, or test the struct directly
-			if tt.wantErr && len(tt.params.Command) == 0 {
-				assert.Empty(t, tt.params.Command)
+			err := validate.Struct(&tt.params)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
 			}
+			require.NoError(t, err)
 		})
 	}
+}
+
+func TestRawExecValidation(t *testing.T) {
+	bl, err := toolkitsafety.CompileBlocklist(toolkitsafety.DefaultCommandBlocklist)
+	require.NoError(t, err)
+	tool := &Tool{blocklist: bl}
+
+	t.Run("empty command fails", func(t *testing.T) {
+		_, _, _, err := tool.RawExec(context.Background(), RawExecParams{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "non-empty command")
+	})
+
+	t.Run("blocklisted command fails", func(t *testing.T) {
+		_, _, _, err := tool.RawExec(context.Background(), RawExecParams{
+			Command: []string{"rm", "-rf", "/"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "blocked by security policy")
+	})
 }
 
 func TestDryRunPreview(t *testing.T) {

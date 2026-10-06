@@ -3,6 +3,7 @@ package shell
 import (
 	"context"
 	_ "embed"
+	"io"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
@@ -21,6 +22,7 @@ var shellDescription string
 var (
 	_ tool.InvokableTool  = (*Tool)(nil)
 	_ tool.StreamableTool = (*Tool)(nil)
+	_ io.Closer           = (*Tool)(nil)
 )
 
 // NewShellTool creates a new Tool from the given configuration.

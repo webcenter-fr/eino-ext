@@ -4,6 +4,8 @@ It executes a shell command in an isolated Dagger container sandbox backed by an
 
 The container runs as root, so you can install additional tools with apt-get, pip, npm, go install, etc. The command output can be filtered using the `filterPattern` parameter, which must be a Go RE2 regex. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Prefer simple alternations (e.g. 'error|panic').
 
+The optional `stdin` parameter pipes text to the command's standard input (e.g. `{"command": ["grep", "error"], "stdin": "..."}`).
+
 ** IMPORTANT RULES **
 - Use this tool to run commands in a sandboxed environment — never touch the host filesystem.
 - Commands matching a known destructive pattern (e.g., 'rm', 'kill', 'shutdown') are automatically blocked.

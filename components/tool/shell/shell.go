@@ -125,7 +125,7 @@ func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 		return "", errors.Wrap(err, "failed to get session container")
 	}
 
-	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command)
+	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +191,7 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 		return nil, errors.Wrap(err, "failed to get session container")
 	}
 
-	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command)
+	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +226,52 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 	}()
 
 	return sr, nil
+}
+
+// RawExec runs a command in the sandbox and returns its raw stdout, stderr and
+// exit code. It is a trusted, gate-free primitive for compositors (e.g. the
+// pipe tool): the blocklist is always enforced, but dry-run, confirmation and
+// output filtering are the caller's responsibility. It is NOT intended for
+// direct end-user invocation.
+func (t *Tool) RawExec(ctx context.Context, params RawExecParams) (stdout, stderr string, exitCode int, err error) {
+	if len(params.Command) == 0 {
+		return "", "", -1, errors.New("raw exec requires a non-empty command")
+	}
+
+	if err := toolkitsafety.CheckBlocklist(t.blocklist, params.Command); err != nil {
+		return "", "", -1, err
+	}
+
+	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
+	if err != nil {
+		return "", "", -1, errors.Wrap(err, "failed to resolve profile")
+	}
+
+	timeout := params.Timeout
+	if timeout <= 0 {
+		if t.cfg.DefaultTimeout > 0 {
+			timeout = t.cfg.DefaultTimeout
+		} else {
+			timeout = defaultExecTimeout
+		}
+	}
+	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ses, err := t.sessions.getOrCreate(execCtx, profileName, baseImage)
+	if err != nil {
+		return "", "", -1, errors.Wrap(err, "failed to get session container")
+	}
+
+	return t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
+}
+
+// Close shuts down the underlying Dagger client.
+func (t *Tool) Close() error {
+	if t.client != nil {
+		return t.client.Close()
+	}
+	return nil
 }
 
 // Info returns metadata about the shell tool.
