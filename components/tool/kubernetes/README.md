@@ -8,6 +8,13 @@ dynamic clients.
 - **Consolidated** — reduced from ~57 separate tool schemas to 9. Uses a
   `kind` parameter resolved via a cached RESTMapper that supports kubectl
   shortnames and CRDs.
+- **Deterministic kind resolution** — an optional `apiVersion` (or a
+  `resource.group` kind) disambiguates kinds that exist in several API groups;
+  a bare ambiguous kind returns an error listing the candidates.
+- **Compact dry-run diffs** — patch/apply dry-run returns a unified `diff`
+  (3 lines context, 64 KiB cap) alongside the full `wouldPatchTo`/`wouldApplyTo`.
+- **Field projection** — `describe` and `list` accept `fields` (dot paths) to
+  return only the requested parts of an object.
 - **Multi-cluster** — configured via a `Configs` map (`map[string]*ClusterConfig`)
   of named clusters.
 - **Curated output** — a formatter registry provides type-specific list output
@@ -60,14 +67,14 @@ configs := kubernetes.Configs{
 
 | Category | Tool Name | Description |
 |---|---|---|
-| Read | `kubernetes_list` | List any K8s resource by kind/shortname + GVR fallback, with label selector, filter, and pagination |
-| Read | `kubernetes_describe` | Describe any K8s resource by kind/shortname + name; returns the full resource JSON with `excludeFieldsOutput` support |
+| Read | `kubernetes_list` | List any K8s resource by kind/shortname + GVR fallback, with label selector, filter, `fields` projection, and pagination |
+| Read | `kubernetes_describe` | Describe any K8s resource by kind/shortname + name; returns the full resource JSON with `excludeFieldsOutput` and `fields` projection support |
 | Read | `kubernetes_cluster_list` | List configured clusters |
 | Read | `kubernetes_pod_log` | Get pod logs (invokable + streamable) |
 | Write | `kubernetes_pod_exec` | Exec commands in pods (invokable + streamable) |
-| Write | `kubernetes_resource_create` | Create resources via dynamic client |
-| Write | `kubernetes_resource_apply` | Server-side apply via dynamic client |
-| Write | `kubernetes_resource_patch` | Patch resources with type selection |
+| Write | `kubernetes_resource_create` | Create a NEW resource from a full manifest |
+| Write | `kubernetes_resource_apply` | Apply a FULL manifest (create or replace); use `patch` for small edits |
+| Write | `kubernetes_resource_patch` | Preferred tool to change annotations, labels, resources, replicas or any spec field |
 | Write | `kubernetes_resource_delete` | Delete resources with cascade options |
 
 The `kind` parameter accepts:
@@ -75,6 +82,13 @@ The `kind` parameter accepts:
 - A Kubernetes Kind e.g. `Pod`, `Deployment`, `ConfigMap`
 - A kubectl shortname e.g. `po`, `deploy`, `svc`
 - A `resource.group` form e.g. `deployments.apps`
+
+When a kind exists in several API groups (e.g. two CRDs both named `Kafka`),
+pass `apiVersion` (e.g. `kafka.strimzi.io/v1beta2`, or `v1` for the core group)
+or use the `resource.group` form (e.g. `kafkas.kafka.strimzi.io`). A bare
+ambiguous kind returns an error listing the candidate groups and versions
+instead of silently picking one. Apply/create resolve the manifest's
+`apiVersion` automatically.
 
 Resolution uses a cached RESTMapper (backed by discovery cache) that resets
 on cache misses to pick up newly installed CRDs. All operations are wrapped

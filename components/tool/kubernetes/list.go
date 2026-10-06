@@ -13,6 +13,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -30,15 +31,18 @@ type ListParamsPaginate struct {
 type ListParams struct {
 	Cluster        string              `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Kind           string              `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred. Uses server-side discovery so CRDs are supported automatically."`
+	APIVersion     string              `json:"apiVersion,omitempty" jsonschema:"(optional) The group/version of the resource, e.g. 'kafka.strimzi.io/v1beta2' or 'v1' for the core group. Required when the kind exists in several API groups."`
 	Namespace      string              `json:"namespace,omitempty" jsonschema:"(optional) The namespace to list resources from. If not provided, it will list resources from all namespaces. Ignored for cluster-scoped kinds."`
 	LabelsSelector string              `json:"labelsSelector,omitempty" jsonschema:"(optional) The labels selector on string format, separated by comma. For example: 'app=nginx,env=prod'."`
 	Filter         string              `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each resource JSON output. Keep only the resources that match the pattern. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Example: 'app-.*|web-.*'. Invalid regex returns an error."`
+	Fields         []string            `json:"fields,omitempty" jsonschema:"(optional) List of dot paths to return only those parts of the object (e.g. ['spec.kafka.storage','spec.kafka.resources']). Missing paths are omitted. Use it to keep output small."`
 	Paginate       *ListParamsPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
 }
 
 const listDescription = `
 ** General Purpose **
 It lists any Kubernetes resource. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types, CRDs, label selectors, regex filtering, and pagination.
+Pass apiVersion when the kind exists in several API groups (the tool returns an "ambiguous" error listing them).
 
 ** Output **
 Returns a JSON array of objects with curated fields specific to each resource type. For types without dedicated formatters, returns name, namespace, and status.
@@ -65,7 +69,7 @@ func (t *ListTool) Invoke(ctx context.Context, params *ListParams) (string, erro
 		return "", errors.Wrap(err, "error when compile regex")
 	}
 
-	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind, params.APIVersion)
 	if err != nil {
 		return "", err
 	}
@@ -107,8 +111,29 @@ func (t *ListTool) Invoke(ctx context.Context, params *ListParams) (string, erro
 
 	outputs := make([]json.RawMessage, 0, len(o.Items))
 	for i := range o.Items {
-		item := o.Items[i]
-		output := formatListItem(&item)
+		item := &o.Items[i]
+		if len(params.Fields) > 0 {
+			projected := projectFields(item.Object, params.Fields)
+			// Keep apiVersion and kind so curated formatters still match.
+			projected["apiVersion"] = item.GetAPIVersion()
+			projected["kind"] = item.GetKind()
+			// Always keep metadata.name and metadata.namespace for list items.
+			if meta, ok := item.Object["metadata"].(map[string]any); ok {
+				pm, _ := projected["metadata"].(map[string]any)
+				if pm == nil {
+					pm = map[string]any{}
+					projected["metadata"] = pm
+				}
+				if name, ok := meta["name"]; ok {
+					pm["name"] = name
+				}
+				if ns, ok := meta["namespace"]; ok {
+					pm["namespace"] = ns
+				}
+			}
+			item = &unstructured.Unstructured{Object: projected}
+		}
+		output := formatListItem(item)
 		if !filter.Match(output, re) {
 			continue
 		}

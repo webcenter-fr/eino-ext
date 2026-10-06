@@ -16,34 +16,20 @@ import (
 )
 
 const resourcePatchDescription = `
-** General Purpose **
-It patches any Kubernetes resource using strategic merge, JSON merge, or JSON patch.
-Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
-The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
-
-** Patch Types **
-- 'strategic': Strategic merge patch (default for most Kubernetes resources). Only specify the fields you want to change.
-- 'merge': JSON merge patch (RFC 7386). Replace the entire value at the given paths.
-- 'json': JSON patch (RFC 6902). Use operations like add, remove, replace, move, copy, test.
-
-** Safety **
-Always use dryRun=true first to validate the patch before applying.
-After reviewing the dry-run result, set confirmed=true to actually apply the patch.
-
-** Output **
-It returns the patched resource as a JSON object.
+Patch an EXISTING resource. Preferred tool to change annotations, labels, resources, replicas or any spec field: send ONLY the fields to change (patchType "merge" or "json"). For custom resources pass apiVersion (e.g. kafka.strimzi.io/v1beta2) or kind "<plural>.<group>".
 `
 
 // ResourcePatchParams defines the parameters for the ResourcePatch function.
 type ResourcePatchParams struct {
-	Cluster   string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
-	Namespace string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
-	Kind      string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
-	Name      string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
-	PatchType string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
-	Patch     string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`
-	DryRun    bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without patching."`
-	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute."`
+	Cluster    string `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
+	Namespace  string `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Omit for cluster-scoped resources."`
+	Kind       string `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
+	APIVersion string `json:"apiVersion,omitempty" jsonschema:"(optional) The group/version of the resource, e.g. 'kafka.strimzi.io/v1beta2' or 'v1' for the core group. Required when the kind exists in several API groups."`
+	Name       string `json:"name" validate:"required" jsonschema:"(required) The name of the resource to patch."`
+	PatchType  string `json:"patchType" validate:"required,oneof=strategic merge json" jsonschema:"(required) The patch type: 'strategic' (strategic merge patch, default for most resources), 'merge' (JSON merge patch), or 'json' (JSON patch with operations like add/remove/replace)."`
+	Patch      string `json:"patch" validate:"required" jsonschema:"(required) The patch document as a JSON string. For strategic/merge: a partial resource spec. For json: an array of operations like [{\"op\":\"replace\",\"path\":\"/spec/replicas\",\"value\":3}]."`
+	DryRun     bool   `json:"dryRun,omitempty" jsonschema:"(optional) If true, use server-side dry-run to validate without patching."`
+	Confirmed  bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute."`
 }
 
 // ResourcePatchTool patches any Kubernetes resource.
@@ -84,7 +70,7 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 	}
 
 	// Resolve kind to GVR via cached mapper.
-	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind, params.APIVersion)
 	if err != nil {
 		return "", err
 	}
@@ -121,8 +107,29 @@ func (t *ResourcePatchTool) Invoke(ctx context.Context, params *ResourcePatchPar
 				return "", errors.Wrapf(patchErr, "failed to patch resource %s/%s of type %s (dry-run)", params.Namespace, params.Name, resolved.GVK.Kind)
 			}
 			unstructured.RemoveNestedField(patched.Object, "metadata", "managedFields")
+
+			// Parse the patch document for the compact "patch" field.
+			var patchDoc any
+			if err := json.Unmarshal([]byte(params.Patch), &patchDoc); err != nil {
+				return "", errors.Wrap(err, "parameter 'patch' is not valid JSON; fix the patch and retry")
+			}
+
+			diff, diffErr := resourceDiff(existing, patched)
+			if diffErr != nil {
+				return "", diffErr
+			}
+
 			dryRunResult := map[string]any{
-				"dryRun":       true,
+				"dryRun": true,
+				"target": map[string]any{
+					"apiVersion": resolved.GVK.GroupVersion().String(),
+					"kind":       resolved.GVK.Kind,
+					"namespace":  params.Namespace,
+					"name":       params.Name,
+				},
+				"patchType":    params.PatchType,
+				"patch":        patchDoc,
+				"diff":         diff,
 				"wouldPatchTo": patched.Object,
 			}
 			if ownership.IsManaged {

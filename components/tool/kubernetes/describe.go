@@ -18,9 +18,11 @@ import (
 type DescribeParams struct {
 	Cluster             string   `json:"cluster" validate:"required" jsonschema:"(required) The cluster to connect to."`
 	Kind                string   `json:"kind" validate:"required" jsonschema:"(required) The resource kind in PascalCase singular (e.g. 'Pod', 'Deployment', 'ConfigMap'). Also accepts kubectl shortnames ('po', 'deploy'), and 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are accepted but PascalCase is preferred."`
+	APIVersion          string   `json:"apiVersion,omitempty" jsonschema:"(optional) The group/version of the resource, e.g. 'kafka.strimzi.io/v1beta2' or 'v1' for the core group. Required when the kind exists in several API groups."`
 	Name                string   `json:"name" validate:"required" jsonschema:"(required) The resource name."`
 	Namespace           string   `json:"namespace,omitempty" jsonschema:"(optional) The namespace of the resource. Ignored for cluster-scoped kinds."`
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=metadata spec status data" jsonschema:"(optional) The fields to exclude from the output. Default to no exclusion. You can set 'metadata', 'spec', 'status', and 'data'."`
+	Fields              []string `json:"fields,omitempty" jsonschema:"(optional) List of dot paths to return only those parts of the object (e.g. ['spec.kafka.storage','spec.kafka.resources']). Missing paths are omitted. Use it to keep output small."`
 }
 
 // describeExcludableFields are the top-level fields a caller may ask the
@@ -52,7 +54,10 @@ func validateExcludeFields(excludeFields []string) error {
 //
 // metadata.managedFields is always omitted: it is large, server-managed, and
 // rarely useful to an agent. excludeFieldsOutput cannot re-enable it.
-func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields []string) (string, error) {
+//
+// When fields is non-empty it projects the object to those dot paths, winning
+// over excludeFields (projection replaces the object entirely).
+func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields, fields []string) (string, error) {
 	if err := validateExcludeFields(excludeFields); err != nil {
 		return "", err
 	}
@@ -61,6 +66,9 @@ func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields []stri
 	unstructured.RemoveNestedField(obj, "metadata", "managedFields")
 	for _, field := range excludeFields {
 		delete(obj, field)
+	}
+	if len(fields) > 0 {
+		obj = projectFields(obj, fields)
 	}
 
 	data, err := json.Marshal(obj)
@@ -73,6 +81,7 @@ func marshalRawDescribeOutput(o *unstructured.Unstructured, excludeFields []stri
 const describeDescription = `
 ** General Purpose **
 It describes any Kubernetes resource and returns its full JSON content as stored in the cluster. The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted. Supports core types and CRDs.
+Pass apiVersion when the kind exists in several API groups (the tool returns an "ambiguous" error listing them).
 
 ** Output **
 Returns the full JSON object for the resource: apiVersion, kind, metadata, and every remaining top-level field (spec, status, data, webhooks, rules, roleRef, subjects, ...).
@@ -90,7 +99,7 @@ func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (stri
 		return "", err
 	}
 
-	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind, params.APIVersion)
 	if err != nil {
 		return "", err
 	}
@@ -122,7 +131,7 @@ func (t *DescribeTool) Invoke(ctx context.Context, params *DescribeParams) (stri
 		}
 	}
 
-	return marshalRawDescribeOutput(o, params.ExcludeFieldsOutput)
+	return marshalRawDescribeOutput(o, params.ExcludeFieldsOutput, params.Fields)
 }
 
 // NewDescribeTool creates a new DescribeTool.

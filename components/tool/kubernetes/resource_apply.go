@@ -10,28 +10,14 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
 
 const resourceApplyDescription = `
-** General Purpose **
-It applies (creates or updates) any Kubernetes resource using server-side apply.
-Works with core resources (Pods, ConfigMaps, Services, etc.) as well as CRDs.
-The 'kind' parameter accepts a PascalCase singular kind (e.g. 'Pod', 'Deployment', 'ConfigMap'), a kubectl shortname ('po', 'deploy'), or a 'resource.group' form ('deployments.apps'). Plural resource names ('pods') are also accepted.
-
-** Server-Side Apply **
-Server-side apply tracks field ownership, allowing multiple controllers to manage
-different fields of the same resource without conflicts. Use 'force=true' to take
-ownership of fields that are managed by another field manager.
-
-** Safety **
-Always use dryRun=true first to validate the apply before committing.
-After reviewing the dry-run result, set confirmed=true to actually apply.
-
-** Output **
-It returns the applied resource as a JSON object.
+Apply a FULL manifest (create or replace). Use only to create a resource or for an intentional full replacement. Do not use it to change a few fields of an existing resource: use the patch tool.
 `
 
 // ResourceApplyParams defines the parameters for the ResourceApply function.
@@ -74,16 +60,16 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 		return "", err
 	}
 
-	// Resolve kind to GVR via cached mapper.
-	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind)
-	if err != nil {
-		return "", err
-	}
-
 	// Parse the manifest JSON into an unstructured object.
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(params.Manifest), &obj.Object); err != nil {
 		return "", errors.Wrap(err, "parameter 'manifest' is not valid JSON; fix the manifest and retry")
+	}
+
+	// Resolve kind to GVR via cached mapper, using the manifest's apiVersion for disambiguation.
+	resolved, err := t.resolveKind(ctx, params.Cluster, params.Kind, obj.GetAPIVersion())
+	if err != nil {
+		return "", err
 	}
 
 	// Validate required manifest fields.
@@ -133,29 +119,15 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 	// Dry-run: fetch the existing resource for ownership check.
 	if params.DryRun {
 		existing, getErr := c.Resource(gvr).Namespace(params.Namespace).Get(ctx, obj.GetName(), metav1.GetOptions{})
-		if getErr == nil {
-			ownership := safety.CheckOwnership(existing)
-			manifestData, marshalErr := json.Marshal(obj.Object)
-			if marshalErr != nil {
-				return "", errors.Wrap(marshalErr, "failed to marshal manifest")
+		if getErr != nil {
+			// Not found (or other error): treat as a create preview.
+			if !apierrors.IsNotFound(getErr) {
+				return "", errors.Wrapf(getErr, "failed to fetch resource for dry-run %s/%s of type %s", params.Namespace, obj.GetName(), resolved.GVK.Kind)
 			}
-			applied, applyErr := c.Resource(gvr).Namespace(params.Namespace).Patch(
-				ctx,
-				obj.GetName(),
-				types.ApplyPatchType,
-				manifestData,
-				opts,
-			)
-			if applyErr != nil {
-				return "", errors.Wrapf(applyErr, "failed to apply resource %s/%s of type %s (dry-run)", params.Namespace, obj.GetName(), resolved.GVK.Kind)
-			}
-			unstructured.RemoveNestedField(applied.Object, "metadata", "managedFields")
 			dryRunResult := map[string]any{
-				"dryRun":       true,
-				"wouldApplyTo": applied.Object,
-			}
-			if ownership.IsManaged {
-				dryRunResult["ownership"] = ownership
+				"dryRun":  true,
+				"created": true,
+				"diff":    "(new object)",
 			}
 			data, err := json.Marshal(dryRunResult)
 			if err != nil {
@@ -163,6 +135,39 @@ func (t *ResourceApplyTool) Invoke(ctx context.Context, params *ResourceApplyPar
 			}
 			return string(data), nil
 		}
+
+		ownership := safety.CheckOwnership(existing)
+		manifestData, marshalErr := json.Marshal(obj.Object)
+		if marshalErr != nil {
+			return "", errors.Wrap(marshalErr, "failed to marshal manifest")
+		}
+		applied, applyErr := c.Resource(gvr).Namespace(params.Namespace).Patch(
+			ctx, obj.GetName(), types.ApplyPatchType, manifestData, opts,
+		)
+		if applyErr != nil {
+			return "", errors.Wrapf(applyErr, "failed to apply resource %s/%s of type %s (dry-run)", params.Namespace, obj.GetName(), resolved.GVK.Kind)
+		}
+		unstructured.RemoveNestedField(applied.Object, "metadata", "managedFields")
+
+		diff, diffErr := resourceDiff(existing, applied)
+		if diffErr != nil {
+			return "", diffErr
+		}
+
+		dryRunResult := map[string]any{
+			"dryRun":       true,
+			"created":      false,
+			"diff":         diff,
+			"wouldApplyTo": applied.Object,
+		}
+		if ownership.IsManaged {
+			dryRunResult["ownership"] = ownership
+		}
+		data, err := json.Marshal(dryRunResult)
+		if err != nil {
+			return "", errors.Wrap(err, "failed to marshal dry-run result")
+		}
+		return string(data), nil
 	}
 
 	manifestData, err := json.Marshal(obj.Object)

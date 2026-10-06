@@ -149,13 +149,14 @@ func (b *baseTool) dynamicClient(cluster string) (dynamic.Interface, error) {
 }
 
 // resolveKind resolves a resource kind to GVR, GVK, and scope via the
-// per-cluster cached mapper.
-func (b *baseTool) resolveKind(ctx context.Context, cluster, kind string) (resolveResult, error) {
+// per-cluster cached mapper. apiVersion is optional and disambiguates kinds
+// that exist in several API groups.
+func (b *baseTool) resolveKind(ctx context.Context, cluster, kind, apiVersion string) (resolveResult, error) {
 	mapper, ok := b.mappers[cluster]
 	if !ok {
 		return resolveResult{}, clusterNotFoundError(cluster, b.knownClusters)
 	}
-	resolved, err := mapper.Resolve(ctx, kind)
+	resolved, err := mapper.Resolve(ctx, kind, apiVersion)
 	if err != nil {
 		return resolveResult{}, errors.Wrap(err, "failed to resolve kind")
 	}
