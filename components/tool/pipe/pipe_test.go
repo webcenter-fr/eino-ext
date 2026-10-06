@@ -71,7 +71,7 @@ func newTestTool(s shellExecutor, tools map[string]tool.InvokableTool, cfg *Conf
 	if cfg.MaxOutputBytes <= 0 {
 		cfg.MaxOutputBytes = defaultMaxOutputBytes
 	}
-	return &Tool{shell: s, tools: tools, writeTools: makeWriteToolsMap(cfg.WriteToolNames), cfg: cfg}
+	return &Tool{shell: s, tools: tools, writeTools: toolkitsafety.NewWriteToolSet(cfg.WriteToolNames), cfg: cfg}
 }
 
 func TestPipeInvoke(t *testing.T) {

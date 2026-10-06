@@ -47,10 +47,7 @@ func New(cfg *Config) (*Middleware, error) {
 		c.AuditSink = &safety.LogSink{}
 	}
 
-	writeTools := make(map[string]bool, len(c.WriteToolNames))
-	for _, name := range c.WriteToolNames {
-		writeTools[name] = true
-	}
+	writeTools := safety.NewWriteToolSet(c.WriteToolNames)
 
 	return &Middleware{
 		BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{},

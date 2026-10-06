@@ -17,6 +17,11 @@ sandbox and never mutate production systems directly.
   gate via `pipe.Config.WriteToolNames` + `pipe.Config.ExecutionAuthorizer`
   (mirrors the safety middleware's dry-run/confirmed + host-authorization flow);
   `NewAllToolsWithSafety` forwards the middleware's authorizer to the pipe.
+- Note: the Dagger sandbox still has unrestricted network egress — the
+  `NetworkPolicy`/`AllowLocalNetwork` controls are currently declared but not
+  enforced at exec time (pre-existing). The removed gate was a confirmation
+  prompt, not a technical restriction: the model can still call out to
+  reachable APIs from within the sandbox.
 
 ## tool/file: write tools now require host authorization to execute
 

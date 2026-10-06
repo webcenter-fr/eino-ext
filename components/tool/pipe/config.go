@@ -28,7 +28,7 @@ type Config struct {
 	// WriteToolNames lists registered tool names that require the
 	// dry-run/confirmed authorization gate when invoked as a `tool` step.
 	// These names typically come from each component's WriteToolNames()
-	// registry (e.g. kubernetes.WriteToolNames(), gitlab.WriteToolNames()).
+	// registry (e.g. kubernetes.WriteToolNames(), argocd.WriteToolNames()).
 	// Tools not listed here run ungated.
 	WriteToolNames []string `validate:"omitempty" json:"writeToolNames,omitempty" jsonschema:"description=Registered tool names that require the dry-run/confirmed authorization gate when used as tool steps"`
 

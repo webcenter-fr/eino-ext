@@ -107,6 +107,9 @@ running `jq -c '{query: .}'` can produce the arguments for the next tool.
   their own confirmation check (no grant reaches them).
 - Commands are typed `[]string`; the model never constructs a shell-language
   pipeline string, so there is no new injection surface.
+- Note: sandbox egress is currently not enforced (pre-existing) — the container
+  can reach the network, so the model can call out to reachable APIs from
+  within the sandbox.
 
 ## Checkup
 

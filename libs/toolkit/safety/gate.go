@@ -25,6 +25,17 @@ func ExtractGateParams(rawJSON string) (GateParams, error) {
 	return gp, nil
 }
 
+// NewWriteToolSet builds the set of write-tool names consumed by
+// ShouldGateWithAuthorization (and by the safety middleware). It deduplicates
+// the given names; the returned map is read-only by convention.
+func NewWriteToolSet(names []string) map[string]bool {
+	writeTools := make(map[string]bool, len(names))
+	for _, name := range names {
+		writeTools[name] = true
+	}
+	return writeTools
+}
+
 // ShouldGateWithAuthorization checks whether a write tool call may proceed,
 // authorizing real execution from the context instead of trusting the
 // model-supplied Confirmed field.
@@ -40,7 +51,7 @@ func ExtractGateParams(rawJSON string) (GateParams, error) {
 //
 // ctx and args are passed through to the authorizer untouched and are only
 // dereferenced by the authorizer. writeTools is the set of write-tool names
-// (the same map built by the middleware from Config.WriteToolNames).
+// (build it with NewWriteToolSet from Config.WriteToolNames).
 func ShouldGateWithAuthorization(
 	ctx context.Context, toolName string, writeTools map[string]bool,
 	gp GateParams, args json.RawMessage, auth ExecutionAuthorizer,

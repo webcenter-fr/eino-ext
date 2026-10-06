@@ -11,6 +11,7 @@ import (
 
 	safetymw "github.com/webcenter-fr/eino-ext/components/middleware/safety"
 	"github.com/webcenter-fr/eino-ext/components/tool/shell"
+	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -46,7 +47,7 @@ func NewPipeTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	t := &Tool{
 		shell:      shellTool,
 		tools:      cfg.Tools,
-		writeTools: makeWriteToolsMap(cfg.WriteToolNames),
+		writeTools: toolkitsafety.NewWriteToolSet(cfg.WriteToolNames),
 		cfg:        cfg,
 	}
 
@@ -78,21 +79,14 @@ func WriteToolNames() []string {
 	return nil
 }
 
-// makeWriteToolsMap builds the set of registered tool names that require the
-// dry-run/confirmed gate when used as a tool step.
-func makeWriteToolsMap(names []string) map[string]bool {
-	writeTools := make(map[string]bool, len(names))
-	for _, name := range names {
-		writeTools[name] = true
-	}
-	return writeTools
-}
-
 // NewAllToolsWithSafety creates the pipe tool with a pre-configured safety middleware.
 // The middleware's ExecutionAuthorizer and AllowModelConfirmation are forwarded
 // to the pipe config when unset, so write tool steps gate on the same host
 // approval mechanism as top-level write tools.
 func NewAllToolsWithSafety(ctx context.Context, cfg *Config, safetyCfg *safetymw.Config) ([]tool.InvokableTool, *safetymw.Middleware, error) {
+	if cfg == nil {
+		cfg = &Config{}
+	}
 	if safetyCfg == nil {
 		safetyCfg = &safetymw.Config{}
 	}
