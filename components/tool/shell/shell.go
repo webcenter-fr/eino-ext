@@ -11,7 +11,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -102,10 +101,6 @@ func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 		return t.dryRunPreview(params), nil
 	}
 
-	if err := confirm.RequireConfirmationCtx(ctx, "shell_exec", params.DryRun, params.Confirmed); err != nil {
-		return "", err
-	}
-
 	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
 	if err != nil {
 		return "", err
@@ -168,10 +163,6 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 		return sr, nil
 	}
 
-	if err := confirm.RequireConfirmationCtx(ctx, "shell_exec", params.DryRun, params.Confirmed); err != nil {
-		return nil, err
-	}
-
 	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
 	if err != nil {
 		return nil, err
@@ -230,9 +221,9 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 
 // RawExec runs a command in the sandbox and returns its raw stdout, stderr and
 // exit code. It is a trusted, gate-free primitive for compositors (e.g. the
-// pipe tool): the blocklist is always enforced, but dry-run, confirmation and
-// output filtering are the caller's responsibility. It is NOT intended for
-// direct end-user invocation.
+// pipe tool): the blocklist is always enforced, but dry-run and output
+// filtering are the caller's responsibility. It is NOT intended for direct
+// end-user invocation.
 func (t *Tool) RawExec(ctx context.Context, params RawExecParams) (stdout, stderr string, exitCode int, err error) {
 	if len(params.Command) == 0 {
 		return "", "", -1, errors.New("raw exec requires a non-empty command")

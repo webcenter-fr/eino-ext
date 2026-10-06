@@ -14,8 +14,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/webcenter-fr/eino-ext/components/tool/shell"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/toolutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
@@ -25,14 +25,20 @@ const (
 	defaultMaxOutputBytes = 10 << 20 // 10 MiB
 )
 
+// writeStepDryRunGuidance is appended to the pipeline result when at least one
+// write tool step ran in dry-run mode, instructing the LLM to present the
+// preview to the user and request confirmation.
+const writeStepDryRunGuidance = "\n\nDRY-RUN RESULT: this pipeline preview includes a write tool step that ran in dry-run mode. Show this preview to the user and ask for confirmation, then re-call the pipeline with confirmed=true in that write tool step's args."
+
 // Tool is an eino tool that runs an ordered pipeline of shell and tool steps.
 type Tool struct {
 	invokable  tool.InvokableTool
 	streamable tool.StreamableTool
 
-	shell shellExecutor // interface, implemented by *shell.Tool (faked in tests)
-	tools map[string]tool.InvokableTool
-	cfg   *Config
+	shell      shellExecutor // interface, implemented by *shell.Tool (faked in tests)
+	tools      map[string]tool.InvokableTool
+	writeTools map[string]bool
+	cfg        *Config
 }
 
 // shellExecutor is the minimal shell primitive the pipe needs. *shell.Tool
@@ -49,9 +55,6 @@ func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 	if params.DryRun {
 		return t.dryRunPreview(params), nil
 	}
-	if err := confirm.RequireConfirmationCtx(ctx, "pipe_exec", params.DryRun, params.Confirmed); err != nil {
-		return "", err
-	}
 	return t.runPipeline(ctx, params)
 }
 
@@ -65,9 +68,6 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 		sw.Send(t.dryRunPreview(params), nil)
 		sw.Close()
 		return sr, nil
-	}
-	if err := confirm.RequireConfirmationCtx(ctx, "pipe_exec", params.DryRun, params.Confirmed); err != nil {
-		return nil, err
 	}
 
 	result, err := t.runPipeline(ctx, params)
@@ -163,6 +163,7 @@ func (t *Tool) runPipeline(ctx context.Context, params *Params) (string, error) 
 	defer cancel()
 
 	input := "" // initial stdin for step 0
+	sawWriteDryRun := false
 
 	for i, step := range params.Steps {
 		switch {
@@ -173,16 +174,20 @@ func (t *Tool) runPipeline(ctx context.Context, params *Params) (string, error) 
 			}
 			input = out
 		case step.Tool != nil:
-			out, err := t.runToolStep(execCtx, step.Tool, input)
+			out, dryRunWrite, err := t.runToolStep(execCtx, step.Tool, input)
 			if err != nil {
 				return "", errors.Wrapf(err, "pipeline step %d (tool %q) failed", i, step.Tool.Name)
 			}
+			sawWriteDryRun = sawWriteDryRun || dryRunWrite
 			input = out
 		}
 		if len(input) > t.cfg.MaxOutputBytes {
 			return "", errors.Errorf("pipeline step %d output exceeds MaxOutputBytes (%d > %d)",
 				i, len(input), t.cfg.MaxOutputBytes)
 		}
+	}
+	if sawWriteDryRun {
+		input += writeStepDryRunGuidance
 	}
 	return input, nil
 }
@@ -210,17 +215,26 @@ func (t *Tool) runShellStep(ctx context.Context, params *Params, step *ShellStep
 	return stdout, nil
 }
 
-func (t *Tool) runToolStep(ctx context.Context, step *ToolStep, stdin string) (string, error) {
+// runToolStep invokes a registered tool. It returns the tool output and a
+// flag indicating whether the step was a write tool that ran in dry-run mode
+// (so the pipeline result can carry the confirmation guidance).
+//
+// Tools listed in Config.WriteToolNames are gated like the safety middleware:
+// the step's args must carry dryRun=true (preview) or confirmed=true, and real
+// execution additionally requires host authorization through the configured
+// ExecutionAuthorizer. On grant, the inner tool's name is marked authorized on
+// the context so its own confirmation layer passes.
+func (t *Tool) runToolStep(ctx context.Context, step *ToolStep, stdin string) (string, bool, error) {
 	tl, ok := t.tools[step.Name]
 	if !ok {
-		return "", toolutil.NotFoundError("pipe tool", step.Name, toolutil.SortedKeys(t.tools))
+		return "", false, toolutil.NotFoundError("pipe tool", step.Name, toolutil.SortedKeys(t.tools))
 	}
 
 	argsJSON := stdin
 	if step.Args != nil {
 		b, err := json.Marshal(step.Args)
 		if err != nil {
-			return "", errors.Wrap(err, "failed to marshal tool args")
+			return "", false, errors.Wrap(err, "failed to marshal tool args")
 		}
 		argsJSON = string(b)
 	} else if argsJSON == "" {
@@ -230,7 +244,40 @@ func (t *Tool) runToolStep(ctx context.Context, step *ToolStep, stdin string) (s
 		argsJSON = "{}"
 	}
 
-	return tl.InvokableRun(ctx, argsJSON)
+	execCtx := ctx
+	if t.writeTools[step.Name] {
+		gp, err := toolkitsafety.ExtractGateParams(argsJSON)
+		if err != nil {
+			return "", false, errors.Wrapf(err, "failed to parse dryRun/confirmed args for write tool %q", step.Name)
+		}
+		var gateErr error
+		if t.cfg.AllowModelConfirmation {
+			switch {
+			case gp.DryRun:
+			case gp.Confirmed:
+			default:
+				gateErr = toolkitsafety.ErrGateRequired
+			}
+		} else {
+			gateErr = toolkitsafety.ShouldGateWithAuthorization(ctx, step.Name, t.writeTools, gp, json.RawMessage(argsJSON), t.cfg.ExecutionAuthorizer)
+		}
+		if gateErr != nil {
+			return "", false, gateErr
+		}
+		if gp.DryRun {
+			out, err := tl.InvokableRun(execCtx, argsJSON)
+			return out, true, err
+		}
+		// Real execution authorized: mark the inner tool name on the context so
+		// its own confirm.RequireConfirmationCtx second layer sees the grant.
+		execCtx = toolkitsafety.WithExecutionAuthorized(ctx, step.Name)
+	}
+
+	out, err := tl.InvokableRun(execCtx, argsJSON)
+	if err != nil {
+		return "", false, err
+	}
+	return out, false, nil
 }
 
 func (t *Tool) dryRunPreview(params *Params) string {

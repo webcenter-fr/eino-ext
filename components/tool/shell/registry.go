@@ -108,13 +108,13 @@ func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*Too
 }
 
 // WriteToolNames returns the tool names of all shell write tools.
-// These names can be passed to the safety middleware's Config.WriteToolNames.
 //
-// Contract: every name listed here MUST honor dryRun=true as a no-side-effect
-// preview. The safety gate treats dry-run as always-safe, so a tool that mutates
-// during dry-run would let an unconfirmed model call bypass the gate.
+// shell_exec is intentionally NOT a write tool: it executes commands in an
+// isolated, disposable Dagger sandbox and never mutates production systems
+// directly, so it is not gated by the safety middleware. (The command blocklist
+// is still enforced on every execution.)
 func WriteToolNames() []string {
-	return []string{"shell_exec"}
+	return nil
 }
 
 // NewAllToolsWithSafety creates all shell tools with a pre-configured safety middleware.

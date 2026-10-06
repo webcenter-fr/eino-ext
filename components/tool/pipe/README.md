@@ -26,7 +26,6 @@ if err != nil {
 defer pipeTool.Close()
 
 result, err := pipeTool.Invoke(ctx, &pipe.Params{
-	Confirmed: true,
 	Steps: []pipe.Step{
 		{Tool: &pipe.ToolStep{Name: "my_reader"}},
 		{Shell: &pipe.ShellStep{Command: []string{"grep", "error"}}},
@@ -35,11 +34,29 @@ result, err := pipeTool.Invoke(ctx, &pipe.Params{
 })
 ```
 
-With the safety middleware:
+With the safety middleware (`safetyCfg.ExecutionAuthorizer` and
+`safetyCfg.AllowModelConfirmation` are forwarded to the pipe config, so write
+tool steps gate on the same host approval mechanism as top-level write tools):
 
 ```go
-tools, mw, err := pipe.NewAllToolsWithSafety(ctx, cfg, nil)
+tools, mw, err := pipe.NewAllToolsWithSafety(ctx, cfg, safetyCfg)
 ```
+
+To allow write tools (e.g. Kubernetes) as `tool` steps:
+
+```go
+pipeTool, err := pipe.NewPipeTool(ctx, &pipe.Config{
+	Shell:             &shell.Config{Workdir: "/path/to/project"},
+	Tools:             allTools,
+	WriteToolNames:    kubernetes.WriteToolNames(), // gate these names as steps
+	ExecutionAuthorizer: myAuthorizer,              // host approval store
+})
+```
+
+A listed write tool step must first run with `dryRun:true` in its `args` (the
+pipeline result then carries `DRY-RUN RESULT` guidance), and after user approval
+be re-called with `confirmed:true`; execution only proceeds when the authorizer
+grants it.
 
 ## Step DSL
 
@@ -73,16 +90,26 @@ running `jq -c '{query: .}'` can produce the arguments for the next tool.
 
 ## Security
 
-- `pipe_exec` is a **write tool**: call it with `dryRun=true` to preview, then
-  `confirmed=true` after approval. The safety middleware gates it, and `Invoke`
-  re-checks with `confirm.RequireConfirmationCtx` as defense in depth.
+- `pipe_exec` is **not gated** by the safety middleware: shell steps run in the
+  isolated, disposable Dagger sandbox and tool steps invoke read-only registered
+  tools, so no user confirmation is required. `dryRun=true` still returns a pure
+  preview without executing anything.
 - Every shell step runs through `shell.RawExec`, which **always** enforces the
-  command blocklist, independent of confirmation.
-- Only **read tools** can be used as `tool` steps. A write tool invoked inside a
-  pipeline fails closed: authorization is tool-name scoped to `pipe_exec`, so the
-  inner write tool's own confirmation check finds no grant.
+  command blocklist.
+- **Write tools as tool steps (opt-in gate).** Tools listed in
+  `Config.WriteToolNames` (e.g. `kubernetes.WriteToolNames()`) are gated inside
+  the pipeline exactly like the safety middleware gates top-level write tools:
+  the step's args must carry `dryRun:true` (preview, marked with guidance) or
+  `confirmed:true`, and real execution requires a grant from
+  `Config.ExecutionAuthorizer` (otherwise `ErrExecutionNotAuthorized`).
+  `AllowModelConfirmation` restores trust of the model-supplied `confirmed:true`
+  for tests/sandboxes only. Write tools **not** listed still fail closed via
+  their own confirmation check (no grant reaches them).
 - Commands are typed `[]string`; the model never constructs a shell-language
   pipeline string, so there is no new injection surface.
+- Note: sandbox egress is currently not enforced (pre-existing) — the container
+  can reach the network, so the model can call out to reachable APIs from
+  within the sandbox.
 
 ## Checkup
 

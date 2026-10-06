@@ -11,8 +11,8 @@ Each step sets exactly one of:
 - Steps run in order; the final step's output is the tool result.
 - A shell step that exits non-zero aborts the pipeline and reports the exit code and stderr.
 - Shell commands matching a known destructive pattern (e.g. 'rm', 'kill', 'shutdown') are automatically blocked.
-- This is a WRITE tool: you must call it with dryRun=true first to preview the pipeline, then re-call with confirmed=true after user approval.
-- Only read tools can be used as `tool` steps. Write tools invoked inside a pipeline fail closed because the pipeline's authorization covers only `pipe_exec`.
+- This tool executes directly — no user confirmation is required. You can set dryRun=true to preview the pipeline without executing it.
+- A `tool` step targeting a write tool is gated: put dryRun=true in that step's `args`, show the returned preview to the user, and only re-call with confirmed=true in those args after the user approves. Real execution then requires the host application to authorize the write tool; without it the step fails closed.
 
 ** Output **
 It returns the final step's output as a string. When streamed, the result is emitted line by line.

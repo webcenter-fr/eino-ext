@@ -11,6 +11,7 @@ import (
 
 	safetymw "github.com/webcenter-fr/eino-ext/components/middleware/safety"
 	"github.com/webcenter-fr/eino-ext/components/tool/shell"
+	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -44,9 +45,10 @@ func NewPipeTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	}
 
 	t := &Tool{
-		shell: shellTool,
-		tools: cfg.Tools,
-		cfg:   cfg,
+		shell:      shellTool,
+		tools:      cfg.Tools,
+		writeTools: toolkitsafety.NewWriteToolSet(cfg.WriteToolNames),
+		cfg:        cfg,
 	}
 
 	invokable, err := utils.InferTool("pipe_exec", pipeDescription, t.Invoke)
@@ -67,17 +69,34 @@ func NewPipeTool(ctx context.Context, cfg *Config) (*Tool, error) {
 }
 
 // WriteToolNames returns the tool names of all pipe write tools.
-// These names can be passed to the safety middleware's Config.WriteToolNames.
 //
-// Contract: every name listed here MUST honor dryRun=true as a no-side-effect
-// preview. The safety gate treats dry-run as always-safe, so a tool that mutates
-// during dry-run would let an unconfirmed model call bypass the gate.
+// pipe_exec is intentionally NOT a write tool: its shell steps run in the
+// isolated Dagger sandbox and its tool steps invoke read-only registered tools,
+// so it is not gated by the safety middleware. (The command blocklist is still
+// enforced on every shell step, and write tools used as tool steps are gated
+// per-step via Config.WriteToolNames + Config.ExecutionAuthorizer.)
 func WriteToolNames() []string {
-	return []string{"pipe_exec"}
+	return nil
 }
 
 // NewAllToolsWithSafety creates the pipe tool with a pre-configured safety middleware.
+// The middleware's ExecutionAuthorizer and AllowModelConfirmation are forwarded
+// to the pipe config when unset, so write tool steps gate on the same host
+// approval mechanism as top-level write tools.
 func NewAllToolsWithSafety(ctx context.Context, cfg *Config, safetyCfg *safetymw.Config) ([]tool.InvokableTool, *safetymw.Middleware, error) {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	if safetyCfg == nil {
+		safetyCfg = &safetymw.Config{}
+	}
+	if cfg.ExecutionAuthorizer == nil {
+		cfg.ExecutionAuthorizer = safetyCfg.ExecutionAuthorizer
+	}
+	if !cfg.AllowModelConfirmation {
+		cfg.AllowModelConfirmation = safetyCfg.AllowModelConfirmation
+	}
+
 	pipeTool, err := NewPipeTool(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -85,9 +104,6 @@ func NewAllToolsWithSafety(ctx context.Context, cfg *Config, safetyCfg *safetymw
 
 	tools := []tool.InvokableTool{pipeTool}
 
-	if safetyCfg == nil {
-		safetyCfg = &safetymw.Config{}
-	}
 	if len(safetyCfg.WriteToolNames) == 0 {
 		safetyCfg.WriteToolNames = WriteToolNames()
 	}
