@@ -583,6 +583,14 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		newObj: func() runtime.Object { return &olmv1alpha1.Subscription{} },
 		format: func(o runtime.Object) json.RawMessage {
 			sub := o.(*olmv1alpha1.Subscription)
+			// Spec is a pointer (*SubscriptionSpec) and may be nil for objects
+			// stored without a spec (older OLM CRDs do not require it).
+			sourceName := ""
+			packageName := ""
+			if sub.Spec != nil {
+				sourceName = fmt.Sprintf("%s/%s", sub.Spec.CatalogSourceNamespace, sub.Spec.CatalogSource)
+				packageName = sub.Spec.Package
+			}
 			return marshal.MustMarshal(struct {
 				Name        string `json:"name"`
 				Namespace   string `json:"namespace"`
@@ -595,8 +603,8 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 				Namespace:   sub.Namespace,
 				Status:      string(sub.Status.State),
 				Version:     sub.Status.InstalledCSV,
-				SourceName:  fmt.Sprintf("%s/%s", sub.Spec.CatalogSourceNamespace, sub.Spec.CatalogSource),
-				PackageName: sub.Spec.Package,
+				SourceName:  sourceName,
+				PackageName: packageName,
 			})
 		},
 	}
