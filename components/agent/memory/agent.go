@@ -381,14 +381,14 @@ func (a *Agent) monitorRun(
 
 		case schema.Tool:
 			// Forward, and (trace on) record tool results — streamed or not.
-			if mo.IsStreaming && mo.MessageStream != nil {
+			// When trace is off, forward the event untouched (legacy behavior:
+			// no stream copy and no abandoned Copy(2) branch to leave unclosed).
+			if a.traceCfg.Enabled && mo.IsStreaming && mo.MessageStream != nil {
 				copies := mo.MessageStream.Copy(2)
-				mo.MessageStream = copies[0]
+				mo.MessageStream = copies[0] // forwarded downstream
 				outGen.Send(event)
-				if a.traceCfg.Enabled {
-					if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
-						trace = append(trace, recordToolResultStep(toolName(msg, mo), msg.Content, event.AgentName))
-					}
+				if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
+					trace = append(trace, recordToolResultStep(toolName(msg, mo), msg.Content, event.AgentName))
 				}
 			} else {
 				outGen.Send(event)

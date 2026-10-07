@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -404,4 +405,140 @@ func TestToolName(t *testing.T) {
 	assert.Equal(t, "from-variant", toolName(schema.ToolMessage("c", "id"), mo))
 	assert.Equal(t, "from-msg", toolName(schema.ToolMessage("c", "id", schema.WithToolName("from-msg")), &adk.MessageVariant{}))
 	assert.Empty(t, toolName(nil, nil))
+}
+
+// TestMonitorRun_LegacyExtractionInput is the golden test for the opt-in
+// guarantee: with Trace.Enabled == false the extractor receives exactly the
+// concatenated assistant prose — no tool results, no trace formatting — and
+// streamed tool events are forwarded untouched (no stream copy).
+func TestMonitorRun_LegacyExtractionInput(t *testing.T) {
+	ctx := context.Background()
+
+	streamedTool := adk.EventFromMessage(
+		nil,
+		schema.StreamReaderFromArray([]*schema.Message{
+			schema.ToolMessage("streamed ", "call-2"),
+			schema.ToolMessage("tool result", "call-2"),
+		}),
+		schema.Tool, "search")
+
+	events := []*adk.AgentEvent{
+		adk.EventFromMessage(
+			schema.AssistantMessage("turn 1", []schema.ToolCall{
+				{Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"a"}`}},
+			}), nil, schema.Assistant, ""),
+		adk.EventFromMessage(schema.ToolMessage("result 1", "call-1"), nil, schema.Tool, "search"),
+		streamedTool,
+		adk.EventFromMessage(schema.AssistantMessage("final answer", nil), nil, schema.Assistant, ""),
+		{Action: adk.NewExitAction()},
+	}
+
+	mdl := &capturingModel{response: "[]"}
+	agent, err := NewAgent(ctx, Config{
+		InnerAgent: &sequenceAgent{events: events},
+		Store:      &fakeMemoryStore{},
+		Model:      mdl,
+		// Trace disabled: legacy path.
+	})
+	require.NoError(t, err)
+
+	iter := agent.Run(ctx, &adk.AgentInput{Messages: []*schema.Message{schema.UserMessage("do it")}})
+
+	var streamedContent string
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev == nil || ev.Output == nil || ev.Output.MessageOutput == nil {
+			continue
+		}
+		mo := ev.Output.MessageOutput
+		if mo.IsStreaming && mo.MessageStream != nil {
+			s := mo.MessageStream
+			defer s.Close()
+			for {
+				chunk, err := s.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+				streamedContent += chunk.Content
+			}
+		}
+	}
+
+	// The streamed tool event was forwarded untouched and intact.
+	assert.Equal(t, "streamed tool result", streamedContent)
+
+	// The extractor received the system prompt plus the user template filled
+	// with the concatenated assistant prose only.
+	require.Len(t, mdl.contents, 2)
+	prompt := mdl.contents[1]
+	assert.Contains(t, prompt, "turn 1final answer")
+	assert.NotContains(t, prompt, "result 1", "tool results must not reach the legacy extractor")
+	assert.NotContains(t, prompt, "streamed tool result", "tool results must not reach the legacy extractor")
+	assert.NotContains(t, prompt, "[tool_call:", "trace formatting must not reach the legacy extractor")
+}
+
+// TestMonitorRun_TraceEnabled_NoSteps_SkipsExtraction verifies the plan's edge
+// case: trace enabled but no collectible steps → extraction is skipped and no
+// LLM call is made.
+func TestMonitorRun_TraceEnabled_NoSteps_SkipsExtraction(t *testing.T) {
+	ctx := context.Background()
+
+	events := []*adk.AgentEvent{
+		{Action: adk.NewExitAction()},
+	}
+
+	mdl := &capturingModel{response: "[]"}
+	agent, err := NewAgent(ctx, Config{
+		InnerAgent: &sequenceAgent{events: events},
+		Store:      &fakeMemoryStore{},
+		Model:      mdl,
+		Trace:      TraceConfig{Enabled: true},
+	})
+	require.NoError(t, err)
+
+	iter := agent.Run(ctx, &adk.AgentInput{Messages: []*schema.Message{schema.UserMessage("do it")}})
+	for {
+		if _, ok := iter.Next(); !ok {
+			break
+		}
+	}
+
+	assert.Empty(t, mdl.contents, "no extraction LLM call expected without trace steps")
+}
+
+// TestMonitorRun_AsyncExtractDrainedByEndSession verifies that EndSession
+// waits for in-flight async extraction (extractWG) before returning, so the
+// extraction LLM call has been made by the time EndSession returns.
+func TestMonitorRun_AsyncExtractDrainedByEndSession(t *testing.T) {
+	ctx := context.Background()
+
+	events := []*adk.AgentEvent{
+		adk.EventFromMessage(schema.AssistantMessage("answer", nil), nil, schema.Assistant, ""),
+		{Action: adk.NewExitAction()},
+	}
+
+	mdl := &capturingModel{response: "[]"}
+	agent, err := NewAgent(ctx, Config{
+		InnerAgent:   &sequenceAgent{events: events},
+		Store:        &fakeMemoryStore{},
+		Model:        mdl,
+		Trace:        TraceConfig{Enabled: true},
+		AsyncExtract: true,
+	})
+	require.NoError(t, err)
+
+	iter := agent.Run(ctx, &adk.AgentInput{Messages: []*schema.Message{schema.UserMessage("do it")}})
+	for {
+		if _, ok := iter.Next(); !ok {
+			break
+		}
+	}
+
+	// The async extraction may still be in flight; EndSession must wait for it.
+	require.NoError(t, agent.EndSession(ctx))
+	assert.NotEmpty(t, mdl.lastPrompt())
 }
