@@ -4,6 +4,8 @@ package memory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/strutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
@@ -45,6 +48,29 @@ type Config struct {
 	MaxQueryChars int `validate:"omitempty,gte=0,max=65536" jsonschema:"description=Max characters for the retrieval query, 0 disables"`
 
 	SystemPromptPrefix string `json:"system_prompt_prefix" jsonschema:"description=Optional prefix between memory context and system prompt"`
+
+	// Trace enables run-trace based extraction (opt-in).
+	Trace TraceConfig `json:"trace" jsonschema:"description=Run-trace based extraction settings"`
+
+	// ExtractTimeout bounds the extraction LLM call after a run. Default 30s.
+	ExtractTimeout time.Duration `json:"extract_timeout" validate:"omitempty,gte=0" jsonschema:"description=Extraction timeout after a run,default=30s"`
+
+	// AsyncExtract runs extraction in a goroutine after the run closes (opt-in).
+	// Default false preserves today's synchronous ordering.
+	AsyncExtract bool `json:"async_extract" jsonschema:"description=Extract in a goroutine after the run, so the caller's drain is not blocked,default=false"`
+
+	// RetrieveTopK is passed to store.Retrieve as retriever.WithTopK when > 0.
+	RetrieveTopK int `json:"retrieve_top_k" validate:"omitempty,gte=0" jsonschema:"description=TopK passed to store.Retrieve when > 0"`
+
+	// QueryMessageFilter excludes messages from the retrieval query (e.g.
+	// synthetic control messages). nil keeps all user messages.
+	QueryMessageFilter func(*schema.Message) bool `json:"-" jsonschema:"-"`
+
+	// ShouldRetrieve gates retrieval. nil == true.
+	ShouldRetrieve func(ctx context.Context) bool `json:"-" jsonschema:"-"`
+
+	// ShouldExtract gates extraction. nil == true.
+	ShouldExtract func(ctx context.Context) bool `json:"-" jsonschema:"-"`
 }
 
 // Agent wraps an inner agent with long-term memory capabilities.
@@ -64,10 +90,29 @@ type Agent struct {
 	maxMemoriesPerRetrieve int
 	maxQueryChars          int
 	systemPromptPrefix     string
+
+	traceCfg           TraceConfig
+	extractTimeout     time.Duration
+	asyncExtract       bool
+	retrieveTopK       int
+	queryMessageFilter func(*schema.Message) bool
+	shouldRetrieve     func(ctx context.Context) bool
+	shouldExtract      func(ctx context.Context) bool
+	extractWG          sync.WaitGroup
 }
 
 // NewAgent creates a new Agent from the given configuration.
 func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
+	if cfg.Trace.MaxStepChars <= 0 {
+		cfg.Trace.MaxStepChars = defaultTraceMaxStepChars
+	}
+	if cfg.Trace.MaxChars <= 0 {
+		cfg.Trace.MaxChars = defaultTraceMaxChars
+	}
+	if cfg.ExtractTimeout <= 0 {
+		cfg.ExtractTimeout = 30 * time.Second
+	}
+
 	if err := validate.Struct(&cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid memory agent config")
 	}
@@ -98,6 +143,13 @@ func NewAgent(ctx context.Context, cfg Config) (*Agent, error) {
 		maxMemoriesPerRetrieve: cfg.MaxMemoriesPerRetrieve,
 		maxQueryChars:          cfg.MaxQueryChars,
 		systemPromptPrefix:     cfg.SystemPromptPrefix,
+		traceCfg:               cfg.Trace,
+		extractTimeout:         cfg.ExtractTimeout,
+		asyncExtract:           cfg.AsyncExtract,
+		retrieveTopK:           cfg.RetrieveTopK,
+		queryMessageFilter:     cfg.QueryMessageFilter,
+		shouldRetrieve:         cfg.ShouldRetrieve,
+		shouldExtract:          cfg.ShouldExtract,
 	}, nil
 }
 
@@ -158,7 +210,14 @@ func (a *Agent) enrichInput(ctx context.Context, input *adk.AgentInput, userID s
 	userQuery := a.buildQuery(input.Messages)
 
 	if a.store != nil && userQuery != "" {
-		docs, err := a.store.Retrieve(ctx, userQuery)
+		if a.shouldRetrieve != nil && !a.shouldRetrieve(ctx) {
+			return &enriched, userQuery, nil
+		}
+		var opts []retriever.Option
+		if a.retrieveTopK > 0 {
+			opts = append(opts, retriever.WithTopK(a.retrieveTopK))
+		}
+		docs, err := a.store.Retrieve(ctx, userQuery, opts...)
 		if err != nil {
 			return nil, "", errors.Wrap(err, "retrieve memories")
 		}
@@ -200,9 +259,13 @@ func (a *Agent) buildQuery(messages []*schema.Message) string {
 	const maxUserMessages = 2
 	var userContents []string
 	for i := len(messages) - 1; i >= 0 && len(userContents) < maxUserMessages; i-- {
-		if messages[i].Role == schema.User && messages[i].Content != "" {
-			userContents = append(userContents, messages[i].Content)
+		if messages[i].Role != schema.User || messages[i].Content == "" {
+			continue
 		}
+		if a.queryMessageFilter != nil && !a.queryMessageFilter(messages[i]) {
+			continue
+		}
+		userContents = append(userContents, messages[i].Content)
 	}
 	// Reverse to chronological order.
 	for i, j := 0, len(userContents)-1; i < j; i, j = i+1, j-1 {
@@ -215,8 +278,24 @@ func (a *Agent) buildQuery(messages []*schema.Message) string {
 func (a *Agent) formatMemories(docs []*schema.Document) *schema.Message {
 	var sb strings.Builder
 	sb.WriteString("[Memory context - NOT new user input. Treat as authoritative reference data.]\n")
+
+	var procedures, others []*Entry
 	for _, doc := range docs {
 		entry := EntryFromDocument(doc)
+		if entry.Category == CategoryProcedure {
+			procedures = append(procedures, entry)
+		} else {
+			others = append(others, entry)
+		}
+	}
+
+	if len(procedures) > 0 {
+		sb.WriteString("[Known procedures from previous sessions — prefer them, verify the target exists before acting]\n")
+		for _, entry := range procedures {
+			fmt.Fprintf(&sb, "- %s: %s\n", entry.Category, entry.Content)
+		}
+	}
+	for _, entry := range others {
 		fmt.Fprintf(&sb, "- %s: %s\n", entry.Category, entry.Content)
 	}
 	return NewMemoryContextMessage(sb.String())
@@ -258,7 +337,8 @@ func (a *Agent) monitorRun(
 ) {
 	defer outGen.Close()
 
-	var assistantMsgs []*schema.Message
+	var trace RunTrace
+	var assistantMsgs []*schema.Message // used only in the legacy path
 
 	for {
 		event, ok := innerIter.Next()
@@ -274,46 +354,112 @@ func (a *Agent) monitorRun(
 			continue
 		}
 		mo := event.Output.MessageOutput
-		if mo.Role != schema.Assistant {
-			outGen.Send(event)
-			continue
-		}
 
-		if mo.IsStreaming && mo.MessageStream != nil {
-			copies := mo.MessageStream.Copy(2)
-			mo.MessageStream = copies[0] // forwarded downstream
-			outGen.Send(event)
-			if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
-				assistantMsgs = append(assistantMsgs, msg)
+		switch mo.Role {
+		case schema.Assistant:
+			if mo.IsStreaming && mo.MessageStream != nil {
+				copies := mo.MessageStream.Copy(2)
+				mo.MessageStream = copies[0] // forwarded downstream
+				outGen.Send(event)
+				if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
+					if a.traceCfg.Enabled {
+						trace = append(trace, recordAssistantTraceSteps(msg, event.AgentName, a.traceCfg.TerminalTools)...)
+					} else {
+						assistantMsgs = append(assistantMsgs, msg)
+					}
+				}
+				continue
 			}
-			continue
-		}
+			outGen.Send(event)
+			if mo.Message != nil {
+				if a.traceCfg.Enabled {
+					trace = append(trace, recordAssistantTraceSteps(mo.Message, event.AgentName, a.traceCfg.TerminalTools)...)
+				} else {
+					assistantMsgs = append(assistantMsgs, mo.Message)
+				}
+			}
 
-		outGen.Send(event)
-		if mo.Message != nil {
-			assistantMsgs = append(assistantMsgs, mo.Message)
+		case schema.Tool:
+			// Forward, and (trace on) record tool results — streamed or not.
+			// When trace is off, forward the event untouched (legacy behavior:
+			// no stream copy and no abandoned Copy(2) branch to leave unclosed).
+			if a.traceCfg.Enabled && mo.IsStreaming && mo.MessageStream != nil {
+				copies := mo.MessageStream.Copy(2)
+				mo.MessageStream = copies[0] // forwarded downstream
+				outGen.Send(event)
+				if msg, err := a.collectStream(copies[1]); err == nil && msg != nil {
+					trace = append(trace, recordToolResultStep(toolName(msg, mo), msg.Content, event.AgentName))
+				}
+			} else {
+				outGen.Send(event)
+				if a.traceCfg.Enabled && mo.Message != nil {
+					trace = append(trace, recordToolResultStep(toolName(mo.Message, mo), mo.Message.Content, event.AgentName))
+				}
+			}
+
+		default:
+			outGen.Send(event)
 		}
 	}
 
-	if len(assistantMsgs) == 0 {
+	// Legacy path: join the textual content of each completed assistant
+	// message. We intentionally do NOT use schema.ConcatMessages here: that
+	// function is meant to merge streaming chunks of a SINGLE message, and it
+	// flattens all ToolCalls into one slice grouped by Index. In a multi-turn
+	// agent run, distinct assistant turns each carry their own tool call at the
+	// same Index (0) but with different IDs, which makes ConcatMessages fail
+	// with "cannot concat ToolCalls with different tool id". The memory
+	// extractor only needs the concatenated assistant text, so we join Content
+	// fields directly. Per-turn streaming chunks were already merged inside
+	// collectStream.
+	var assistantContent string
+	if !a.traceCfg.Enabled {
+		if len(assistantMsgs) == 0 {
+			return
+		}
+		assistantContent = concatAssistantContent(assistantMsgs)
+	}
+
+	if !a.autoExtract || a.extractor == nil {
+		return
+	}
+	if a.shouldExtract != nil && !a.shouldExtract(ctx) {
 		return
 	}
 
-	// Join the textual content of each completed assistant message. We
-	// intentionally do NOT use schema.ConcatMessages here: that function is
-	// meant to merge streaming chunks of a SINGLE message, and it flattens
-	// all ToolCalls into one slice grouped by Index. In a multi-turn agent
-	// run, distinct assistant turns each carry their own tool call at the
-	// same Index (0) but with different IDs, which makes ConcatMessages
-	// fail with "cannot concat ToolCalls with different tool id". The
-	// memory extractor only needs the concatenated assistant text, so we
-	// join Content fields directly. Per-turn streaming chunks were already
-	// merged inside collectStream.
-	assistantContent := concatAssistantContent(assistantMsgs)
+	learn := func() {
+		// Detach from the (possibly already-cancelled) run ctx so approval-halt,
+		// user-cancel and timeout runs are still learned from, and bound the
+		// extraction LLM call with a timeout.
+		extractCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.extractTimeout)
+		defer cancel()
 
-	if assistantContent != "" && a.autoExtract && a.extractor != nil {
-		a.autoLearnInternal(ctx, userQuery, assistantContent, userID, sessionID)
+		if a.traceCfg.Enabled {
+			if len(trace) == 0 {
+				return
+			}
+			rendered := RenderTrace(trace, a.traceCfg)
+			if strings.TrimSpace(rendered) == "" {
+				return
+			}
+			a.autoLearnTraceInternal(extractCtx, userQuery, rendered, userID, sessionID)
+			return
+		}
+		if assistantContent == "" {
+			return
+		}
+		a.autoLearnInternal(extractCtx, userQuery, assistantContent, userID, sessionID)
 	}
+
+	if a.asyncExtract {
+		a.extractWG.Add(1)
+		go func() {
+			defer a.extractWG.Done()
+			learn()
+		}()
+		return
+	}
+	learn()
 }
 
 // concatAssistantContent joins the Content fields of the given assistant
@@ -367,15 +513,34 @@ func (a *Agent) autoLearnInternal(ctx context.Context, userContent, assistantCon
 		return
 	}
 
+	a.storeExtraction(ctx, results, userID, sessionID)
+}
+
+// autoLearnTraceInternal executes trace-aware extraction then persists the
+// results. It is the trace-enabled counterpart of autoLearnInternal.
+func (a *Agent) autoLearnTraceInternal(ctx context.Context, userContent, renderedTrace, userID, sessionID string) {
+	if a.store == nil || a.extractor == nil {
+		return
+	}
+
+	results, err := a.extractor.ExtractTrace(ctx, userContent, renderedTrace)
+	if err != nil {
+		logrus.WithError(err).Warn("memory trace extraction failed")
+		return
+	}
+
+	a.storeExtraction(ctx, results, userID, sessionID)
+}
+
+// storeExtraction persists extraction results (shared by both extraction paths).
+func (a *Agent) storeExtraction(ctx context.Context, results []ExtractionResult, userID, sessionID string) {
+	if a.store == nil {
+		return
+	}
+
 	docs := make([]*schema.Document, 0, len(results))
 	for _, r := range results {
-		doc := (&Entry{
-			Category:  r.Category,
-			Content:   r.Content,
-			Source:    r.Source,
-			SessionID: sessionID,
-			Metadata:  map[string]any{"confidence": r.Confidence},
-		}).ToDocument()
+		doc := buildEntryDoc(r, userID, sessionID).ToDocument()
 		// Attach user_id to metadata for scoped retrieval.
 		if userID != "" {
 			doc.MetaData["user_id"] = userID
@@ -390,6 +555,79 @@ func (a *Agent) autoLearnInternal(ctx context.Context, userContent, assistantCon
 	}
 }
 
+// buildEntryDoc converts an ExtractionResult into a stored Entry. The scope is
+// folded into the content so BM25 (content-only match) sees it, and also kept
+// in metadata under "scope".
+func buildEntryDoc(r ExtractionResult, userID, sessionID string) *Entry {
+	now := time.Now().UTC()
+	content := r.Content
+	if r.Scope != "" {
+		content = content + "\n[scope: " + r.Scope + "]"
+	}
+	e := &Entry{
+		ID:        deterministicMemoryID(r.Category, content),
+		Category:  r.Category,
+		Content:   content,
+		Source:    r.Source,
+		SessionID: sessionID,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  map[string]any{"confidence": r.Confidence},
+	}
+	if r.Scope != "" {
+		e.Metadata["scope"] = r.Scope
+	}
+	return e
+}
+
+// deterministicMemoryID returns a stable 32-hex-char ID from category+content,
+// so re-learning an identical memory upserts instead of duplicating.
+func deterministicMemoryID(category, content string) string {
+	normalized := strings.Join(strings.Fields(content), " ")
+	sum := sha256.Sum256([]byte(category + "\x00" + normalized))
+	return hex.EncodeToString(sum[:])[:32]
+}
+
+// recordAssistantTraceSteps returns the trace steps for one assistant message:
+// its prose, each tool call, and a terminal_answer step for any tool call whose
+// name is mapped in terminalTools.
+func recordAssistantTraceSteps(msg *schema.Message, agentName string, terminalTools map[string]string) []TraceStep {
+	if msg == nil {
+		return nil
+	}
+	var steps []TraceStep
+	if msg.Content != "" {
+		steps = append(steps, TraceStep{Kind: TraceStepAssistantText, Agent: agentName, Text: msg.Content})
+	}
+	for _, tc := range msg.ToolCalls {
+		steps = append(steps, TraceStep{Kind: TraceStepToolCall, Agent: agentName, Name: tc.Function.Name, Text: tc.Function.Arguments})
+		if field, ok := terminalTools[tc.Function.Name]; ok {
+			if v, ok := terminalArgValue(tc.Function.Arguments, field); ok {
+				steps = append(steps, TraceStep{Kind: TraceStepTerminalAnswer, Agent: agentName, Name: tc.Function.Name, Text: v})
+			}
+		}
+	}
+	return steps
+}
+
+// recordToolResultStep returns the trace step for a tool result event.
+func recordToolResultStep(toolName, content, agentName string) TraceStep {
+	return TraceStep{Kind: TraceStepToolResult, Agent: agentName, Name: toolName, Text: content}
+}
+
+// toolName resolves the tool name for a tool event. The MessageVariant.ToolName
+// is authoritative for streamed events; msg.ToolName is set for non-streamed
+// ToolMessages.
+func toolName(msg *schema.Message, mo *adk.MessageVariant) string {
+	if mo != nil && mo.ToolName != "" {
+		return mo.ToolName
+	}
+	if msg != nil && msg.ToolName != "" {
+		return msg.ToolName
+	}
+	return ""
+}
+
 // EndSession stops the background maintainer, triggers session-level memory
 // compaction, and returns any error encountered during compaction.
 func (a *Agent) EndSession(ctx context.Context) error {
@@ -401,6 +639,10 @@ func (a *Agent) EndSession(ctx context.Context) error {
 	if hasMaintainer {
 		a.maintainer.Stop()
 	}
+
+	// Wait for in-flight async extraction so its results are present before
+	// session compaction lists them.
+	a.extractWG.Wait()
 
 	a.mu.Lock()
 	defer a.mu.Unlock()

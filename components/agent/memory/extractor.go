@@ -25,6 +25,18 @@ var extractionSystemPrompt string
 //go:embed prompts/extraction_user.md
 var extractionUserTemplate string
 
+// ExtractionTraceSystemPrompt is the system prompt for trace-aware memory
+// extraction.
+//
+//go:embed prompts/extraction_trace_system.md
+var extractionTraceSystemPrompt string
+
+// ExtractionTraceUserTemplate is the user prompt template for trace-aware
+// memory extraction. It expects two %s arguments: userContent and renderedTrace.
+//
+//go:embed prompts/extraction_trace_user.md
+var extractionTraceUserTemplate string
+
 // SummarizeSystemPrompt is the system prompt for session summarization.
 //
 //go:embed prompts/summarize_system.md
@@ -42,6 +54,7 @@ type ExtractionResult struct {
 	Category   string  `json:"category"`
 	Source     string  `json:"source"`
 	Confidence float64 `json:"confidence"`
+	Scope      string  `json:"scope,omitempty"` // environment scope (cluster/namespace, app), optional
 }
 
 // Extractor extracts structured memories from conversation turns.
@@ -68,6 +81,30 @@ func (e *Extractor) Extract(ctx context.Context, userContent, assistantContent s
 
 	result, err := e.model.Generate(ctx, []*schema.Message{
 		schema.SystemMessage(extractionSystemPrompt),
+		schema.UserMessage(prompt),
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "extract memories via LLM")
+	}
+
+	return parseExtractionResponse(result.Content)
+}
+
+// ExtractTrace runs trace-aware extraction using the trace prompts. The
+// rendered trace is expected to already be bounded by RenderTrace; userContent
+// is truncated to keep the prompt focused.
+func (e *Extractor) ExtractTrace(ctx context.Context, userContent, renderedTrace string) ([]ExtractionResult, error) {
+	if e.model == nil {
+		return nil, nil
+	}
+
+	prompt := fmt.Sprintf(extractionTraceUserTemplate,
+		truncate(userContent, 4000),
+		renderedTrace,
+	)
+
+	result, err := e.model.Generate(ctx, []*schema.Message{
+		schema.SystemMessage(extractionTraceSystemPrompt),
 		schema.UserMessage(prompt),
 	})
 	if err != nil {

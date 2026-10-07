@@ -1,9 +1,12 @@
 package memory
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseExtractionResponse_JSONArray(t *testing.T) {
@@ -98,4 +101,36 @@ func TestStripMarkdownFences(t *testing.T) {
 func TestTruncate(t *testing.T) {
 	assert.Equal(t, "hello", truncate("hello", 10))
 	assert.Equal(t, "he...", truncate("hello world", 2))
+}
+
+func TestParseExtractionResponse_WithScope(t *testing.T) {
+	content := `[{"content":"kafka.sh on cli=true pod","category":"procedure","source":"observation","confidence":0.9,"scope":"cluster/ns"}]`
+	results, err := parseExtractionResponse(content)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "cluster/ns", results[0].Scope)
+
+	entry := buildEntryDoc(results[0], "user-1", "session-1")
+	assert.Equal(t, "cluster/ns", entry.Metadata["scope"])
+	assert.Contains(t, entry.Content, "[scope: cluster/ns]")
+	assert.NotEmpty(t, entry.ID)
+	assert.False(t, entry.CreatedAt.IsZero())
+	assert.False(t, entry.UpdatedAt.IsZero())
+}
+
+func TestExtractTrace_CancelledContextExtracts(t *testing.T) {
+	mdl := &capturingModel{response: `[{"content":"proc","category":"procedure","source":"observation","confidence":0.9}]`}
+	extractor := NewExtractor(mdl)
+
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	cancelRun() // the run ctx is already cancelled
+
+	extractCtx, cancelExtract := context.WithTimeout(context.WithoutCancel(runCtx), 30*time.Second)
+	defer cancelExtract()
+
+	results, err := extractor.ExtractTrace(extractCtx, "user request", "[tool_result:x@a] ok")
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "proc", results[0].Content)
+	assert.NoError(t, mdl.ctxErr, "extraction must observe a live context")
 }

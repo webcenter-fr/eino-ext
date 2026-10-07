@@ -20,6 +20,9 @@ const (
 	CategoryLearning = "learning"
 	// CategorySummary is the "summary" memory category.
 	CategorySummary = "summary"
+	// CategoryProcedure is the "procedure" memory category: reusable operational
+	// know-how (resource, label selector, wrapper, command form).
+	CategoryProcedure = "procedure"
 
 	// SourceUser indicates a memory sourced from user input.
 	SourceUser = "user"
