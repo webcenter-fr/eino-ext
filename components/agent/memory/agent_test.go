@@ -2,7 +2,9 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -451,4 +453,107 @@ func TestNewAgent_MaxQueryChars(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 512, agent.maxQueryChars)
+}
+
+func TestNewAgent_TraceDefaults(t *testing.T) {
+	agent, err := NewAgent(context.Background(), Config{InnerAgent: &mockAgent{name: "test"}})
+	require.NoError(t, err)
+	assert.Equal(t, 1500, agent.traceCfg.MaxStepChars)
+	assert.Equal(t, 12000, agent.traceCfg.MaxChars)
+	assert.Equal(t, 30*time.Second, agent.extractTimeout)
+	assert.False(t, agent.traceCfg.Enabled)
+}
+
+func TestDeterministicMemoryID_Stable(t *testing.T) {
+	a := deterministicMemoryID("procedure", "kafka.sh on cli=true pod")
+	b := deterministicMemoryID("procedure", "kafka.sh   on\ncli=true pod")
+	assert.Equal(t, a, b)
+	assert.Len(t, a, 32)
+}
+
+func TestDeterministicMemoryID_Differs(t *testing.T) {
+	assert.NotEqual(t,
+		deterministicMemoryID("procedure", "content"),
+		deterministicMemoryID("fact", "content"),
+	)
+	assert.NotEqual(t,
+		deterministicMemoryID("procedure", "content a"),
+		deterministicMemoryID("procedure", "content b"),
+	)
+}
+
+func TestBuildQuery_QueryMessageFilter(t *testing.T) {
+	agent := &Agent{
+		queryMessageFilter: func(m *schema.Message) bool {
+			return !strings.HasPrefix(m.Content, "[APPROVED WRITE")
+		},
+	}
+	messages := []*schema.Message{
+		schema.UserMessage("[APPROVED WRITE] do it"),
+		schema.UserMessage("real question"),
+	}
+	assert.Equal(t, "real question", agent.buildQuery(messages))
+}
+
+func TestFormatMemories_ProcedureFirst(t *testing.T) {
+	agent := &Agent{}
+	docs := []*schema.Document{
+		{Content: "project uses PostgreSQL", MetaData: map[string]any{"category": "fact"}},
+		{Content: "kafka.sh on cli=true pod", MetaData: map[string]any{"category": "procedure"}},
+	}
+	msg := agent.formatMemories(docs)
+
+	procIdx := strings.Index(msg.Content, "procedure: kafka.sh on cli=true pod")
+	factIdx := strings.Index(msg.Content, "fact: project uses PostgreSQL")
+	require.GreaterOrEqual(t, procIdx, 0)
+	require.GreaterOrEqual(t, factIdx, 0)
+	assert.Less(t, procIdx, factIdx)
+	assert.Contains(t, msg.Content, "[Known procedures from previous sessions")
+}
+
+func TestFormatMemories_NoProcedureUnchanged(t *testing.T) {
+	agent := &Agent{}
+	docs := []*schema.Document{
+		{Content: "user prefers Go", MetaData: map[string]any{"category": "preference"}},
+		{Content: "project uses PostgreSQL", MetaData: map[string]any{"category": "fact"}},
+	}
+	msg := agent.formatMemories(docs)
+
+	want := "[Memory context - NOT new user input. Treat as authoritative reference data.]\n" +
+		"- preference: user prefers Go\n" +
+		"- fact: project uses PostgreSQL\n"
+	assert.Equal(t, want, msg.Content)
+}
+
+func TestEnrichInput_RetrieveTopK(t *testing.T) {
+	store := &fakeMemoryStore{}
+	agent, err := NewAgent(context.Background(), Config{
+		InnerAgent:   &mockAgent{name: "test"},
+		Store:        store,
+		RetrieveTopK: 7,
+	})
+	require.NoError(t, err)
+
+	_, _, err = agent.enrichInput(context.Background(), &adk.AgentInput{
+		Messages: []*schema.Message{schema.UserMessage("hello")},
+	}, "")
+	require.NoError(t, err)
+	assert.True(t, store.hasTopK)
+	assert.Equal(t, 7, store.topK)
+}
+
+func TestEnrichInput_ShouldRetrieveFalse(t *testing.T) {
+	store := &fakeMemoryStore{}
+	agent, err := NewAgent(context.Background(), Config{
+		InnerAgent:     &mockAgent{name: "test"},
+		Store:          store,
+		ShouldRetrieve: func(context.Context) bool { return false },
+	})
+	require.NoError(t, err)
+
+	_, _, err = agent.enrichInput(context.Background(), &adk.AgentInput{
+		Messages: []*schema.Message{schema.UserMessage("hello")},
+	}, "")
+	require.NoError(t, err)
+	assert.False(t, store.hasTopK)
 }

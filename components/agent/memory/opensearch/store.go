@@ -198,6 +198,9 @@ func createIndex(ctx context.Context, client opensearchv4.Client, cfg *Config) e
 		"user_id": map[string]any{
 			"type": "keyword",
 		},
+		"scope": map[string]any{
+			"type": "text",
+		},
 		"created_at": map[string]any{
 			"type": "date",
 		},

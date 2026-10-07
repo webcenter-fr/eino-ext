@@ -257,6 +257,25 @@ func TestStore_IDGeneration(t *testing.T) {
 	assert.Equal(t, "custom-id", ids[1])
 }
 
+func TestStore_DeterministicIDOverwrites(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	_, err := s.Store(ctx, []*schema.Document{{ID: "det-id", Content: "first"}})
+	require.NoError(t, err)
+	_, err = s.Store(ctx, []*schema.Document{{ID: "det-id", Content: "second"}})
+	require.NoError(t, err)
+
+	count, err := s.Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	docs, err := s.List(ctx, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, docs, 1)
+	assert.Equal(t, "second", docs[0].Content)
+}
+
 func TestStore_Retrieve(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

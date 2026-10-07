@@ -31,6 +31,7 @@ session values, with static fallbacks.
 | `fact` | Declarative statements about the user or world |
 | `preference` | User likes, dislikes, preferences |
 | `learning` | Inferred or discovered knowledge |
+| `procedure` | Reusable operational know-how (resource, label selector, wrapper, command form) |
 | `summary` | Compaction-generated session summaries |
 
 | Source | Description |
@@ -61,6 +62,64 @@ agent, err := memoryagent.NewMemoryAgent(ctx, memoryagent.Config{
     SystemPromptPrefix:  "",               // optional prefix between memory context and system prompt
 })
 ```
+
+### Run-trace extraction (opt-in)
+
+By default the extractor only sees the concatenated assistant prose. Enabling
+`Trace.Enabled` makes the agent collect the **whole run trace** — assistant
+text, tool calls, tool results, sub-agent output and the terminal answer — and
+extract reusable `procedure` memories from it (for example "kafka.sh runs on the
+pod selected by label `cli=true`").
+
+```go
+agent, err := memoryagent.NewAgent(ctx, memoryagent.Config{
+    InnerAgent: myAgent,
+    Store:      myStore,
+    Model:      myModel,
+    Trace: memoryagent.TraceConfig{
+        Enabled: true,
+        // Capture the terminal answer from a tool argument.
+        TerminalTools: map[string]string{
+            "attempt_completion":   "result",
+            "ask_followup_question": "question",
+        },
+        // Optional: drop noisy tools before rendering.
+        StepFilter: func(s memoryagent.TraceStep) bool { return s.Name != "noisy_tool" },
+        // Optional: custom secret masking (defaults to a best-effort redactor).
+        Redact: nil,
+    },
+    ExtractTimeout: 30 * time.Second, // bounds the extraction LLM call (default 30s)
+    AsyncExtract:   true,             // extract in a goroutine; EndSession waits for it
+    RetrieveTopK:   5,                // passed to store.Retrieve when > 0
+})
+```
+
+Rendering is bounded: each step is capped at `Trace.MaxStepChars` (default
+1500) with head+tail truncation, and the whole trace at `Trace.MaxChars`
+(default 12000). When trimming, terminal answers are kept first, then tool
+calls, tool results and assistant text (newest first); terminal answers are
+never dropped.
+
+**Redaction caveat:** the default redactor is best-effort. It masks
+`password`/`secret`/`token`/`api_key` key-values, `Authorization: Bearer`
+headers, PEM blocks and `sasl.jaas.config` values. Review and extend the
+patterns (via `Trace.Redact`) for your deployment before storing tool output
+that may contain credentials.
+
+### Retrieval and extraction control
+
+| Field | Description |
+|---|---|
+| `ExtractTimeout` | Timeout for the post-run extraction LLM call (default 30s). Extraction runs on a context detached from the run, so approval-halt/cancel/timeout runs are still learned from. |
+| `AsyncExtract` | Run extraction in a goroutine after the run closes (default false). `EndSession` waits for in-flight extraction. |
+| `RetrieveTopK` | Passed to `store.Retrieve` as `retriever.WithTopK` when > 0. |
+| `QueryMessageFilter` | Excludes messages (e.g. synthetic control messages) from the retrieval query. nil keeps all user messages. |
+| `ShouldRetrieve` | Gates retrieval. nil means true. |
+| `ShouldExtract` | Gates extraction. nil means true. |
+
+Stored memories use a deterministic `sha256(category + content)` ID, so
+re-learning an identical memory upserts instead of duplicating. `created_at`
+and `updated_at` are refreshed on each (re)store.
 
 ### Per-invocation identity
 
