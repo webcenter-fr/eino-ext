@@ -39,7 +39,7 @@ type PRListParams struct {
 	Base     string `json:"base,omitempty" jsonschema:"(optional) Filter by base branch name."`
 	PerPage  int    `json:"perPage,omitempty" jsonschema:"(optional) Results per page. Defaults to 30, max 100."`
 	MaxPages int    `json:"maxPages,omitempty" jsonschema:"(optional) Maximum number of pages to fetch. Defaults to 0, which loops over all pages."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each PR JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching pull requests. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each PR JSON output (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 }
 
 // PRListOutput is the structured output for a PR list.
@@ -68,9 +68,9 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -105,7 +105,7 @@ func (t *PRListTool) Invoke(ctx context.Context, params *PRListParams) (result s
 		return "", errors.Wrap(err, "failed to list pull requests")
 	}
 
-	return filterMapMarshal(prs, re, func(item *github.PullRequest) PRListOutput {
+	return filterMapMarshal(prs, m, func(item *github.PullRequest) PRListOutput {
 		author := ""
 		if item.User != nil {
 			author = item.User.GetLogin()

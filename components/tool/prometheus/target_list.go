@@ -35,7 +35,7 @@ It returns a JSON array of objects, where each object represents a single active
 // TargetListParams defines the parameters for listing Prometheus scrape targets.
 type TargetListParams struct {
 	Instance   string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
-	Filter     string `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each target JSON. Keep only targets that match. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
+	Filter     string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching targets. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each target JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 	Health     string `json:"health,omitempty" validate:"omitempty,oneof=up down unknown" jsonschema:"(optional) Filter by target health: 'up', 'down', or 'unknown'."`
 	ScrapePool string `json:"scrapePool,omitempty" jsonschema:"(optional) Filter by scrape pool name. Must match exactly (e.g. 'node-exporter/10.0.0.1:9100')."`
 }
@@ -63,9 +63,9 @@ func (t *TargetListTool) Invoke(ctx context.Context, params *TargetListParams) (
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -101,7 +101,7 @@ func (t *TargetListTool) Invoke(ctx context.Context, params *TargetListParams) (
 		}
 
 		outputJSON := json.RawMessage(marshal.MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
+		if !m.MatchJSON(outputJSON) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)

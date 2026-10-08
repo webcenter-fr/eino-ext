@@ -107,6 +107,37 @@ func (t *ToolTestSuite) TestApplicationListFilterInvalidRegex() {
 	assert.Error(t.T(), err)
 }
 
+// TestApplicationListFilterSelector verifies the structured JSON-object selector
+// filter (Phase 2), which is additive to the existing regex path.
+func (t *ToolTestSuite) TestApplicationListFilterSelector() {
+	ctx := context.Background()
+
+	listTool, err := NewApplicationListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	listResult, err := listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"name\":\"kafka-hpd1\"}"}`)
+	assert.NoError(t.T(), err)
+
+	var outputs []ApplicationListOutput
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "kafka-hpd1", outputs[0].Name)
+}
+
+// TestApplicationListFilterInvalidSelector asserts a malformed selector fails
+// with the shared "compiling filter" wrap rather than being treated as a regex.
+func (t *ToolTestSuite) TestApplicationListFilterInvalidSelector() {
+	ctx := context.Background()
+
+	listTool, err := NewApplicationListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	_, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"name\":}"}`)
+	assert.Error(t.T(), err)
+	assert.Contains(t.T(), err.Error(), "compiling filter")
+}
+
 func (t *ToolTestSuite) TestApplicationDescribeMetadataName() {
 	ctx := context.Background()
 
@@ -335,6 +366,22 @@ func (t *ToolTestSuite) TestProjectDescribe() {
 
 	_, err = describeTool.InvokableRun(ctx, `{"instance": "invalid-instance", "name": "default"}`)
 	assert.Error(t.T(), err)
+}
+
+func (t *ToolTestSuite) TestProjectListFilterSelector() {
+	ctx := context.Background()
+
+	listTool, err := NewProjectListTool(ctx, t.configs)
+	assert.NoError(t.T(), err)
+
+	listResult, err := listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"name\":\"production\"}"}`)
+	assert.NoError(t.T(), err)
+
+	var outputs []ProjectListOutput
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "production", outputs[0].Name)
 }
 
 func (t *ToolTestSuite) TestProjectListNames() {

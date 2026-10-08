@@ -80,6 +80,35 @@ func (s *GitHubToolTestSuite) TestIssueList() {
 	s.Error(err)
 }
 
+// TestIssueListFilterSelector verifies the structured JSON-object selector filter
+// (Phase 2), additive to the existing regex path.
+func (s *GitHubToolTestSuite) TestIssueListFilterSelector() {
+	ctx := context.Background()
+
+	tool, err := NewIssueListTool(ctx, s.configs())
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "filter": "{\"state\":\"closed\"}"}`)
+	s.NoError(err)
+
+	var outputs []IssueListOutput
+	err = json.Unmarshal([]byte(result), &outputs)
+	s.NoError(err)
+	s.Len(outputs, 1)
+	s.Equal("Feature request", outputs[0].Title)
+}
+
+func (s *GitHubToolTestSuite) TestIssueListFilterInvalidSelector() {
+	ctx := context.Background()
+
+	tool, err := NewIssueListTool(ctx, s.configs())
+	s.NoError(err)
+
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "filter": "{\"state\":}"}`)
+	s.Error(err)
+	s.Contains(err.Error(), "compiling filter")
+}
+
 func (s *GitHubToolTestSuite) TestIssueGet() {
 	ctx := context.Background()
 

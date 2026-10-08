@@ -24,7 +24,7 @@ It returns a JSON array of objects, where each object represents a project with 
 // ProjectListParams defines the parameters for listing ArgoCD projects.
 type ProjectListParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The ArgoCD instance to connect to."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex on each project JSON. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching projects. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each project JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 }
 
 // ProjectListOutput is the structured output for a project list.
@@ -45,9 +45,9 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -60,7 +60,7 @@ func (t *ProjectListTool) Invoke(ctx context.Context, params *ProjectListParams)
 		return "", errors.Wrap(err, "failed to list projects")
 	}
 
-	return filterMapMarshal(resp.Items, re, func(item *api.ProjectModel) ProjectListOutput {
+	return filterMapMarshal(resp.Items, m, func(item *api.ProjectModel) ProjectListOutput {
 		return ProjectListOutput{
 			Name:        item.Name,
 			Description: item.Spec.Description,

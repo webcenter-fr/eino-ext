@@ -63,6 +63,21 @@ func TestDashboardToolSearch(t *testing.T) {
 		assert.Equal(t, "def456", outputs[0].UID)
 	})
 
+	t.Run("search with selector filter", func(t *testing.T) {
+		result, err := tool.Invoke(context.Background(), &DashboardParams{Instance: "test", Filter: `{"title":"Staging Dashboard"}`})
+		require.NoError(t, err)
+
+		var outputs []DashboardSearchOutput
+		require.NoError(t, json.Unmarshal([]byte(result), &outputs))
+		assert.Len(t, outputs, 1)
+		assert.Equal(t, "def456", outputs[0].UID)
+	})
+
+	t.Run("search invalid selector filter", func(t *testing.T) {
+		_, err := tool.Invoke(context.Background(), &DashboardParams{Instance: "test", Filter: `{"title":}`})
+		assert.Error(t, err)
+	})
+
 	t.Run("search with pagination", func(t *testing.T) {
 		result, err := tool.Invoke(context.Background(), &DashboardParams{
 			Instance: "test",

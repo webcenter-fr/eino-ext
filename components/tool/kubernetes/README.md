@@ -47,6 +47,32 @@ dynamic clients.
 `slackConfigs[].apiURL` as a `secretKeyRef`); the CRD never holds secret data,
 so no redaction is needed.
 
+## Filtering
+
+`list` accepts a `filter` parameter with two forms, auto-detected from the
+trimmed string:
+
+- **JSON object selector** (starts with `{`) — e.g.
+  `{"status.conditions[].reason":"NotSupported"}`. All keys must match (AND);
+  `[]` matches any array element; an array value means IN; matching is
+  type-coerced and case-insensitive (`500` matches `"500"`, `true` matches
+  `"true"`); a bare key (no dots) matches any field with that name at any depth.
+- **Go RE2 regex** (any other non-empty string) — applied to the raw resource
+  JSON. RE2 does not support lookahead/lookbehind/backreferences.
+
+Filtering runs on the **full raw object**, before `fields` projection and
+curated formatting, so nested fields such as `status.conditions[].reason` are
+matchable even when the curated view omits them. When a filter is present, the
+tool iterates all server pages, accumulates only matches, and paginates the
+filtered set in-memory with an opaque `paginateToken`; without a filter, the
+existing server-side pagination is unchanged. A filtered follow-up page
+re-iterates the server pages (bounded by the configured timeout).
+
+Note: because regexes now scan the raw object rather than the curated output, a
+regex that relied on a curated-only field name (e.g. `"status":"Running"` for
+Pods, whose raw JSON uses `"phase":"Running"`) will no longer match — prefer the
+selector for field-value filters.
+
 ## Configuration
 
 ```go

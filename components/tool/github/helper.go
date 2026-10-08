@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
@@ -146,12 +145,12 @@ var listOutputGuidance string
 var describeOutputGuidance string
 
 // filterMapMarshal maps each source item to an output value, marshals it, keeps
-// only items whose JSON matches re, and returns the JSON array of survivors.
-func filterMapMarshal[T, O any](items []T, re *regexp.Regexp, toOutput func(T) O) (string, error) {
+// only items whose JSON matches m, and returns the JSON array of survivors.
+func filterMapMarshal[T, O any](items []T, m filter.Matcher, toOutput func(T) O) (string, error) {
 	outputs := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
 		outputJSON := json.RawMessage(marshal.MustMarshal(toOutput(item)))
-		if !filter.Match(outputJSON, re) {
+		if !m.MatchJSON(outputJSON) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)

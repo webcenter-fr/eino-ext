@@ -118,6 +118,22 @@ func TestMetricToolInstant(t *testing.T) {
 		assert.Equal(t, model.LabelValue("node"), outputs[0].Metric["job"])
 	})
 
+	t.Run("selector filter on metric label", func(t *testing.T) {
+		tool := newMetricToolWithMock(&mockMetricAPI{queryValue: instantVector()})
+		result, err := tool.Invoke(context.Background(), &MetricParams{
+			Instance: "prod",
+			Mode:     "instant",
+			Query:    "up",
+			Filter:   `{"metric.job":"node"}`,
+		})
+		require.NoError(t, err)
+
+		var outputs []MetricInstantOutput
+		require.NoError(t, json.Unmarshal([]byte(result), &outputs))
+		require.Len(t, outputs, 1)
+		assert.Equal(t, model.LabelValue("node"), outputs[0].Metric["job"])
+	})
+
 	t.Run("invalid time returns error", func(t *testing.T) {
 		tool := newMetricToolWithMock(&mockMetricAPI{queryValue: instantVector()})
 		_, err := tool.Invoke(context.Background(), &MetricParams{
@@ -334,7 +350,19 @@ func TestMetricToolValidation(t *testing.T) {
 			Filter:   "(?=...)",
 		})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "compile regex")
+		assert.Contains(t, err.Error(), "compiling filter")
+	})
+
+	t.Run("invalid filter selector", func(t *testing.T) {
+		tool := newMetricToolWithMock(&mockMetricAPI{queryValue: instantVector()})
+		_, err := tool.Invoke(context.Background(), &MetricParams{
+			Instance: "prod",
+			Mode:     "instant",
+			Query:    "up",
+			Filter:   `{"metric.job":}`,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "compiling filter")
 	})
 }
 

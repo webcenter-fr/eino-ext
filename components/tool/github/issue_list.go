@@ -37,7 +37,7 @@ type IssueListParams struct {
 	Assignee string `json:"assignee,omitempty" jsonschema:"(optional) Filter by assignee login."`
 	PerPage  int    `json:"perPage,omitempty" jsonschema:"(optional) Results per page. Defaults to 30, max 100."`
 	MaxPages int    `json:"maxPages,omitempty" jsonschema:"(optional) Maximum number of pages to fetch. Defaults to 0, which loops over all pages."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each issue JSON output. RE2 does NOT support lookahead (?=...)/(?!...), lookbehind (?<=...)/(?<!...), or backreferences — such patterns return an error. Invalid regex returns an error."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching issues. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each issue JSON output (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 }
 
 // IssueListOutput is the structured output for an issue list.
@@ -64,9 +64,9 @@ func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (re
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -101,7 +101,7 @@ func (t *IssueListTool) Invoke(ctx context.Context, params *IssueListParams) (re
 		return "", errors.Wrap(err, "failed to list issues")
 	}
 
-	return filterMapMarshal(issues, re, func(item *github.Issue) IssueListOutput {
+	return filterMapMarshal(issues, m, func(item *github.Issue) IssueListOutput {
 		labels := make([]string, 0, len(item.Labels))
 		for _, l := range item.Labels {
 			labels = append(labels, l.GetName())

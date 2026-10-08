@@ -114,6 +114,41 @@ func TestListObjectsToolWithFilter(t *testing.T) {
 	assert.Equal(t, "logs/2024/access.log", entries[0].Key)
 }
 
+func TestListObjectsToolSelectorFilter(t *testing.T) {
+	ctx := context.Background()
+	configs := testConfigs()
+	mc := newMockListObjectsClient(makeTestObjects(), nil, false)
+	tool, err := newListObjectsToolWithClients(configs, map[string]Client{"prod-logs": mc})
+	assert.NoError(t, err)
+
+	result, err := tool.InvokableRun(ctx, mustMarshal(t, &ListObjectsParams{
+		Instance: "prod-logs",
+		Filter:   `{"key":"small.txt"}`,
+	}))
+	assert.NoError(t, err)
+
+	var entries []objectEntry
+	err = json.Unmarshal([]byte(result), &entries)
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "small.txt", entries[0].Key)
+}
+
+func TestListObjectsToolInvalidSelector(t *testing.T) {
+	ctx := context.Background()
+	configs := testConfigs()
+	mc := newMockListObjectsClient(makeTestObjects(), nil, false)
+	tool, err := newListObjectsToolWithClients(configs, map[string]Client{"prod-logs": mc})
+	assert.NoError(t, err)
+
+	_, err = tool.InvokableRun(ctx, mustMarshal(t, &ListObjectsParams{
+		Instance: "prod-logs",
+		Filter:   `{"key":}`,
+	}))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "compiling filter")
+}
+
 func TestListObjectsToolWithDirectories(t *testing.T) {
 	ctx := context.Background()
 	configs := testConfigs()

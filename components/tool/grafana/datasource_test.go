@@ -87,6 +87,21 @@ func TestDataSourceToolInvoke(t *testing.T) {
 			},
 		},
 		{
+			name:   "list with selector filter",
+			params: `{"instance":"test","filter":"{\"type\":\"loki\"}"}`,
+			check: func(t *testing.T, result string) {
+				var outputs []DataSourceListOutput
+				assert.NoError(t, json.Unmarshal([]byte(result), &outputs))
+				assert.Len(t, outputs, 1)
+				assert.Equal(t, "Loki", outputs[0].Name)
+			},
+		},
+		{
+			name:    "list invalid selector filter",
+			params:  `{"instance":"test","filter":"{\"type\":}"}`,
+			wantErr: true,
+		},
+		{
 			name:    "list unknown instance",
 			params:  `{"instance":"invalid"}`,
 			wantErr: true,

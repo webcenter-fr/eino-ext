@@ -41,6 +41,14 @@ func (t *ToolTestSuite) TestCertificateList() {
 	assert.Len(t.T(), outputs, 1)
 	assert.Equal(t.T(), "SSL certificate for *.example.com", outputs[0].CertInfo)
 
+	listResult, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"certType\":\"ssh\"}"}`)
+	assert.NoError(t.T(), err)
+
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "ssh", outputs[0].CertType)
+
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
 }
@@ -69,6 +77,14 @@ func (t *ToolTestSuite) TestClusterList() {
 	assert.Equal(t.T(), "in-cluster", outputs[1].Name)
 	assert.Equal(t.T(), "https://kubernetes.default.svc", outputs[1].Server)
 	assert.Equal(t.T(), "default", outputs[1].Project)
+
+	listResult, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"project\":\"default\"}"}`)
+	assert.NoError(t.T(), err)
+
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "in-cluster", outputs[0].Name)
 
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
@@ -137,6 +153,14 @@ func (t *ToolTestSuite) TestRepositoryList() {
 	assert.Equal(t.T(), "https://github.com/myorg/myapp.git", outputs[0].URL)
 	assert.Equal(t.T(), "otherapp-repo", outputs[1].Name)
 	assert.Equal(t.T(), "Failed", outputs[1].Status)
+
+	listResult, err = listTool.InvokableRun(ctx, `{"instance": "test", "filter": "{\"name\":\"otherapp-repo\"}"}`)
+	assert.NoError(t.T(), err)
+
+	err = json.Unmarshal([]byte(listResult), &outputs)
+	assert.NoError(t.T(), err)
+	assert.Len(t.T(), outputs, 1)
+	assert.Equal(t.T(), "otherapp-repo", outputs[0].Name)
 
 	_, err = listTool.InvokableRun(ctx, `{"instance": "invalid-instance"}`)
 	assert.Error(t.T(), err)
