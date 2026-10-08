@@ -10,6 +10,7 @@ import (
 	spark "github.com/kubeflow/spark-operator/api/v1beta2"
 	routev1 "github.com/openshift/api/route/v1"
 	olmv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"github.com/sirupsen/logrus"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,19 +31,43 @@ type formatterEntry struct {
 
 var formatterRegistry = initFormatterRegistry()
 
+// strimziReadyStatus scans a Strimzi status conditions slice for the "Ready"
+// condition and returns "Ready" or "Not Ready". It returns "" when there is no
+// Ready condition, when conditions is nil/empty, or when the input is not a
+// usable slice of condition structs. It is defensive and never panics: it
+// tolerates nil input, non-slice values, []struct and []*struct elements, and
+// missing/non-pointer Type/Status fields.
 func strimziReadyStatus(conditions any) string {
 	v := reflect.ValueOf(conditions)
+	if !v.IsValid() || (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) {
+		return ""
+	}
 	for i := 0; i < v.Len(); i++ {
 		c := v.Index(i)
+		if c.Kind() == reflect.Pointer || c.Kind() == reflect.Interface {
+			if c.IsNil() {
+				continue
+			}
+			c = c.Elem()
+		}
+		if c.Kind() != reflect.Struct {
+			continue
+		}
 		t := c.FieldByName("Type")
 		s := c.FieldByName("Status")
-		if t.IsValid() && s.IsValid() && !t.IsNil() && !s.IsNil() {
-			if t.Elem().String() == "Ready" {
-				if s.Elem().String() == "True" {
-					return "Ready"
-				}
-				return "Not Ready"
+		if !t.IsValid() || !s.IsValid() ||
+			t.Kind() != reflect.Pointer || s.Kind() != reflect.Pointer ||
+			t.IsNil() || s.IsNil() {
+			continue
+		}
+		if t.Elem().Kind() != reflect.String || s.Elem().Kind() != reflect.String {
+			continue
+		}
+		if t.Elem().String() == "Ready" {
+			if s.Elem().String() == "True" {
+				return "Ready"
 			}
+			return "Not Ready"
 		}
 	}
 	return ""
@@ -428,8 +453,12 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		format: func(o runtime.Object) json.RawMessage {
 			k := o.(*strimzi.Kafka)
 			version := ""
-			if k.Status.KafkaVersion != nil {
-				version = *k.Status.KafkaVersion
+			status := ""
+			if k.Status != nil {
+				if k.Status.KafkaVersion != nil {
+					version = *k.Status.KafkaVersion
+				}
+				status = strimziReadyStatus(k.Status.Conditions)
 			}
 			return marshal.MustMarshal(struct {
 				Name      string `json:"name"`
@@ -439,7 +468,7 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 			}{
 				Name:      k.Name,
 				Namespace: k.Namespace,
-				Status:    strimziReadyStatus(k.Status.Conditions),
+				Status:    status,
 				Version:   version,
 			})
 		},
@@ -450,8 +479,12 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		format: func(o runtime.Object) json.RawMessage {
 			kt := o.(*strimzi.KafkaTopic)
 			topicName := ""
-			if kt.Spec.TopicName != nil {
+			status := ""
+			if kt.Spec != nil && kt.Spec.TopicName != nil {
 				topicName = *kt.Spec.TopicName
+			}
+			if kt.Status != nil {
+				status = strimziReadyStatus(kt.Status.Conditions)
 			}
 			return marshal.MustMarshal(struct {
 				Name      string `json:"name"`
@@ -462,7 +495,7 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 				Name:      kt.Name,
 				Namespace: kt.Namespace,
 				TopicName: topicName,
-				Status:    strimziReadyStatus(kt.Status.Conditions),
+				Status:    status,
 			})
 		},
 	}
@@ -472,12 +505,19 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		format: func(o runtime.Object) json.RawMessage {
 			knp := o.(*strimzi.KafkaNodePool)
 			replicas := int32(0)
-			if knp.Status.Replicas != nil {
-				replicas = *knp.Status.Replicas
+			status := ""
+			if knp.Status != nil {
+				if knp.Status.Replicas != nil {
+					replicas = *knp.Status.Replicas
+				}
+				status = strimziReadyStatus(knp.Status.Conditions)
 			}
-			roles := make([]string, 0, len(knp.Spec.Roles))
-			for _, role := range knp.Spec.Roles {
-				roles = append(roles, string(role))
+			roles := make([]string, 0)
+			if knp.Spec != nil {
+				roles = make([]string, 0, len(knp.Spec.Roles))
+				for _, role := range knp.Spec.Roles {
+					roles = append(roles, string(role))
+				}
 			}
 			return marshal.MustMarshal(struct {
 				Name      string   `json:"name"`
@@ -488,7 +528,7 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 			}{
 				Name:      knp.Name,
 				Namespace: knp.Namespace,
-				Status:    strimziReadyStatus(knp.Status.Conditions),
+				Status:    status,
 				Replicas:  replicas,
 				Roles:     roles,
 			})
@@ -500,8 +540,12 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		format: func(o runtime.Object) json.RawMessage {
 			ku := o.(*strimzi.KafkaUser)
 			username := ""
-			if ku.Status.Username != nil {
-				username = *ku.Status.Username
+			status := ""
+			if ku.Status != nil {
+				if ku.Status.Username != nil {
+					username = *ku.Status.Username
+				}
+				status = strimziReadyStatus(ku.Status.Conditions)
 			}
 			return marshal.MustMarshal(struct {
 				Name      string `json:"name"`
@@ -512,7 +556,7 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 				Name:      ku.Name,
 				Namespace: ku.Namespace,
 				Username:  username,
-				Status:    strimziReadyStatus(ku.Status.Conditions),
+				Status:    status,
 			})
 		},
 	}
@@ -539,6 +583,14 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 		newObj: func() runtime.Object { return &olmv1alpha1.Subscription{} },
 		format: func(o runtime.Object) json.RawMessage {
 			sub := o.(*olmv1alpha1.Subscription)
+			// Spec is a pointer (*SubscriptionSpec) and may be nil for objects
+			// stored without a spec (older OLM CRDs do not require it).
+			sourceName := ""
+			packageName := ""
+			if sub.Spec != nil {
+				sourceName = fmt.Sprintf("%s/%s", sub.Spec.CatalogSourceNamespace, sub.Spec.CatalogSource)
+				packageName = sub.Spec.Package
+			}
 			return marshal.MustMarshal(struct {
 				Name        string `json:"name"`
 				Namespace   string `json:"namespace"`
@@ -551,8 +603,8 @@ func initFormatterRegistry() map[schema.GroupVersionKind]formatterEntry {
 				Namespace:   sub.Namespace,
 				Status:      string(sub.Status.State),
 				Version:     sub.Status.InstalledCSV,
-				SourceName:  fmt.Sprintf("%s/%s", sub.Spec.CatalogSourceNamespace, sub.Spec.CatalogSource),
-				PackageName: sub.Spec.Package,
+				SourceName:  sourceName,
+				PackageName: packageName,
 			})
 		},
 	}
@@ -655,7 +707,22 @@ func defaultListFormatter(u *unstructured.Unstructured) json.RawMessage {
 	})
 }
 
-func formatListItem(u *unstructured.Unstructured) json.RawMessage {
+func formatListItem(u *unstructured.Unstructured) (out json.RawMessage) {
+	// A formatter must never take down the whole list. Recover from any panic
+	// (a buggy or future formatter) and fall back to the default
+	// name/namespace/status view, logging enough to identify the offender.
+	defer func() {
+		if r := recover(); r != nil {
+			logrus.WithFields(logrus.Fields{
+				"apiVersion": u.GetAPIVersion(),
+				"kind":       u.GetKind(),
+				"name":       u.GetName(),
+				"namespace":  u.GetNamespace(),
+			}).Warnf("recovered panic while formatting %s %s/%s: %v", u.GetKind(), u.GetNamespace(), u.GetName(), r)
+			out = defaultListFormatter(u)
+		}
+	}()
+
 	apiVersion := u.GetAPIVersion()
 	kind := u.GetKind()
 	if apiVersion == "" || kind == "" {
