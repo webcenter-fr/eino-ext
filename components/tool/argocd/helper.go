@@ -2,7 +2,6 @@ package argocd
 
 import (
 	_ "embed"
-	"regexp"
 	"strings"
 
 	"emperror.dev/errors"
@@ -30,13 +29,13 @@ func instanceNotFoundError(instance string, known []string) error {
 }
 
 // filterMapMarshal maps each source item to an output value, marshals it, keeps
-// only items whose JSON matches re, and returns the JSON array of survivors. It
+// only items whose JSON matches m, and returns the JSON array of survivors. It
 // captures the per-item filter/marshal loop shared by all list tools.
-func filterMapMarshal[T, O any](items []T, re *regexp.Regexp, toOutput func(T) O) (string, error) {
+func filterMapMarshal[T, O any](items []T, m filter.Matcher, toOutput func(T) O) (string, error) {
 	outputs := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
 		outputJSON := json.RawMessage(marshal.MustMarshal(toOutput(item)))
-		if !filter.Match(outputJSON, re) {
+		if !m.MatchJSON(outputJSON) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)

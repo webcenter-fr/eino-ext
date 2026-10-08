@@ -35,6 +35,35 @@ func (s *GitHubToolTestSuite) TestPRList() {
 	s.Error(err)
 }
 
+// TestPRListFilterSelector verifies the structured JSON-object selector filter
+// (Phase 2), additive to the existing regex path.
+func (s *GitHubToolTestSuite) TestPRListFilterSelector() {
+	ctx := context.Background()
+
+	tool, err := NewPRListTool(ctx, s.configs())
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "filter": "{\"title\":\"Test PR\"}"}`)
+	s.NoError(err)
+
+	var outputs []PRListOutput
+	err = json.Unmarshal([]byte(result), &outputs)
+	s.NoError(err)
+	s.Len(outputs, 1)
+	s.Equal("Test PR", outputs[0].Title)
+}
+
+func (s *GitHubToolTestSuite) TestPRListFilterInvalidSelector() {
+	ctx := context.Background()
+
+	tool, err := NewPRListTool(ctx, s.configs())
+	s.NoError(err)
+
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "filter": "{\"title\":}"}`)
+	s.Error(err)
+	s.Contains(err.Error(), "compiling filter")
+}
+
 func (s *GitHubToolTestSuite) TestPRGet() {
 	ctx := context.Background()
 

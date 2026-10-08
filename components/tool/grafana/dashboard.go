@@ -41,7 +41,7 @@ type DashboardParams struct {
 	Tags       []string           `json:"tags,omitempty" validate:"omitempty,max=64" jsonschema:"(optional, search mode) Filter by tags (ALL must match)."`
 	FolderUIDs []string           `json:"folderUIDs,omitempty" validate:"omitempty,max=64" jsonschema:"(optional, search mode) Filter by folder UIDs."`
 	Sort       string             `json:"sort,omitempty" validate:"omitempty,oneof=alpha_asc alpha_desc created_asc created_desc updated_asc updated_desc" jsonschema:"(optional, search mode) Sort order."`
-	Filter     string             `json:"filter,omitempty" validate:"omitempty,max=4096" jsonschema:"(optional, search mode) Go RE2 regex on each dashboard search output JSON."`
+	Filter     string             `json:"filter,omitempty" validate:"omitempty,max=4096" jsonschema:"(optional, search mode) Filter to keep only matching dashboards. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each dashboard search output JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 	Paginate   *DashboardPaginate `json:"paginate,omitempty" jsonschema:"(optional, search mode) Pagination."`
 	// describe-mode fields (ignored when UID is empty)
 	ExcludeFieldsOutput []string `json:"excludeFieldsOutput,omitempty" validate:"omitempty,dive,oneof=meta panels templating time annotations schemaVersion version" jsonschema:"(optional, describe mode) Fields to exclude from the dashboard output."`
@@ -131,9 +131,9 @@ func (t *DashboardTool) Invoke(ctx context.Context, params *DashboardParams) (re
 	}
 
 	// search mode
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	sp := &searchParams{
@@ -158,7 +158,7 @@ func (t *DashboardTool) Invoke(ctx context.Context, params *DashboardParams) (re
 		return "", errors.Wrap(err, "failed to unmarshal search results")
 	}
 
-	return filterMapMarshal(hits, re, func(item searchHit) DashboardSearchOutput {
+	return filterMapMarshal(hits, m, func(item searchHit) DashboardSearchOutput {
 		return DashboardSearchOutput{
 			UID:         item.UID,
 			Title:       item.Title,

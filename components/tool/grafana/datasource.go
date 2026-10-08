@@ -32,7 +32,7 @@ Data sources are READ-ONLY: there is no write tool for them.
 type DataSourceParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Grafana instance to connect to."`
 	UID      string `json:"uid,omitempty" jsonschema:"(optional) If set, return the full data source with this UID (describe mode, single object). If empty, list all data sources (array)."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional, list mode) Go RE2 regex on each data source list output JSON."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional, list mode) Filter to keep only matching data sources. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each data source list output JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 }
 
 // DataSourceListOutput is the structured output for a single data source in a list.
@@ -115,9 +115,9 @@ func (t *DataSourceTool) Invoke(ctx context.Context, params *DataSourceParams) (
 	}
 
 	// list mode
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	body, err := c.ListDataSources(ctx)
@@ -130,7 +130,7 @@ func (t *DataSourceTool) Invoke(ctx context.Context, params *DataSourceParams) (
 		return "", errors.Wrap(err, "failed to unmarshal data sources")
 	}
 
-	return filterMapMarshal(sources, re, dataSource.toListOutput)
+	return filterMapMarshal(sources, m, dataSource.toListOutput)
 }
 
 // NewDataSourceTool creates a new DataSourceTool.

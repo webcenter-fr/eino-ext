@@ -41,7 +41,7 @@ which are ignored in that case.
 type AlertParams struct {
 	Instance    string         `json:"instance" validate:"required" jsonschema:"(required) The Alertmanager instance to query."`
 	Fingerprint string         `json:"fingerprint,omitempty" jsonschema:"(optional) If set, return only the alert with this fingerprint. Takes precedence over AlertFilter/State."`
-	Filter      string         `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each alert JSON. Keep only alerts that match."`
+	Filter      string         `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching alerts. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each alert JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 	State       string         `json:"state,omitempty" validate:"omitempty,oneof=active unprocessed suppressed" jsonschema:"(optional) Filter by Alertmanager alert state: 'active', 'unprocessed', or 'suppressed'."`
 	AlertFilter string         `json:"alertFilter,omitempty" jsonschema:"(optional) Alertmanager matcher string passed to the API, e.g. alertname=\"HighCPU\". Multiple matchers can be comma-separated."`
 	Paginate    *AlertPaginate `json:"paginate,omitempty" jsonschema:"(optional) Pagination parameters."`
@@ -74,9 +74,9 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -151,7 +151,7 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 		}
 
 		outputJSON := json.RawMessage(marshal.MustMarshal(output))
-		if !filter.Match(outputJSON, re) {
+		if !m.MatchJSON(outputJSON) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)

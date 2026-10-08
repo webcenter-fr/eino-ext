@@ -98,6 +98,19 @@ func TestTargetListTool(t *testing.T) {
 			wantCount: 1,
 		},
 		{
+			name:      "selector filter on health",
+			mock:      &mockTargetAPI{targetsResult: v1.TargetsResult{Active: []v1.ActiveTarget{upTarget, downTarget}}},
+			params:    &TargetListParams{Instance: "prod", Filter: `{"health":"up"}`},
+			wantCount: 1,
+		},
+		{
+			name:        "invalid selector filter returns error",
+			mock:        &mockTargetAPI{targetsResult: v1.TargetsResult{Active: []v1.ActiveTarget{upTarget}}},
+			params:      &TargetListParams{Instance: "prod", Filter: `{"health":}`},
+			wantErr:     true,
+			errContains: "compiling filter",
+		},
+		{
 			name:      "empty results returns empty array",
 			mock:      &mockTargetAPI{targetsResult: v1.TargetsResult{Active: nil}},
 			params:    &TargetListParams{Instance: "prod"},

@@ -33,6 +33,35 @@ func (s *GitHubToolTestSuite) TestOrgRepoList() {
 	s.Error(err)
 }
 
+// TestOrgRepoListFilterSelector verifies the structured JSON-object selector
+// filter (Phase 2), additive to the existing regex path.
+func (s *GitHubToolTestSuite) TestOrgRepoListFilterSelector() {
+	ctx := context.Background()
+
+	tool, err := NewOrgRepoListTool(ctx, s.configs())
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "org": "testorg", "perPage": 100, "filter": "{\"language\":\"Python\"}"}`)
+	s.NoError(err)
+
+	var outputs []OrgRepoListOutput
+	err = json.Unmarshal([]byte(result), &outputs)
+	s.NoError(err)
+	s.Len(outputs, 1)
+	s.Equal("repo2", outputs[0].Name)
+}
+
+func (s *GitHubToolTestSuite) TestOrgRepoListFilterInvalidSelector() {
+	ctx := context.Background()
+
+	tool, err := NewOrgRepoListTool(ctx, s.configs())
+	s.NoError(err)
+
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "org": "testorg", "filter": "{\"language\":}"}`)
+	s.Error(err)
+	s.Contains(err.Error(), "compiling filter")
+}
+
 // TestOrgRepoListFilterAcrossPages verifies that pagination traverses every
 // page before applying the filter: "repo2" only exists on page 2, so a filter
 // matching it must return exactly one result. This guards against regressions

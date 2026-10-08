@@ -72,6 +72,24 @@ func TestRepoSearchTool(t *testing.T) {
 		t.Errorf("expected searched-repo-2, got %s", outputs[1].Name)
 	}
 
+	// Structured selector filter (Phase 2): select the Python repository.
+	result, err = tool.InvokableRun(ctx, `{"instance": "test", "query": "language:go", "filter": "{\"language\":\"Python\"}"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun selector filter: %v", err)
+	}
+	outputs = nil
+	if err := json.Unmarshal([]byte(result), &outputs); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(outputs) != 1 || outputs[0].Name != "searched-repo-2" {
+		t.Fatalf("expected exactly searched-repo-2, got %+v", outputs)
+	}
+
+	// A malformed selector must be rejected as a filter compile error.
+	if _, err = tool.InvokableRun(ctx, `{"instance": "test", "query": "language:go", "filter": "{\"language\":}"}`); err == nil {
+		t.Error("expected error for invalid selector")
+	}
+
 	_, err = tool.InvokableRun(ctx, `{"instance": "invalid-instance", "query": "test"}`)
 	if err == nil {
 		t.Error("expected error for invalid instance")

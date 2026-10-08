@@ -62,7 +62,7 @@ type MetricParams struct {
 	Instance string `json:"instance" validate:"required" jsonschema:"(required) The Prometheus instance to query."`
 	Mode     string `json:"mode" validate:"required,oneof=instant range" jsonschema:"(required) Query mode: 'instant' (single-point evaluation) or 'range' (time-window series)."`
 	Query    string `json:"query" validate:"required,max=4096" jsonschema:"(required) The PromQL query to execute."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Go RE2 regex applied on each result JSON. Keep only results that match. RE2 does NOT support lookahead/lookbehind/backreferences — such patterns return an error."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching results. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each result JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 	// instant-mode fields
 	Time  string `json:"time,omitempty" jsonschema:"(optional, instant mode) Evaluation time in RFC3339. Defaults to now. Ignored in range mode."`
 	Limit int    `json:"limit,omitempty" validate:"omitempty,min=1,max=50000" jsonschema:"(optional) Max result series (1-50000). Applies to both instant and range modes."`
@@ -110,9 +110,9 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 		}
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -148,7 +148,7 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 			}
 
 			outputJSON := json.RawMessage(marshal.MustMarshal(output))
-			if !filter.Match(outputJSON, re) {
+			if !m.MatchJSON(outputJSON) {
 				continue
 			}
 			outputs = append(outputs, outputJSON)
@@ -227,7 +227,7 @@ func (t *MetricTool) Invoke(ctx context.Context, params *MetricParams) (result s
 			}
 
 			outputJSON := json.RawMessage(marshal.MustMarshal(output))
-			if !filter.Match(outputJSON, re) {
+			if !m.MatchJSON(outputJSON) {
 				continue
 			}
 			outputs = append(outputs, outputJSON)

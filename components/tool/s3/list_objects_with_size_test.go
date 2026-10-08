@@ -64,6 +64,41 @@ func TestListObjectsWithSizeToolFilter(t *testing.T) {
 	assert.Len(t, entries, 2)
 }
 
+func TestListObjectsWithSizeToolSelectorFilter(t *testing.T) {
+	ctx := context.Background()
+	configs := testConfigs()
+	mc := newMockListObjectsClient(makeTestObjects(), nil, false)
+	tool, err := newListObjectsWithSizeToolWithClients(configs, map[string]Client{"prod-logs": mc})
+	assert.NoError(t, err)
+
+	result, err := tool.InvokableRun(ctx, mustMarshal(t, &ListObjectsWithSizeParams{
+		Instance: "prod-logs",
+		Filter:   `{"key":"small.txt"}`,
+	}))
+	assert.NoError(t, err)
+
+	var entries []objectEntry
+	err = json.Unmarshal([]byte(result), &entries)
+	assert.NoError(t, err)
+	assert.Len(t, entries, 1)
+	assert.Equal(t, "small.txt", entries[0].Key)
+}
+
+func TestListObjectsWithSizeToolInvalidSelector(t *testing.T) {
+	ctx := context.Background()
+	configs := testConfigs()
+	mc := newMockListObjectsClient(makeTestObjects(), nil, false)
+	tool, err := newListObjectsWithSizeToolWithClients(configs, map[string]Client{"prod-logs": mc})
+	assert.NoError(t, err)
+
+	_, err = tool.InvokableRun(ctx, mustMarshal(t, &ListObjectsWithSizeParams{
+		Instance: "prod-logs",
+		Filter:   `{"key":}`,
+	}))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "compiling filter")
+}
+
 func TestListObjectsWithSizeToolSortByName(t *testing.T) {
 	ctx := context.Background()
 	configs := testConfigs()

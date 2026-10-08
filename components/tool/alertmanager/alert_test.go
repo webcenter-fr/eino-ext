@@ -212,6 +212,34 @@ func TestAlertRegexFilter(t *testing.T) {
 	assert.Equal(t, "fp2", outputs[0].Fingerprint)
 }
 
+// TestAlertSelectorFilter verifies the structured JSON-object selector filter
+// (Phase 2), additive to the existing regex path.
+func TestAlertSelectorFilter(t *testing.T) {
+	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(amTwoAlertsJSON))
+	})
+
+	result, err := tool.Invoke(context.Background(), &AlertParams{Instance: "t", Filter: `{"labels.alertname":"HighCPU"}`})
+	require.NoError(t, err)
+
+	var outputs []AlertOutput
+	require.NoError(t, json.Unmarshal([]byte(result), &outputs))
+	require.Len(t, outputs, 1)
+	assert.Equal(t, "fp1", outputs[0].Fingerprint)
+}
+
+func TestAlertInvalidSelectorFilter(t *testing.T) {
+	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(amTwoAlertsJSON))
+	})
+
+	_, err := tool.Invoke(context.Background(), &AlertParams{Instance: "t", Filter: `{"labels.alertname":}`})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "compiling filter")
+}
+
 func TestAlertPagination(t *testing.T) {
 	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -33,7 +33,7 @@ type ListObjectsWithSizeParams struct {
 	Prefix   string `json:"prefix,omitempty" jsonschema:"(optional) List only objects with this prefix (acts as a directory path)."`
 	MaxKeys  int    `json:"max_keys,omitempty" validate:"omitempty,min=1,max=1000" jsonschema:"(optional) Maximum number of results to return. Default 200, max 1000."`
 	SortBy   string `json:"sort_by,omitempty" validate:"omitempty,oneof=alphanumeric size last_modified" jsonschema:"(optional) Sort order: alphanumeric (by key name), size (largest first, default), last_modified (most recent first). Default is size."`
-	Filter   string `json:"filter,omitempty" jsonschema:"(optional) A Go RE2 regex applied on each result JSON. Keep only results that match."`
+	Filter   string `json:"filter,omitempty" jsonschema:"(optional) Filter to keep only matching results. Accepts either: a JSON object selector {\"<dot.path>\":\"<value>\", ...} — all keys must match (AND); use \"[]\" to match any array element; a value that is an array means IN; matching is type-coerced and case-insensitive (500 matches \"500\", true matches \"true\"); a bare key (no dots) matches any field with that name at any depth; or a Go RE2 regex on each result JSON (RE2 does NOT support lookahead/lookbehind/backreferences). Invalid regex or selector JSON returns an error."`
 }
 
 // ListObjectsWithSizeTool lists objects with detailed size information.
@@ -48,9 +48,9 @@ func (t *ListObjectsWithSizeTool) Invoke(ctx context.Context, params *ListObject
 		return "", err
 	}
 
-	re, err := filter.Compile(params.Filter)
+	m, err := filter.CompileMatcher(params.Filter)
 	if err != nil {
-		return "", errors.Wrap(err, "error when compile regex")
+		return "", errors.Wrap(err, "error when compiling filter")
 	}
 
 	c, err := t.client(params.Instance)
@@ -116,7 +116,7 @@ func (t *ListObjectsWithSizeTool) Invoke(ctx context.Context, params *ListObject
 	outputs := make([]json.RawMessage, 0, len(allEntries))
 	for _, entry := range allEntries {
 		outputJSON := json.RawMessage(marshal.MustMarshal(entry))
-		if !filter.Match(outputJSON, re) {
+		if !m.MatchJSON(outputJSON) {
 			continue
 		}
 		outputs = append(outputs, outputJSON)
