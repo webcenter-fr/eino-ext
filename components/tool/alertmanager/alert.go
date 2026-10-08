@@ -131,37 +131,64 @@ func (t *AlertTool) Invoke(ctx context.Context, params *AlertParams) (result str
 		alerts = filtered
 	}
 
-	// Apply pagination
-	startIdx, endIdx, err := paginateWindow(params.Paginate, len(alerts))
+	hasFilter := strings.TrimSpace(params.Filter) != ""
+
+	if !hasFilter {
+		// No filter: preserve current behavior — paginate the full list and marshal
+		// only the window (avoids marshalling the whole list on every page).
+		startIdx, endIdx, err := paginateWindow(params.Paginate, len(alerts))
+		if err != nil {
+			return "", err
+		}
+
+		outputs := make([]json.RawMessage, 0, endIdx-startIdx+1)
+		for _, a := range alerts[startIdx:endIdx] {
+			outputs = append(outputs, alertOutputJSON(a))
+		}
+
+		return marshalAlertsPage(outputs, endIdx, len(alerts))
+	}
+
+	// Filtered: build the full matched list first, then paginate it.
+	matched := make([]json.RawMessage, 0, len(alerts))
+	for _, a := range alerts {
+		outputJSON := alertOutputJSON(a)
+		if m.MatchJSON(outputJSON) {
+			matched = append(matched, outputJSON)
+		}
+	}
+
+	startIdx, endIdx, err := paginateWindow(params.Paginate, len(matched))
 	if err != nil {
 		return "", err
 	}
 
-	outputs := make([]json.RawMessage, 0, endIdx-startIdx)
-	for _, a := range alerts[startIdx:endIdx] {
-		output := AlertOutput{
-			Labels:      a.Labels,
-			Annotations: a.Annotations,
-			State:       alertStatusState(a.Status),
-			StartsAt:    ptrDateTimeFormat(a.StartsAt),
-			EndsAt:      ptrDateTimeFormat(a.EndsAt),
-			Fingerprint: ptrString(a.Fingerprint),
-			SilencedBy:  alertStatusSilencedBy(a.Status),
-			Receivers:   receiverNames(a.Receivers),
-		}
+	outputs := append([]json.RawMessage(nil), matched[startIdx:endIdx]...)
 
-		outputJSON := json.RawMessage(marshal.MustMarshal(output))
-		if !m.MatchJSON(outputJSON) {
-			continue
-		}
-		outputs = append(outputs, outputJSON)
-	}
+	return marshalAlertsPage(outputs, endIdx, len(matched))
+}
 
-	if token := nextPageToken(endIdx, len(alerts)); token != nil {
+// marshalAlertsPage appends the next-page token (when more items remain) and
+// marshals the page into the tool's JSON array output.
+func marshalAlertsPage(outputs []json.RawMessage, endIdx, total int) (string, error) {
+	if token := nextPageToken(endIdx, total); token != nil {
 		outputs = append(outputs, token)
 	}
-
 	return marshalOutputs(outputs)
+}
+
+// alertOutputJSON builds and marshals the AlertOutput for a single alert.
+func alertOutputJSON(a *models.GettableAlert) json.RawMessage {
+	return json.RawMessage(marshal.MustMarshal(AlertOutput{
+		Labels:      a.Labels,
+		Annotations: a.Annotations,
+		State:       alertStatusState(a.Status),
+		StartsAt:    ptrDateTimeFormat(a.StartsAt),
+		EndsAt:      ptrDateTimeFormat(a.EndsAt),
+		Fingerprint: ptrString(a.Fingerprint),
+		SilencedBy:  alertStatusSilencedBy(a.Status),
+		Receivers:   receiverNames(a.Receivers),
+	}))
 }
 
 // NewAlertTool creates a new AlertTool.

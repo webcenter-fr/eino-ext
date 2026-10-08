@@ -37,6 +37,36 @@ const amTwoAlertsJSON = `[
 	}
 ]`
 
+const amThreeAlertsJSON = `[
+	{
+		"labels":{"alertname":"HighCPU","instance":"srv1"},
+		"annotations":{},
+		"startsAt":"2026-08-17T10:00:00Z",
+		"endsAt":"2026-08-17T10:30:00Z",
+		"fingerprint":"fp1",
+		"receivers":[{"name":"slack"}],
+		"status":{"state":"active"}
+	},
+	{
+		"labels":{"alertname":"HighMemory","instance":"srv2"},
+		"annotations":{},
+		"startsAt":"2026-08-17T11:00:00Z",
+		"endsAt":"2026-08-17T11:30:00Z",
+		"fingerprint":"fp2",
+		"receivers":[{"name":"email"}],
+		"status":{"state":"suppressed"}
+	},
+	{
+		"labels":{"alertname":"HighDisk","instance":"srv3"},
+		"annotations":{},
+		"startsAt":"2026-08-17T12:00:00Z",
+		"endsAt":"2026-08-17T12:30:00Z",
+		"fingerprint":"fp3",
+		"receivers":[{"name":"slack"}],
+		"status":{"state":"active"}
+	}
+]`
+
 func newAlertTool(t *testing.T, handler http.HandlerFunc) *AlertTool {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -275,6 +305,48 @@ func TestAlertPagination(t *testing.T) {
 	var output AlertOutput
 	require.NoError(t, json.Unmarshal(page2[0], &output))
 	assert.Equal(t, "fp2", output.Fingerprint)
+}
+
+// TestAlertFilterWithPagination verifies the filter runs over the full fetched
+// list before pagination: a non-matching alert (fp2) between two matches must
+// not push the second match onto a later (empty) page.
+func TestAlertFilterWithPagination(t *testing.T) {
+	tool := newAlertTool(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(amThreeAlertsJSON))
+	})
+
+	// Filter matches fp1 and fp3 but not fp2. Page size 1.
+	result, err := tool.Invoke(context.Background(), &AlertParams{
+		Instance: "t",
+		Filter:   `HighCPU|HighDisk`,
+		Paginate: &AlertPaginate{PageSize: 1},
+	})
+	require.NoError(t, err)
+
+	var page1 []json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(result), &page1))
+	require.Len(t, page1, 2) // 1 match + 1 token
+
+	var out AlertOutput
+	require.NoError(t, json.Unmarshal(page1[0], &out))
+	assert.Equal(t, "fp1", out.Fingerprint)
+
+	// Page 2 must return the *second match* (fp3) directly — proving the filter
+	// ran over the full list before pagination (old behavior returned an empty
+	// page here because fp2 was a non-match).
+	result, err = tool.Invoke(context.Background(), &AlertParams{
+		Instance: "t",
+		Filter:   `HighCPU|HighDisk`,
+		Paginate: &AlertPaginate{PageSize: 1, PaginateToken: string(page1[1])},
+	})
+	require.NoError(t, err)
+
+	var page2 []json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(result), &page2))
+	require.Len(t, page2, 1) // last match, no token
+	require.NoError(t, json.Unmarshal(page2[0], &out))
+	assert.Equal(t, "fp3", out.Fingerprint)
 }
 
 func TestPaginateWindowClampsStaleToken(t *testing.T) {
