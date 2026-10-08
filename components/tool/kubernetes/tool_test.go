@@ -8,8 +8,10 @@ import (
 
 	"github.com/disaster37/operator-sdk-extra/v2/pkg/helper"
 	"github.com/disaster37/operator-sdk-extra/v2/pkg/test"
+	"github.com/goccy/go-json"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,6 +49,7 @@ func initConsolidatedTest(stepName *string, data map[string]any) (err error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-1", key.Name),
 			Namespace: key.Namespace,
+			Labels:    map[string]string{"suite": "consolidated"},
 		},
 		Data: map[string]string{
 			"key1": "value1",
@@ -61,6 +64,7 @@ func initConsolidatedTest(stepName *string, data map[string]any) (err error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-2", key.Name),
 			Namespace: key.Namespace,
+			Labels:    map[string]string{"suite": "consolidated"},
 		},
 		Data: map[string]string{
 			"key3": "value3",
@@ -76,7 +80,8 @@ func initConsolidatedTest(stepName *string, data map[string]any) (err error) {
 			Name:      fmt.Sprintf("%s-3", key.Name),
 			Namespace: key.Namespace,
 			Labels: map[string]string{
-				"app": "test",
+				"app":   "test",
+				"suite": "consolidated",
 			},
 		},
 		Data: map[string]string{
@@ -129,6 +134,28 @@ func doConsolidatedList() test.TestStep[*corev1.ConfigMap] {
 			listCm, err = listTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "kind": "configmaps", "namespace": "%s", "filter": "-[2-3]"}`, key.Namespace))
 			assert.NoError(t, err)
 			assert.NotEmpty(t, listCm)
+
+			// List with a structured selector on a raw field the curated
+			// ConfigMap output omits (data.key1).
+			listCm, err = listTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "kind": "configmaps", "namespace": "%s", "filter": "{\"data.key1\":\"value1\"}"}`, key.Namespace))
+			assert.NoError(t, err)
+			assert.Contains(t, listCm, fmt.Sprintf("%s-1", key.Name))
+
+			// Filtered pagination: page 1 returns 2 items + a token, page 2 the rest.
+			page1, err := listTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "kind": "configmaps", "namespace": "%s", "labelsSelector": "suite=consolidated", "filter": "{\"kind\":\"ConfigMap\"}", "paginate": {"pageSize": 2}}`, key.Namespace))
+			assert.NoError(t, err)
+			var page1Items []map[string]any
+			assert.NoError(t, json.Unmarshal([]byte(page1), &page1Items))
+			require.Len(t, page1Items, 3)
+			token, ok := page1Items[2]["paginateToken"].(string)
+			require.True(t, ok)
+			assert.NotEmpty(t, token)
+
+			page2, err := listTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "test", "kind": "configmaps", "namespace": "%s", "labelsSelector": "suite=consolidated", "filter": "{\"kind\":\"ConfigMap\"}", "paginate": {"pageSize": 2, "paginateToken": "%s"}}`, key.Namespace, token))
+			assert.NoError(t, err)
+			var page2Items []map[string]any
+			assert.NoError(t, json.Unmarshal([]byte(page2), &page2Items))
+			assert.Len(t, page2Items, 1)
 
 			// When cluster not exist, it should return error
 			_, err = listTool.InvokableRun(ctx, fmt.Sprintf(`{"cluster": "invalid-cluster", "kind": "configmaps", "namespace": "%s"}`, key.Namespace))
