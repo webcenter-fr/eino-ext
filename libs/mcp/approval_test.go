@@ -111,6 +111,31 @@ func TestElicitationAuthorizerTimeout(t *testing.T) {
 	assert.ErrorIs(t, err, safety.ErrExecutionNotAuthorized)
 }
 
+func TestElicitationAuthorizerOversizedArgs(t *testing.T) {
+	// Arguments larger than maxApprovalArgsLen are rejected WITHOUT eliciting:
+	// the human could only review a truncated prefix while the full payload
+	// would execute — the approval must cover exactly what will run.
+	elicited := false
+	session := captureSession(t, &mcpsdk.ClientOptions{
+		ElicitationHandler: func(context.Context, *mcpsdk.ElicitRequest) (*mcpsdk.ElicitResult, error) {
+			elicited = true
+			return &mcpsdk.ElicitResult{Action: "accept"}, nil
+		},
+	})
+	a := &ElicitationAuthorizer{session: session, timeout: time.Minute}
+	oversized := json.RawMessage(`{"data":"` + strings.Repeat("x", maxApprovalArgsLen) + `"}`)
+	err := a.AuthorizeExecute(context.Background(), "write_tool", oversized)
+	assert.ErrorIs(t, err, safety.ErrExecutionNotAuthorized)
+	assert.Contains(t, err.Error(), "exceeding the maximum approvable size")
+	assert.False(t, elicited, "no elicitation request must be sent for oversized arguments")
+
+	// Arguments at exactly the limit are still approvable.
+	exact := json.RawMessage(`{"data":"` + strings.Repeat("x", maxApprovalArgsLen-len(`{"data":""}`)) + `"}`)
+	err = a.AuthorizeExecute(context.Background(), "write_tool", exact)
+	assert.NoError(t, err)
+	assert.True(t, elicited)
+}
+
 func TestBuildApprovalMessage(t *testing.T) {
 	msg := buildApprovalMessage(&Identity{User: "alice"}, "kubernetes_resource_delete", "prod",
 		json.RawMessage(`{"cluster":"prod"}`))

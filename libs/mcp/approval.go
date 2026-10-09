@@ -42,6 +42,16 @@ func (a *ElicitationAuthorizer) AuthorizeExecute(ctx context.Context, toolName s
 		return emperrors.Wrap(safety.ErrExecutionNotAuthorized,
 			"client does not support elicitation; write tools are limited to dry-run")
 	}
+	// Fail closed on oversized arguments: the approval prompt can only show a
+	// truncated prefix, so the human would approve a payload they cannot fully
+	// review while the full arguments execute. The invariant is that the human
+	// approves exactly what will run — when that is impossible, deny.
+	if len(args) > maxApprovalArgsLen {
+		return emperrors.Wrapf(safety.ErrExecutionNotAuthorized,
+			"arguments are %d bytes, exceeding the maximum approvable size of %d bytes; "+
+				"the approval prompt cannot show the full payload, so execution is denied (fail closed)",
+			len(args), maxApprovalArgsLen)
+	}
 	if a.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, a.timeout)
@@ -54,14 +64,25 @@ func (a *ElicitationAuthorizer) AuthorizeExecute(ctx context.Context, toolName s
 		return emperrors.Wrap(safety.ErrExecutionNotAuthorized,
 			"elicitation failed (client may not support elicitation); write tools are limited to dry-run")
 	}
-	if res.Action != "accept" {
-		return emperrors.Wrapf(ErrApprovalDenied, "user action: %s", res.Action)
+	if res == nil || res.Action != "accept" {
+		return emperrors.Wrapf(ErrApprovalDenied, "user action: %s", resAction(res))
 	}
 	return nil
 }
 
+// resAction safely extracts the elicitation action ("none" when res is nil).
+func resAction(res *mcpsdk.ElicitResult) string {
+	if res == nil {
+		return "none"
+	}
+	return res.Action
+}
+
 // buildApprovalMessage builds the human-readable approval prompt. It shows the
-// ACTUAL arguments of the execution call (truncated), never a stale preview.
+// ACTUAL arguments of the execution call, never a stale preview. Arguments are
+// truncated at maxApprovalArgsLen as defense in depth — AuthorizeExecute
+// rejects oversized arguments before eliciting, so the human always reviews
+// the complete payload that will execute.
 func buildApprovalMessage(id *Identity, toolName, instance string, args json.RawMessage) string {
 	user := "anonymous"
 	if id != nil && id.User != "" {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	emperrors "emperror.dev/errors"
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
 
@@ -62,6 +63,13 @@ func NewServer(ctx context.Context, cfg *Config) (*Server, error) {
 		if err != nil {
 			return nil, emperrors.Wrap(err, "invalid approval timeout")
 		}
+		if d <= 0 {
+			// A non-positive timeout would disable the approval deadline (the
+			// authorizer only applies a timeout when it is positive), letting
+			// an elicitation request block indefinitely. Reject it: the
+			// timeout is a fail-closed control.
+			return nil, emperrors.Errorf("invalid approval timeout %q: must be positive", cfg.Approval.Timeout)
+		}
 		s.approvalTimeout = d
 	}
 
@@ -114,8 +122,21 @@ func (s *Server) ServerFor(ctx context.Context, id *Identity) (*mcpsdk.Server, e
 // identityFromRequest resolves the caller identity: the per-request bearer token
 // info (HTTP) or the configured local identity (stdio / no auth).
 func (s *Server) identityFromRequest(req *mcpsdk.CallToolRequest) *Identity {
-	if req.Extra != nil && req.Extra.TokenInfo != nil {
-		return identityFromTokenInfo(req.Extra.TokenInfo)
+	var ti *auth.TokenInfo
+	if req.Extra != nil {
+		ti = req.Extra.TokenInfo
+	}
+	return s.identityOrLocal(identityFromTokenInfo(ti))
+}
+
+// identityOrLocal returns id, falling back to the configured local identity
+// when there is no authenticated identity (stdio, or HTTP without auth
+// configured). Both the per-identity server selection (tools/list filtering)
+// and the tool handler (tools/call authorization) must resolve the SAME
+// identity, so they share this fallback.
+func (s *Server) identityOrLocal(id *Identity) *Identity {
+	if id != nil {
+		return id
 	}
 	return s.cfg.LocalIdentity
 }

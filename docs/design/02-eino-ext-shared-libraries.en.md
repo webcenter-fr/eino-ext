@@ -822,13 +822,18 @@ The HTTP transport is wrapped with the go-sdk's `auth.RequireBearerToken`
 middleware; providers implement `auth.TokenVerifier`:
 
 - **`local`** — static bearer tokens → identity; constant-time comparison
-  (`crypto/subtle`) over all tokens (no timing leak).
+  (`crypto/subtle`) of SHA-256 digests over all tokens (fixed-length digests →
+  no timing or token-length leak; all tokens always compared → no existence
+  leak).
 - **`oidc`** — verifies OIDC-issued JWT access tokens with
   `github.com/coreos/go-oidc/v3` (JWKS signature, issuer, audience, expiry);
   claims → identity (`UserClaim` default `preferred_username`, fallback `sub`;
-  `GroupsClaim` default `groups`).
+  `GroupsClaim` default `groups`); the `scope` claim → the token's scopes.
 
 Identity = `{User, Groups}`, carried in `auth.TokenInfo` (`UserID` + `Extra`).
+Token scopes (`LocalToken.Scopes` for local, the `scope` claim for OIDC) are
+carried in `auth.TokenInfo.Scopes` and checked against
+`AuthConfig.RequiredScopes` by the SDK middleware (403 before any handler).
 Stdio = trusted local process → `Config.LocalIdentity` (still subject to RBAC).
 
 ### 12.4 AuthZ — RBAC
@@ -1132,10 +1137,12 @@ Per `tools/call`, the handler (`makeHandler`) runs:
    - `dryRun` → execute the preview, append `safety.DryRunGuidance`, audit
      `dry-run`.
    - `confirmed` → the authorizer calls `req.Session.Elicit(...)` with a message
-     built from the **actual args** (tool, target instance, user, args truncated
-     to 4000 chars); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
+     built from the **actual args** (tool, target instance, user, complete
+     args); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
      anything else (decline/cancel/timeout/no-elicitation-capability) → fail
-     closed.
+     closed. Args larger than 4000 bytes are rejected **without** eliciting:
+     the human could only review a truncated prefix while the full payload
+     would execute, so the approval must cover exactly what will run.
    - neither → `ErrGateRequired`.
 5. **Execute**: `tool.InvokableRun(execCtx, args)`; the tool's
    `confirm.RequireConfirmationCtx` re-checks the grant.

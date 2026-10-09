@@ -842,13 +842,18 @@ Le transport HTTP est enveloppé par le middleware `auth.RequireBearerToken` du
 go-sdk ; les fournisseurs implémentent `auth.TokenVerifier` :
 
 - **`local`** — tokens bearer statiques → identité ; comparaison à temps constant
-  (`crypto/subtle`) sur tous les tokens (pas de fuite par timing).
+  (`crypto/subtle`) des condensés SHA-256 sur tous les tokens (condensés de
+  longueur fixe → pas de fuite par timing ni sur la longueur des tokens ; tous
+  les tokens toujours comparés → pas de fuite d'existence).
 - **`oidc`** — vérifie les tokens d'accès JWT émis par un OIDC avec
   `github.com/coreos/go-oidc/v3` (signature JWKS, issuer, audience, expiry) ;
   claims → identité (`UserClaim` défaut `preferred_username`, repli `sub` ;
-  `GroupsClaim` défaut `groups`).
+  `GroupsClaim` défaut `groups`) ; le claim `scope` → les scopes du token.
 
 Identité = `{User, Groups}`, portée dans `auth.TokenInfo` (`UserID` + `Extra`).
+Les scopes du token (`LocalToken.Scopes` en local, le claim `scope` en OIDC)
+sont portés dans `auth.TokenInfo.Scopes` et vérifiés contre
+`AuthConfig.RequiredScopes` par le middleware du SDK (403 avant tout handler).
 Stdio = processus local de confiance → `Config.LocalIdentity` (toujours soumis au
 RBAC).
 
@@ -1169,9 +1174,12 @@ Par `tools/call`, le handler (`makeHandler`) exécute :
      `dry-run`.
    - `confirmed` → l'authorizer appelle `req.Session.Elicit(...)` avec un message
      construit depuis les **args réels** (outil, instance cible, utilisateur,
-     args tronqués à 4000 caractères) ; `accept` →
+     args complets) ; `accept` →
      `safety.WithExecutionAuthorized(ctx, toolName)` ; tout le reste
      (refus/annulation/timeout/pas de capacité d'élicitation) → fail closed.
+     Les args de plus de 4000 octets sont rejetés **sans** élicitation : le
+     humain ne pourrait lire qu'un préfixe tronqué alors que la charge complète
+     s'exécuterait — l'approbation doit couvrir exactement ce qui sera exécuté.
    - ni l'un ni l'autre → `ErrGateRequired`.
 5. **Exécution** : `tool.InvokableRun(execCtx, args)` ; le
    `confirm.RequireConfirmationCtx` de l'outil revérifie le grant.

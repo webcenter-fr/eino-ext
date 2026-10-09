@@ -45,13 +45,34 @@ func TestIdentityCacheKey(t *testing.T) {
 		identityCacheKey(&Identity{User: "alice", Groups: []string{"dev", "ops"}}),
 		identityCacheKey(&Identity{User: "alice", Groups: []string{"ops", "dev"}}))
 
-	assert.Equal(t, "alice\x00dev,ops", identityCacheKey(&Identity{User: "alice", Groups: []string{"ops", "dev"}}))
 	assert.NotEqual(t,
 		identityCacheKey(&Identity{User: "alice"}),
 		identityCacheKey(&Identity{User: "bob"}))
 	assert.NotEqual(t,
 		identityCacheKey(&Identity{User: "alice"}),
 		identityCacheKey(&Identity{User: "alice", Groups: []string{"dev"}}))
+}
+
+func TestIdentityCacheKeyNoCollision(t *testing.T) {
+	// The key must be injective: different identities must never share a
+	// per-identity server (a collision would serve one identity the other's
+	// tools/list view).
+	keys := map[string]*Identity{}
+	identities := []*Identity{
+		{User: "alice", Groups: []string{"b,c"}},   // group literally named "b,c"
+		{User: "alice", Groups: []string{"b", "c"}}, // groups "b" and "c"
+		{User: "a\x00b"},                            // NUL in the user name
+		{User: "a", Groups: []string{"b"}},
+		{User: "a", Groups: []string{"b\x00c"}},
+		{User: "a", Groups: []string{"b", "c"}},
+	}
+	for _, id := range identities {
+		key := identityCacheKey(id)
+		if other, ok := keys[key]; ok {
+			t.Fatalf("cache key collision between %+v and %+v (key %q)", other, id, key)
+		}
+		keys[key] = id
+	}
 }
 
 func TestIdentityMetadata(t *testing.T) {

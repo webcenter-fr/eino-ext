@@ -70,6 +70,20 @@ func TestNewServerValidation(t *testing.T) {
 			InstanceParam: "cluster",
 			Approval:      &ApprovalConfig{Timeout: "not-a-duration"},
 		}},
+		{"zero approval timeout (would disable the approval deadline)", &Config{
+			InstanceParam: "cluster",
+			Approval:      &ApprovalConfig{Timeout: "0s"},
+		}},
+		{"negative approval timeout (would disable the approval deadline)", &Config{
+			InstanceParam: "cluster",
+			Approval:      &ApprovalConfig{Timeout: "-5m"},
+		}},
+		{"local token with empty scope", &Config{
+			InstanceParam: "cluster",
+			Auth: &AuthConfig{Providers: []ProviderConfig{{Type: "local", Local: &LocalProviderConfig{
+				Tokens: []LocalToken{{Token: "t", User: "alice", Scopes: []string{""}}},
+			}}}},
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

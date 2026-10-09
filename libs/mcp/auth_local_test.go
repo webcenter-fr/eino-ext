@@ -11,26 +11,35 @@ import (
 
 func TestLocalProviderVerify(t *testing.T) {
 	p, err := NewLocalProvider(&LocalProviderConfig{Tokens: []LocalToken{
-		{Token: "secret-1", User: "alice", Groups: []string{"dev", "ops"}},
+		{Token: "secret-1", User: "alice", Groups: []string{"dev", "ops"}, Scopes: []string{"mcp"}},
 		{Token: "secret-2", User: "bob"},
 	}})
 	require.NoError(t, err)
 
-	id, exp, err := p.Verify(context.Background(), "secret-1", nil)
+	v, err := p.Verify(context.Background(), "secret-1", nil)
 	require.NoError(t, err)
-	assert.Equal(t, "alice", id.User)
-	assert.Equal(t, []string{"dev", "ops"}, id.Groups)
-	assert.True(t, exp.IsZero(), "local tokens never expire")
+	assert.Equal(t, "alice", v.Identity.User)
+	assert.Equal(t, []string{"dev", "ops"}, v.Identity.Groups)
+	assert.Equal(t, []string{"mcp"}, v.Scopes)
+	assert.True(t, v.ExpiresAt.IsZero(), "local tokens never expire")
 
-	id, _, err = p.Verify(context.Background(), "secret-2", nil)
+	v, err = p.Verify(context.Background(), "secret-2", nil)
 	require.NoError(t, err)
-	assert.Equal(t, "bob", id.User)
-	assert.Empty(t, id.Groups)
+	assert.Equal(t, "bob", v.Identity.User)
+	assert.Empty(t, v.Identity.Groups)
+	assert.Empty(t, v.Scopes)
 
-	_, _, err = p.Verify(context.Background(), "wrong-token", nil)
+	_, err = p.Verify(context.Background(), "wrong-token", nil)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 
-	_, _, err = p.Verify(context.Background(), "", nil)
+	_, err = p.Verify(context.Background(), "", nil)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+
+	// A token that is a strict prefix/suffix of a configured token must not
+	// match (the digest comparison is exact).
+	_, err = p.Verify(context.Background(), "secret-", nil)
+	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+	_, err = p.Verify(context.Background(), "secret-11", nil)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 }
 

@@ -28,7 +28,11 @@ func (s *Server) ServeStdio(ctx context.Context) error {
 // server→client requests, which would break elicitation-based approval.
 func (s *Server) HTTPHandler() http.Handler {
 	getServer := func(r *http.Request) *mcpsdk.Server {
-		id := identityFromTokenInfo(auth.TokenInfoFromContext(r.Context()))
+		// Resolve the same identity the tool handler will authorize with:
+		// the verified bearer token, or the configured local identity when no
+		// auth is configured (so tools/list filtering matches tools/call
+		// authorization).
+		id := s.identityOrLocal(identityFromTokenInfo(auth.TokenInfoFromContext(r.Context())))
 		srv, err := s.ServerFor(r.Context(), id)
 		if err != nil {
 			return nil // SDK responds 400 "no server available"

@@ -14,25 +14,28 @@ import (
 
 // stubProvider is a Provider returning fixed values.
 type stubProvider struct {
-	id  *Identity
-	exp time.Time
+	ver *Verification
 	err error
 }
 
-func (p stubProvider) Verify(context.Context, string, *http.Request) (*Identity, time.Time, error) {
-	return p.id, p.exp, p.err
+func (p stubProvider) Verify(context.Context, string, *http.Request) (*Verification, error) {
+	return p.ver, p.err
 }
 
 func TestTokenVerifierFirstSuccessWins(t *testing.T) {
 	v := tokenVerifier([]Provider{
 		stubProvider{err: emperrors.Wrap(auth.ErrInvalidToken, "nope")},
-		stubProvider{id: &Identity{User: "alice", Groups: []string{"dev"}}},
-		stubProvider{id: &Identity{User: "mallory"}},
+		stubProvider{ver: &Verification{
+			Identity: &Identity{User: "alice", Groups: []string{"dev"}},
+			Scopes:   []string{"mcp", "read"},
+		}},
+		stubProvider{ver: &Verification{Identity: &Identity{User: "mallory"}}},
 	})
 	ti, err := v(context.Background(), "token", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", ti.UserID)
 	assert.Equal(t, []string{"dev"}, ti.Extra["groups"])
+	assert.Equal(t, []string{"mcp", "read"}, ti.Scopes)
 	// Local tokens never expire: the zero time is mapped to neverExpires so the
 	// SDK's RequireBearerToken middleware accepts the token.
 	assert.Equal(t, neverExpires, ti.Expiration)
@@ -49,7 +52,10 @@ func TestTokenVerifierAllFail(t *testing.T) {
 
 func TestTokenVerifierExpiryPassthrough(t *testing.T) {
 	exp := time.Now().Add(time.Hour).Truncate(time.Second)
-	v := tokenVerifier([]Provider{stubProvider{id: &Identity{User: "alice"}, exp: exp}})
+	v := tokenVerifier([]Provider{stubProvider{ver: &Verification{
+		Identity:  &Identity{User: "alice"},
+		ExpiresAt: exp,
+	}}})
 	ti, err := v(context.Background(), "token", nil)
 	require.NoError(t, err)
 	assert.Equal(t, exp, ti.Expiration)

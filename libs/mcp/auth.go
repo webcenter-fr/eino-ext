@@ -15,13 +15,25 @@ import (
 // far-future time.
 var neverExpires = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
 
+// Verification is the result of a successful bearer-token verification.
+type Verification struct {
+	// Identity is the authenticated caller.
+	Identity *Identity
+	// ExpiresAt is the token's expiration. The zero time means the token
+	// never expires (local static tokens).
+	ExpiresAt time.Time
+	// Scopes are the scopes granted by the token. The SDK's
+	// RequireBearerToken middleware checks them against
+	// AuthConfig.RequiredScopes.
+	Scopes []string
+}
+
 // Provider verifies a bearer token and returns the caller's identity.
 // Implementations must be safe for concurrent use.
 type Provider interface {
-	// Verify checks the token and returns the identity and the token's
-	// expiration (the zero time when the token never expires), or an error
-	// unwrapping auth.ErrInvalidToken when the token is not accepted.
-	Verify(ctx context.Context, token string, req *http.Request) (*Identity, time.Time, error)
+	// Verify checks the token and returns the verification result, or an
+	// error unwrapping auth.ErrInvalidToken when the token is not accepted.
+	Verify(ctx context.Context, token string, req *http.Request) (*Verification, error)
 }
 
 // tokenVerifier adapts a provider chain to the SDK's auth.TokenVerifier.
@@ -30,15 +42,17 @@ type Provider interface {
 func tokenVerifier(providers []Provider) auth.TokenVerifier {
 	return func(ctx context.Context, token string, req *http.Request) (*auth.TokenInfo, error) {
 		for _, p := range providers {
-			id, expiresAt, err := p.Verify(ctx, token, req)
+			v, err := p.Verify(ctx, token, req)
 			if err == nil {
+				expiresAt := v.ExpiresAt
 				if expiresAt.IsZero() {
 					expiresAt = neverExpires
 				}
 				return &auth.TokenInfo{
-					UserID:     id.User,
+					UserID:     v.Identity.User,
 					Expiration: expiresAt,
-					Extra:      map[string]any{"groups": id.Groups},
+					Scopes:     v.Scopes,
+					Extra:      map[string]any{"groups": v.Identity.Groups},
 				}, nil
 			}
 		}

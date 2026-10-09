@@ -26,12 +26,14 @@ func TestOIDCProviderVerify(t *testing.T) {
 		"sub":                "user-123",
 		"preferred_username": "alice",
 		"groups":             []string{"dev", "ops"},
+		"scope":              "mcp read",
 	})
-	id, exp, err := p.Verify(context.Background(), token, nil)
+	v, err := p.Verify(context.Background(), token, nil)
 	require.NoError(t, err)
-	assert.Equal(t, "alice", id.User)
-	assert.Equal(t, []string{"dev", "ops"}, id.Groups)
-	assert.False(t, exp.IsZero(), "expiration comes from the exp claim")
+	assert.Equal(t, "alice", v.Identity.User)
+	assert.Equal(t, []string{"dev", "ops"}, v.Identity.Groups)
+	assert.Equal(t, []string{"mcp", "read"}, v.Scopes, "space-separated scope claim is split")
+	assert.False(t, v.ExpiresAt.IsZero(), "expiration comes from the exp claim")
 	assert.Equal(t, int32(1), idp.jwksHits.Load(), "JWKS fetched on first verification")
 }
 
@@ -53,7 +55,7 @@ func TestOIDCProviderVerifyFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := p.Verify(context.Background(), idp.sign(t, tt.claims), nil)
+			_, err := p.Verify(context.Background(), idp.sign(t, tt.claims), nil)
 			assert.ErrorIs(t, err, auth.ErrInvalidToken)
 		})
 	}
@@ -70,11 +72,11 @@ func TestOIDCProviderVerifyFailures(t *testing.T) {
 	token.Header["kid"] = "test-key"
 	signed, err := token.SignedString(otherKey)
 	require.NoError(t, err)
-	_, _, err = p.Verify(context.Background(), signed, nil)
+	_, err = p.Verify(context.Background(), signed, nil)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 
 	// Garbage token.
-	_, _, err = p.Verify(context.Background(), "not-a-jwt", nil)
+	_, err = p.Verify(context.Background(), "not-a-jwt", nil)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 }
 
@@ -87,17 +89,18 @@ func TestOIDCProviderClaimsMapping(t *testing.T) {
 	require.NoError(t, err)
 
 	// Missing groups claim → empty groups.
-	id, _, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+	v, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
 		"sub": "u", "preferred_username": "alice",
 	}), nil)
 	require.NoError(t, err)
-	assert.Equal(t, "alice", id.User)
-	assert.Empty(t, id.Groups)
+	assert.Equal(t, "alice", v.Identity.User)
+	assert.Empty(t, v.Identity.Groups)
+	assert.Empty(t, v.Scopes, "missing scope claim → no scopes")
 
 	// Missing preferred_username → falls back to sub.
-	id, _, err = p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{"sub": "user-42"}), nil)
+	v, err = p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{"sub": "user-42"}), nil)
 	require.NoError(t, err)
-	assert.Equal(t, "user-42", id.User)
+	assert.Equal(t, "user-42", v.Identity.User)
 
 	// Custom UserClaim/GroupsClaim are honored.
 	p2, err := NewOIDCProvider(context.Background(), &OIDCProviderConfig{
@@ -107,12 +110,28 @@ func TestOIDCProviderClaimsMapping(t *testing.T) {
 		GroupsClaim: "roles",
 	})
 	require.NoError(t, err)
-	id, _, err = p2.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+	v, err = p2.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
 		"sub": "u", "email": "alice@example.com", "roles": []string{"admin"},
 	}), nil)
 	require.NoError(t, err)
-	assert.Equal(t, "alice@example.com", id.User)
-	assert.Equal(t, []string{"admin"}, id.Groups)
+	assert.Equal(t, "alice@example.com", v.Identity.User)
+	assert.Equal(t, []string{"admin"}, v.Identity.Groups)
+}
+
+func TestOIDCProviderScopeClaimArray(t *testing.T) {
+	// Some issuers send the scope claim as a JSON array instead of a
+	// space-separated string.
+	idp := newTestIDP(t)
+	p, err := NewOIDCProvider(context.Background(), &OIDCProviderConfig{
+		Issuer:   idp.issuer(),
+		Audience: "mcp-server",
+	})
+	require.NoError(t, err)
+	v, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+		"sub": "u", "scope": []any{"mcp", "write"},
+	}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"mcp", "write"}, v.Scopes)
 }
 
 func TestOIDCProviderJWKSURLOverride(t *testing.T) {
@@ -127,11 +146,11 @@ func TestOIDCProviderJWKSURLOverride(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(0), idp.discoveryHits.Load())
 
-	id, _, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+	v, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
 		"sub": "u", "preferred_username": "alice",
 	}), nil)
 	require.NoError(t, err)
-	assert.Equal(t, "alice", id.User)
+	assert.Equal(t, "alice", v.Identity.User)
 	assert.Equal(t, int32(1), idp.jwksHits.Load())
 }
 

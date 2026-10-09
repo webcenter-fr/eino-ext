@@ -137,7 +137,9 @@ func (s *Server) makeHandler(t tool.InvokableTool, toolName string, isWrite bool
 // for mcpsdk.Tool.InputSchema (low-level AddTool accepts any value that
 // JSON-marshals to an object with type "object").
 func inputSchemaJSON(info *schema.ToolInfo) (any, error) {
-	js, err := info.ParamsOneOf.ToJSONSchema()
+	// ToJSONSchema is the promoted method of the embedded *ParamsOneOf; it
+	// handles a nil ParamsOneOf (tool without params) by returning nil.
+	js, err := info.ToJSONSchema()
 	if err != nil {
 		return nil, err
 	}

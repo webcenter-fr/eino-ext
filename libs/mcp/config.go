@@ -54,8 +54,11 @@ type AuthConfig struct {
 	Providers []ProviderConfig `validate:"required,min=1,dive" jsonschema:"(required) Bearer-token providers, tried in order"`
 	// ResourceMetadataURL is returned in the WWW-Authenticate header (RFC 9728).
 	ResourceMetadataURL string `validate:"omitempty,url" jsonschema:"description=RFC 9728 resource metadata URL returned in the WWW-Authenticate header"`
-	// RequiredScopes are required on the access token.
-	RequiredScopes []string `json:"requiredScopes" jsonschema:"description=Scopes required on the access token"`
+	// RequiredScopes are required on the access token. The SDK's
+	// RequireBearerToken middleware rejects (403) any request whose token
+	// does not carry all of them. Scopes come from LocalToken.Scopes (local
+	// provider) or the token's "scope" claim (OIDC provider).
+	RequiredScopes []string `json:"requiredScopes" jsonschema:"description=Scopes required on the access token (local: LocalToken.Scopes; OIDC: the token's 'scope' claim)"`
 }
 
 // ProviderConfig is a single auth provider.
@@ -82,6 +85,9 @@ type LocalToken struct {
 	User string `validate:"required" jsonschema:"(required) User name for this token"`
 	// Groups are the groups for this token.
 	Groups []string `json:"groups" jsonschema:"description=Groups for this token"`
+	// Scopes are the scopes granted to this token. They are checked against
+	// AuthConfig.RequiredScopes by the SDK's RequireBearerToken middleware.
+	Scopes []string `validate:"omitempty,dive,required" json:"scopes,omitempty" jsonschema:"description=Scopes granted to this token (checked against AuthConfig.RequiredScopes)"`
 }
 
 // OIDCProviderConfig configures the OIDC provider.

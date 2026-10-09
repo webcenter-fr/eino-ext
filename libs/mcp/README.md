@@ -75,7 +75,7 @@ cfg := &mcpserver.Config{
         Providers: []mcpserver.ProviderConfig{
             {Type: "local", Local: &mcpserver.LocalProviderConfig{
                 Tokens: []mcpserver.LocalToken{
-                    {Token: "s3cr3t", User: "alice", Groups: []string{"devs"}},
+                    {Token: "s3cr3t", User: "alice", Groups: []string{"devs"}, Scopes: []string{"mcp"}},
                 },
             }},
             {Type: "oidc", OIDC: &mcpserver.OIDCProviderConfig{
@@ -108,12 +108,19 @@ order; first success wins. All failures → 401 + `WWW-Authenticate` (RFC 9728
 `resource_metadata` when configured).
 
 - **local** — static bearer tokens mapped to identities. Verification iterates
-  all tokens with `crypto/subtle.ConstantTimeCompare` (no timing leak).
+  all tokens, comparing SHA-256 digests with `crypto/subtle.ConstantTimeCompare`
+  (fixed-length digests → constant time regardless of token length; all tokens
+  are always compared → no timing leak of which tokens exist).
 - **oidc** — verifies OIDC-issued JWT access tokens with
   `github.com/coreos/go-oidc/v3` (signature via JWKS, issuer, audience,
   expiry). Claims map to identity: `UserClaim` (default `preferred_username`,
   fallback `sub`) → `Identity.User`; `GroupsClaim` (default `groups`) →
-  `Identity.Groups`.
+  `Identity.Groups`; the `scope` claim → the token's scopes.
+
+`AuthConfig.RequiredScopes` is enforced by the SDK's `RequireBearerToken`
+middleware: a request whose token does not carry all the required scopes is
+rejected (403) before any handler runs. Scopes come from `LocalToken.Scopes`
+(local provider) or the token's `scope` claim (OIDC provider).
 
 For **stdio** (trusted local process) there is no bearer token: the identity is
 `Config.LocalIdentity` (still subject to RBAC).
@@ -173,6 +180,11 @@ Approval flow:
    tool error result, nothing executes. Audited `PhaseRejected`.
 
 Fail closed: with no elicitation-capable client, write tools are dry-run only.
+The approval prompt shows the complete arguments of the execution call — a
+write whose arguments exceed the maximum approvable size (4000 bytes) is
+rejected without eliciting, because the human could not review the full
+payload that would execute. The approval timeout must be positive (a
+non-positive `ApprovalConfig.Timeout` is rejected at construction).
 The safety middleware's `AllowModelConfirmation` escape hatch (trusts
 model-supplied `confirmed=true`) is **not** wired into the MCP server. Approval
 is always elicitation, always human. The authorizer runs on **every**

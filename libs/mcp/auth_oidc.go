@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 	"net/http"
-	"time"
+	"strings"
 
 	emperrors "emperror.dev/errors"
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -50,20 +50,24 @@ func NewOIDCProvider(ctx context.Context, cfg *OIDCProviderConfig) (*OIDCProvide
 
 // Verify implements Provider. The returned expiration is the JWT's exp claim,
 // so the SDK's RequireBearerToken middleware re-checks it on every request.
-func (p *OIDCProvider) Verify(ctx context.Context, token string, _ *http.Request) (*Identity, time.Time, error) {
+func (p *OIDCProvider) Verify(ctx context.Context, token string, _ *http.Request) (*Verification, error) {
 	idToken, err := p.verifier.Verify(ctx, token)
 	if err != nil {
-		return nil, time.Time{}, emperrors.Wrapf(auth.ErrInvalidToken, "OIDC token verification failed: %v", err)
+		return nil, emperrors.Wrapf(auth.ErrInvalidToken, "OIDC token verification failed: %v", err)
 	}
 	var claims map[string]any
 	if err := idToken.Claims(&claims); err != nil {
-		return nil, time.Time{}, emperrors.Wrapf(auth.ErrInvalidToken, "failed to read OIDC claims: %v", err)
+		return nil, emperrors.Wrapf(auth.ErrInvalidToken, "failed to read OIDC claims: %v", err)
 	}
 	user := stringClaim(claims, p.userClaim)
 	if user == "" {
 		user = idToken.Subject
 	}
-	return &Identity{User: user, Groups: stringSliceClaim(claims, p.groupsClaim)}, idToken.Expiry, nil
+	return &Verification{
+		Identity:  &Identity{User: user, Groups: stringSliceClaim(claims, p.groupsClaim)},
+		ExpiresAt: idToken.Expiry,
+		Scopes:    scopeClaim(claims),
+	}, nil
 }
 
 func stringClaim(claims map[string]any, name string) string {
@@ -83,4 +87,23 @@ func stringSliceClaim(claims map[string]any, name string) []string {
 		}
 	}
 	return out
+}
+
+// scopeClaim extracts the OAuth "scope" claim: a space-separated string per
+// RFC 8693, tolerated as a string array by some issuers.
+func scopeClaim(claims map[string]any) []string {
+	switch raw := claims["scope"].(type) {
+	case string:
+		return strings.Fields(raw)
+	case []any:
+		out := make([]string, 0, len(raw))
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
