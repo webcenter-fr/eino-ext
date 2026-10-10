@@ -16,3 +16,14 @@ func TestNewWriteToolSet(t *testing.T) {
 	assert.Empty(t, NewWriteToolSet(nil))
 	assert.Empty(t, NewWriteToolSet([]string{}))
 }
+
+func TestDryRunGuidance(t *testing.T) {
+	// The guidance text is a contract shared with the MCP server adapter
+	// (libs/mcp): it instructs the LLM to show the preview and ask for
+	// confirmation before re-calling with confirmed=true.
+	assert.Equal(t,
+		"\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true.",
+		DryRunGuidance)
+	assert.Contains(t, DryRunGuidance, "DRY-RUN RESULT")
+	assert.Contains(t, DryRunGuidance, "confirmed=true")
+}

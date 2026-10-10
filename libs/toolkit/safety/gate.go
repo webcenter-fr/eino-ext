@@ -79,3 +79,9 @@ func ShouldGateWithAuthorization(
 var ErrGateRequired = errors.New(
 	"SAFETY GATE: This is a write operation. You must first call this tool with dryRun=true, show the result to the user, and then re-call with confirmed=true after user approval.",
 )
+
+// DryRunGuidance is appended to tool outputs during dry-run mode to instruct
+// the LLM to present the preview to the user and request confirmation before
+// re-calling with confirmed=true. It is shared by the safety middleware and
+// the MCP server adapter so both surfaces emit the same guidance text.
+const DryRunGuidance = "\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true."
