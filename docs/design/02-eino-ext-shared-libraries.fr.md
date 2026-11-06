@@ -122,7 +122,7 @@ Chaque famille d'outils suit le même contrat :
 
 L'**argument cible** diffère selon la famille et est réutilisé par les couches de
 sûreté/authz : `cluster` pour kubernetes, `instance` pour argocd / prometheus /
-grafana.
+grafana / github.
 
 | Famille | Arg. instance | Outils lecture | Outils écriture |
 |---|---|---|---|
@@ -130,9 +130,10 @@ grafana.
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (aucun) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
+| github | instance | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
 
-Autres familles présentes dans le dépôt : `alertmanager`, `github` (15 outils
-d'écriture), `shell` (backé par Dagger), `file`, `s3`, `websearch`, `opensearch`,
+Autres familles présentes dans le dépôt : `alertmanager`,
+`shell` (backé par Dagger), `file`, `s3`, `websearch`, `opensearch`,
 `opensearch_retriever`, `pipe`, `convertor`.
 
 **Contrat pour les outils d'écriture** (documenté sur chaque `WriteToolNames()`) :

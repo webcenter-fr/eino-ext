@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
@@ -29,17 +28,16 @@ status, and branch.
 - The .git directory is always rejected.
 - Symlinks are always rejected.
 - Path traversal attempts are rejected.
-- Requires Confirmed=true. Use DryRun=true first to preview.
+- Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
 type FileDeleteParams struct {
-	Instance  string `json:"instance"  validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner     string `json:"owner"     validate:"required" jsonschema:"(required) Repository owner."`
-	Repo      string `json:"repo"      validate:"required" jsonschema:"(required) Repository name."`
-	Path      string `json:"path"      validate:"required" jsonschema:"(required) Relative file or directory path inside the cloned repo to delete."`
-	Branch    string `json:"branch"    validate:"required" jsonschema:"(required) Target branch (for context; no checkout is performed)."`
-	DryRun    bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the deletion without making changes."`
-	Confirmed bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
+	Instance string `json:"instance"  validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner    string `json:"owner"     validate:"required" jsonschema:"(required) Repository owner."`
+	Repo     string `json:"repo"      validate:"required" jsonschema:"(required) Repository name."`
+	Path     string `json:"path"      validate:"required" jsonschema:"(required) Relative file or directory path inside the cloned repo to delete."`
+	Branch   string `json:"branch"    validate:"required" jsonschema:"(required) Target branch (for context; no checkout is performed)."`
+	DryRun   bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the deletion without making changes."`
 }
 
 type FileDeleteOutput struct {
@@ -108,10 +106,6 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 			return "", errors.Wrap(err, "failed to marshal dry-run preview")
 		}
 		return string(preview), nil
-	}
-
-	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_delete", "delete file", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)

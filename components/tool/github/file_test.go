@@ -5,12 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"emperror.dev/errors"
 	"github.com/go-git/go-git/v5"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
-
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
 // testRepoPath returns the session-scoped clone path used by the tests:
@@ -647,22 +644,9 @@ func (s *GitHubToolTestSuite) TestFileListPathTraversal() {
 
 // ---- github_file_write ----
 
-// TestFileWriteUnauthorizedContext asserts the per-tool second layer: calling
-// the tool directly (no middleware) with confirmed:true and an unauthorized
-// context is refused with ErrExecutionNotAuthorized.
-func (s *GitHubToolTestSuite) TestFileWriteUnauthorizedContext() {
-	ctx := context.Background()
-	tool, err := NewFileWriteTool(ctx, s.fileConfigs(s.T().TempDir()))
-	s.NoError(err)
-
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello", "branch": "master", "commitMessage": "commit msg", "confirmed": true}`)
-	s.Error(err)
-	s.True(errors.Is(err, safety.ErrExecutionNotAuthorized), "expected ErrExecutionNotAuthorized, got %v", err)
-}
-
-// TestDryRunNoMutation asserts the WriteToolNames contract: a dry-run write
-// returns a preview and does not create the file (the dry-run branch returns
-// before the clone is even resolved).
+// TestDryRunNoMutation asserts that a dry-run write returns a preview and
+// does not create the file (the dry-run branch returns before the clone is
+// even resolved).
 func (s *GitHubToolTestSuite) TestDryRunNoMutation() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
@@ -703,7 +687,7 @@ func (s *GitHubToolTestSuite) TestFileWriteDryRun() {
 	s.True(os.IsNotExist(err))
 }
 
-func (s *GitHubToolTestSuite) TestFileWriteConfirmed() {
+func (s *GitHubToolTestSuite) TestFileWriteWithoutConfirmation() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
@@ -711,27 +695,14 @@ func (s *GitHubToolTestSuite) TestFileWriteConfirmed() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	// Push will fail against the mock server, but the commit should succeed locally.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello world", "branch": "master", "commitMessage": "add newfile", "confirmed": true}`)
-	// Push fails, but commit succeeded; verify file was written locally.
+	// Push will fail against the mock server, but the commit should succeed locally
+	// without confirmed or safety.WithExecutionAuthorized.
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello world", "branch": "master", "commitMessage": "add newfile"}`)
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "newfile.txt"))
 	s.NoError(readErr)
 	s.Equal("hello world", string(data))
 	_ = err // push error is expected
-}
-
-func (s *GitHubToolTestSuite) TestFileWriteNotConfirmed() {
-	ctx := context.Background()
-	cloneDir, cleanup := s.setupClone()
-	defer cleanup()
-
-	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
-	s.NoError(err)
-
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello", "branch": "master", "commitMessage": "commit msg"}`)
-	s.Error(err)
-	s.Contains(err.Error(), "Confirmed")
 }
 
 func (s *GitHubToolTestSuite) TestFileWriteNewBranch() {
@@ -743,7 +714,7 @@ func (s *GitHubToolTestSuite) TestFileWriteNewBranch() {
 	s.NoError(err)
 
 	// Push will fail against mock server, but branch creation and commit should succeed locally.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "feature.txt", "content": "feature content", "branch": "new-feature", "baseBranch": "master", "commitMessage": "add feature", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "feature.txt", "content": "feature content", "branch": "new-feature", "baseBranch": "master", "commitMessage": "add feature"}`)
 	// Verify file was written locally (commit succeeded before push failed)
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "feature.txt"))
@@ -761,7 +732,7 @@ func (s *GitHubToolTestSuite) TestFileWriteOverwrite() {
 	s.NoError(err)
 
 	// Push will fail against mock server, but overwrite should succeed locally.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "content": "overwritten content", "branch": "master", "commitMessage": "update readme", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "content": "overwritten content", "branch": "master", "commitMessage": "update readme"}`)
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "README.md"))
 	s.NoError(readErr)
@@ -777,7 +748,7 @@ func (s *GitHubToolTestSuite) TestFileWritePathTraversal() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../evil.txt", "content": "evil", "branch": "master", "commitMessage": "test", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -801,7 +772,7 @@ func (s *GitHubToolTestSuite) TestFileWriteSymlinkTraversal() {
 	s.NoError(err)
 
 	// Attempt to write through the symlink — must be rejected.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "symlink")
 
@@ -818,7 +789,7 @@ func (s *GitHubToolTestSuite) TestFileWriteDotGitBypass() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "./.git/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "./.git/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -839,7 +810,7 @@ func (s *GitHubToolTestSuite) TestFileWriteNotCloned() {
 	tool, err := NewFileWriteTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "test.txt", "content": "test", "branch": "master", "commitMessage": "test", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "test.txt", "content": "test", "branch": "master", "commitMessage": "test"}`)
 	s.Error(err)
 }
 
@@ -852,7 +823,7 @@ func (s *GitHubToolTestSuite) TestFileWriteCreatesParentDirs() {
 	s.NoError(err)
 
 	// Push will fail against mock server, but dirs should be created locally.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "deep/nested/file.txt", "content": "nested content", "branch": "master", "commitMessage": "create nested file", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "deep/nested/file.txt", "content": "nested content", "branch": "master", "commitMessage": "create nested file"}`)
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "file.txt"))
 	s.NoError(readErr)
@@ -871,7 +842,7 @@ func (s *GitHubToolTestSuite) TestFileWritePushRejection() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_write"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "push-test.txt", "content": "push test", "branch": "master", "commitMessage": "test push rejection", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "push-test.txt", "content": "push test", "branch": "master", "commitMessage": "test push rejection"}`)
 	s.Error(err, "expected push error with mock server")
 	s.NotContains(err.Error(), "test-token", "token should be redacted")
 }
@@ -889,7 +860,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteFile() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileDeleteOutput
@@ -924,7 +895,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteFileDryRun() {
 	s.NoError(statErr, "README.md must still exist after dry-run")
 }
 
-func (s *GitHubToolTestSuite) TestFileDeleteNotConfirmed() {
+func (s *GitHubToolTestSuite) TestFileDeleteWithoutConfirmation() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
@@ -932,9 +903,15 @@ func (s *GitHubToolTestSuite) TestFileDeleteNotConfirmed() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master"}`)
-	s.Error(err)
-	s.Contains(err.Error(), "Confirmed")
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master"}`)
+	s.NoError(err)
+
+	var output FileDeleteOutput
+	s.NoError(json.Unmarshal([]byte(result), &output))
+	s.True(output.Deleted)
+
+	_, statErr := os.Stat(filepath.Join(testRepoPath(cloneDir), "README.md"))
+	s.True(os.IsNotExist(statErr))
 }
 
 func (s *GitHubToolTestSuite) TestFileDeleteNotFound() {
@@ -945,7 +922,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteNotFound() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "nonexistent.txt", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "nonexistent.txt", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "not found")
 }
@@ -958,7 +935,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDirectory() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "sub", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "sub", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileDeleteOutput
@@ -1008,7 +985,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDirectoryNested() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "sub", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "sub", "branch": "master"}`)
 	s.NoError(err)
 
 	_, statErr := os.Stat(filepath.Join(repoPath, "sub"))
@@ -1023,7 +1000,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDotGit() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".git/HEAD", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".git/HEAD", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -1036,7 +1013,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteDotGitDir() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".git", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".git", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -1049,7 +1026,7 @@ func (s *GitHubToolTestSuite) TestFileDeletePathTraversal() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../etc/passwd", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../etc/passwd", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -1071,7 +1048,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteSymlink() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/secret.txt", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/secret.txt", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "symlink")
 }
@@ -1092,7 +1069,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteNotCloned() {
 	tool, err := NewFileDeleteTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "github_repo_clone")
 }
@@ -1105,7 +1082,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteCloneRoot() {
 	tool, err := NewFileDeleteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_delete"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": ".", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "clone root")
 
@@ -1133,7 +1110,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFile() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileCopyOutput
@@ -1172,7 +1149,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileDryRun() {
 	s.True(os.IsNotExist(statErr), "copy.md must not be created after dry-run")
 }
 
-func (s *GitHubToolTestSuite) TestFileCopyNotConfirmed() {
+func (s *GitHubToolTestSuite) TestFileCopyWithoutConfirmation() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
@@ -1180,9 +1157,16 @@ func (s *GitHubToolTestSuite) TestFileCopyNotConfirmed() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master"}`)
-	s.Error(err)
-	s.Contains(err.Error(), "Confirmed")
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master"}`)
+	s.NoError(err)
+
+	var output FileCopyOutput
+	s.NoError(json.Unmarshal([]byte(result), &output))
+	s.True(output.Copied)
+
+	dst, readErr := os.ReadFile(filepath.Join(testRepoPath(cloneDir), "copy.md"))
+	s.NoError(readErr)
+	s.Equal("line1\nline2\nline3\n", string(dst))
 }
 
 func (s *GitHubToolTestSuite) TestFileCopySourceNotFound() {
@@ -1193,7 +1177,7 @@ func (s *GitHubToolTestSuite) TestFileCopySourceNotFound() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "nonexistent.txt", "destination": "copy.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "nonexistent.txt", "destination": "copy.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "not found")
 }
@@ -1206,7 +1190,7 @@ func (s *GitHubToolTestSuite) TestFileCopySamePath() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 }
@@ -1223,7 +1207,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileOverwrite() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master"}`)
 	s.NoError(err)
 
 	dst, err := os.ReadFile(filepath.Join(repoPath, "copy.md"))
@@ -1239,7 +1223,7 @@ func (s *GitHubToolTestSuite) TestFileCopyFileCreatesParentDirs() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/copy.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/copy.md", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1256,7 +1240,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectory() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileCopyOutput
@@ -1290,7 +1274,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryLimit() {
 	tool, err := NewFileCopyTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "exceeds the maximum")
 
@@ -1337,7 +1321,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryMerge() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master"}`)
 	s.NoError(err)
 
 	// Source file overwrites the matching destination file.
@@ -1359,7 +1343,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDirectoryCreatesParents() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "deep/nested/sub", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "deep/nested/sub", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1376,7 +1360,7 @@ func (s *GitHubToolTestSuite) TestFileCopyPathTraversalSource() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "copy.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "copy.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -1389,7 +1373,7 @@ func (s *GitHubToolTestSuite) TestFileCopyPathTraversalDest() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -1413,7 +1397,7 @@ func (s *GitHubToolTestSuite) TestFileCopySymlinkSource() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "link/secret.txt", "destination": "stolen.txt", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "link/secret.txt", "destination": "stolen.txt", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "symlink")
 
@@ -1430,7 +1414,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDotGit() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": ".git/evil", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": ".git/evil", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -1451,7 +1435,7 @@ func (s *GitHubToolTestSuite) TestFileCopyNotCloned() {
 	tool, err := NewFileCopyTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "copy.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "github_repo_clone")
 }
@@ -1464,7 +1448,7 @@ func (s *GitHubToolTestSuite) TestFileCopyTypeMismatch() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "sub", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "sub", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "is a directory but source is a file")
 }
@@ -1493,7 +1477,7 @@ func (s *GitHubToolTestSuite) TestFileCopySkipsSymlinkInsideTree() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileCopyOutput
@@ -1526,7 +1510,7 @@ func (s *GitHubToolTestSuite) TestFileCopyDestInsideSource() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub/sub2", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub/sub2", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "inside the source directory")
 
@@ -1544,7 +1528,7 @@ func (s *GitHubToolTestSuite) TestFileCopyRootIntoSubfolder() {
 	tool, err := NewFileCopyTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": ".", "destination": "backup", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": ".", "destination": "backup", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "inside the source directory")
 }
@@ -1559,7 +1543,7 @@ func (s *GitHubToolTestSuite) TestFileCopyCleanPathAlias() {
 
 	// "sub/./main.go" and "sub/main.go" resolve to the same file; copying
 	// must be rejected instead of truncating the source in place.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_copy"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub/./main.go", "destination": "sub/main.go", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub/./main.go", "destination": "sub/main.go", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 
@@ -1581,7 +1565,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFile() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileMoveOutput
@@ -1609,7 +1593,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileRename() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README2.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README2.md", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1627,7 +1611,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileAcrossDirs() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub/main.go", "destination": "main.go", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub/main.go", "destination": "main.go", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1661,7 +1645,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileDryRun() {
 	s.True(os.IsNotExist(statErr), "destination must not be created after dry-run")
 }
 
-func (s *GitHubToolTestSuite) TestFileMoveNotConfirmed() {
+func (s *GitHubToolTestSuite) TestFileMoveWithoutConfirmation() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
@@ -1669,9 +1653,19 @@ func (s *GitHubToolTestSuite) TestFileMoveNotConfirmed() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master"}`)
-	s.Error(err)
-	s.Contains(err.Error(), "Confirmed")
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master"}`)
+	s.NoError(err)
+
+	var output FileMoveOutput
+	s.NoError(json.Unmarshal([]byte(result), &output))
+	s.True(output.Moved)
+
+	repoPath := testRepoPath(cloneDir)
+	_, statErr := os.Stat(filepath.Join(repoPath, "README.md"))
+	s.True(os.IsNotExist(statErr))
+	dst, readErr := os.ReadFile(filepath.Join(repoPath, "moved.md"))
+	s.NoError(readErr)
+	s.Equal("line1\nline2\nline3\n", string(dst))
 }
 
 func (s *GitHubToolTestSuite) TestFileMoveSourceNotFound() {
@@ -1682,7 +1676,7 @@ func (s *GitHubToolTestSuite) TestFileMoveSourceNotFound() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "nonexistent.txt", "destination": "moved.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "nonexistent.txt", "destination": "moved.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "not found")
 }
@@ -1695,7 +1689,7 @@ func (s *GitHubToolTestSuite) TestFileMoveSamePath() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "README.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 }
@@ -1712,7 +1706,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileOverwrite() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master"}`)
 	s.NoError(err)
 
 	dst, err := os.ReadFile(filepath.Join(repoPath, "moved.md"))
@@ -1731,7 +1725,7 @@ func (s *GitHubToolTestSuite) TestFileMoveFileCreatesParentDirs() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/moved.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "deep/nested/moved.md", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1751,7 +1745,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDirectory() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master", "confirmed": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub2", "branch": "master"}`)
 	s.NoError(err)
 
 	var output FileMoveOutput
@@ -1779,7 +1773,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDirectoryRename() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "renamed", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "renamed", "branch": "master"}`)
 	s.NoError(err)
 
 	repoPath := testRepoPath(cloneDir)
@@ -1820,7 +1814,7 @@ func (s *GitHubToolTestSuite) TestFileMovePathTraversalSource() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "moved.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "../../etc/passwd", "destination": "moved.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -1833,7 +1827,7 @@ func (s *GitHubToolTestSuite) TestFileMovePathTraversalDest() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "../../etc/passwd", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -1857,7 +1851,7 @@ func (s *GitHubToolTestSuite) TestFileMoveSymlinkSource() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "link/secret.txt", "destination": "stolen.txt", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "link/secret.txt", "destination": "stolen.txt", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "symlink")
 }
@@ -1870,7 +1864,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDotGit() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": ".git/evil", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": ".git/evil", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -1891,7 +1885,7 @@ func (s *GitHubToolTestSuite) TestFileMoveNotCloned() {
 	tool, err := NewFileMoveTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "moved.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "github_repo_clone")
 }
@@ -1904,7 +1898,7 @@ func (s *GitHubToolTestSuite) TestFileMoveTypeMismatch() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "sub", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "sub", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "is a directory but source is a file")
 }
@@ -1917,7 +1911,7 @@ func (s *GitHubToolTestSuite) TestFileMoveDestInsideSource() {
 	tool, err := NewFileMoveTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub/sub2", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "sub", "destination": "sub/sub2", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "inside the source directory")
 
@@ -1937,7 +1931,7 @@ func (s *GitHubToolTestSuite) TestFileMoveCleanPathAlias() {
 
 	// "README.md" and "./README.md" resolve to the same file; the move must
 	// be rejected instead of silently succeeding as a no-op.
-	_, err = tool.InvokableRun(safety.WithExecutionAuthorized(ctx, "github_file_move"), `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "./README.md", "branch": "master", "confirmed": true}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "source": "README.md", "destination": "./README.md", "branch": "master"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "same path")
 

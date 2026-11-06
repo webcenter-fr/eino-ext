@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
@@ -30,7 +29,7 @@ It returns the file path, commit SHA, and push status.
 - The repository must already be cloned under <CloneDir>/<session>/<owner>/<repo>.
 - If the target branch does not exist locally, it is created from BaseBranch
   (defaults to current HEAD).
-- Requires Confirmed=true. Use DryRun=true first to preview.
+- Executes directly without confirmation (commits and pushes to the target remote branch). Set DryRun=true to preview without making changes.
 - Paths are validated to stay within the clone directory.
 - Never force-pushes; a non-fast-forward rejection returns an error.
 `
@@ -45,7 +44,6 @@ type FileWriteParams struct {
 	BaseBranch    string `json:"baseBranch,omitempty" jsonschema:"(optional) Base branch to create Branch from if Branch does not exist locally. Defaults to current HEAD."`
 	CommitMessage string `json:"commitMessage"  validate:"required" jsonschema:"(required) Git commit message."`
 	DryRun        bool   `json:"dryRun,omitempty"         jsonschema:"(optional) If true, preview the write without making changes."`
-	Confirmed     bool   `json:"confirmed,omitempty"       jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 type FileWriteOutput struct {
@@ -80,10 +78,6 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 			return "", errors.Wrap(err, "failed to marshal dry-run preview")
 		}
 		return string(previewJSON), nil
-	}
-
-	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_write", "write file", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	if len(params.Content) > fileutil.DefaultMaxWriteBytes {
