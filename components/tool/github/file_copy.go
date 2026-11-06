@@ -8,7 +8,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
@@ -33,7 +32,7 @@ copy status, branch, and (for directories) file count and total bytes.
 - The destination must not be inside the source directory.
 - Path traversal attempts are rejected.
 - Source and destination must differ.
-- Requires Confirmed=true. Use DryRun=true first to preview.
+- Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
 type FileCopyParams struct {
@@ -44,7 +43,6 @@ type FileCopyParams struct {
 	Destination string `json:"destination" validate:"required" jsonschema:"(required) Relative destination file or directory path inside the cloned repo."`
 	Branch      string `json:"branch"      validate:"required" jsonschema:"(required) Target branch (for context; no checkout is performed)."`
 	DryRun      bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the copy without making changes."`
-	Confirmed   bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 type FileCopyOutput struct {
@@ -83,10 +81,6 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 			return "", err
 		}
 		return transferDryRunPreview(clonePath_, params.Source, params.Destination, params.Branch, "wouldCopy")
-	}
-
-	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_copy", "copy file", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {

@@ -12,7 +12,9 @@ import (
 // toolConstructor is a function that creates a single GitHub tool from a shared baseTool.
 type toolConstructor func(context.Context, *baseTool) (tool.InvokableTool, error)
 
-// readOnlyConstructors lists all read-only GitHub tools.
+// readOnlyConstructors lists all GitHub tools that execute without the
+// safety middleware's dry-run/confirmed gate (read-only API tools, local
+// clone/pull tools, and local clone file tools).
 var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
 		return newInstanceListTool(ctx, b.knownInstances)
@@ -27,12 +29,19 @@ var readOnlyConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoCloneTool(ctx, b) },
 	// Pull repo is the read action. It updates an existing clone non-destructively (fast-forward only)
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoPullTool(ctx, b) },
+	// File tools operate on the local clone under <CloneDir>/<session>/<owner>/<repo>
+	// (and github_file_write commits and pushes to the target branch) without
+	// requiring the confirmation gate.
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileReadTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileSearchTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileListTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileWriteTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileDeleteTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileCopyTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileMoveTool(ctx, b) },
 }
 
-// writeConstructors lists all write/destructive GitHub tools.
+// writeConstructors lists all gated write/destructive GitHub API tools.
 var writeConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newBranchCreateTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
@@ -55,10 +64,6 @@ var writeConstructors = []toolConstructor{
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
 		return newWebhookUpsertTool(ctx, b)
 	},
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileWriteTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileDeleteTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileCopyTool(ctx, b) },
-	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileMoveTool(ctx, b) },
 }
 
 // buildTools creates tools from the given constructors, sharing a single baseTool.
@@ -85,13 +90,14 @@ func NewAllTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, er
 	return buildTools(ctx, configs, append(readOnlyConstructors, writeConstructors...))
 }
 
-// NewReadOnlyTools creates only the read-only GitHub tools (list + get + search)
-// and returns them as a flat slice ready to be registered with an eino ToolsNode.
+// NewReadOnlyTools creates the non-gated GitHub tools (list, get, search,
+// clone, pull, and local clone file tools) and returns them as a flat slice
+// ready to be registered with an eino ToolsNode.
 func NewReadOnlyTools(ctx context.Context, configs Configs) ([]tool.InvokableTool, error) {
 	return buildTools(ctx, configs, readOnlyConstructors)
 }
 
-// WriteToolNames returns the tool names of all GitHub write tools.
+// WriteToolNames returns the tool names of all gated GitHub write tools.
 // These names can be passed to the safety middleware's Config.WriteToolNames.
 //
 // Contract: every name listed here MUST honor dryRun=true as a no-side-effect
@@ -110,10 +116,6 @@ func WriteToolNames() []string {
 		"github_pr_request_reviewers",
 		"github_repo_settings_update",
 		"github_webhook_upsert",
-		"github_file_write",
-		"github_file_delete",
-		"github_file_copy",
-		"github_file_move",
 	}
 }
 

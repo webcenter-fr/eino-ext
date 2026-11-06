@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/goccy/go-json"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/confirm"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
@@ -37,7 +36,7 @@ move status, and branch.
 - Moving a directory onto an existing non-empty directory is not supported.
 - Path traversal attempts are rejected.
 - Source and destination must differ.
-- Requires Confirmed=true. Use DryRun=true first to preview.
+- Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
 type FileMoveParams struct {
@@ -48,7 +47,6 @@ type FileMoveParams struct {
 	Destination string `json:"destination" validate:"required" jsonschema:"(required) Relative destination file or directory path inside the cloned repo."`
 	Branch      string `json:"branch"      validate:"required" jsonschema:"(required) Target branch (for context; no checkout is performed)."`
 	DryRun      bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the move without making changes."`
-	Confirmed   bool   `json:"confirmed,omitempty" jsonschema:"(optional) Must be true to actually execute. Set after approving the dry-run result."`
 }
 
 type FileMoveOutput struct {
@@ -85,10 +83,6 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 			return "", err
 		}
 		return transferDryRunPreview(clonePath_, params.Source, params.Destination, params.Branch, "wouldMove")
-	}
-
-	if err := confirm.RequireConfirmationForActionCtx(ctx, "github_file_move", "move file", params.Confirmed); err != nil {
-		return "", err
 	}
 
 	if err := ensureCloneExists(clonePath_, params.Owner, params.Repo); err != nil {

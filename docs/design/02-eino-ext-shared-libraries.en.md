@@ -120,7 +120,7 @@ Every tool family follows the same contract:
 | `check.go` + `check_test.go` | the checkup, per CONTRIBUTING |
 
 The **target argument** differs per family and is reused by the safety/authz
-layers: `cluster` for kubernetes, `instance` for argocd / prometheus / grafana.
+layers: `cluster` for kubernetes, `instance` for argocd / prometheus / grafana / github.
 
 | Family | Instance arg | Read tools | Write tools |
 |---|---|---|---|
@@ -128,8 +128,9 @@ layers: `cluster` for kubernetes, `instance` for argocd / prometheus / grafana.
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (none) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
+| github | instance | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
 
-Other families present in the repo: `alertmanager`, `github` (15 write tools),
+Other families present in the repo: `alertmanager`,
 `shell` (Dagger-backed), `file`, `s3`, `websearch`, `opensearch`,
 `opensearch_retriever`, `pipe`, `convertor`.
 
