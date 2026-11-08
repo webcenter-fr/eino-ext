@@ -123,6 +123,16 @@ When implementing OpenSearch-backed tools:
   strings and indices. Project-specific wrappers (e.g., Kubernetes log search)
   should be built on top of the generic tool.
 
+## Documentation
+
+- **Technical design docs** live in `docs/design/` (see `docs/design/README.md`).
+  They are written in **English and French** (`*.en.md` / `*.fr.md`) in a
+  technical style, and use **mermaid** diagrams for schemas and flows. The
+  English version is the reference; keep both in sync.
+- **Component-level usage docs** stay in each package's `README.md`.
+- When you add or change a component, middleware, callback, or lib covered by a
+  design doc, update the doc (both languages) in the same change.
+
 ## Components
 
 - Follow the existing component layout: a `Config` struct with `validate` and

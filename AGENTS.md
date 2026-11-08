@@ -8,6 +8,17 @@
   file or directory`.
 - Use `make lint` (golangci-lint) and `bash scripts/check_components.sh` for
   the other gates, as the CI does.
+- Technical design docs live in `docs/design/` in English and French
+  (`*.en.md` / `*.fr.md`) with mermaid diagrams. Keep them in sync when you add
+  or change a component, middleware, callback, or lib.
+
+## Documentation
+
+- Design documents are in `docs/design/` (see `docs/design/README.md`), written
+  in English and French, with mermaid for schemas/flows.
+- Component-level usage docs stay in each package's `README.md`.
+- When you add or change a component covered by a design doc, update the doc
+  (both languages) in the same change.
 
 ## Code Quality Standards
 
