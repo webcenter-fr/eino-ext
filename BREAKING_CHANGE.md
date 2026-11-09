@@ -1,5 +1,60 @@
 # Breaking Changes
 
+## tool/github: `github_file_write` is local-only; use `github_commit_push` to persist
+
+`github_file_write` no longer checks out a branch, stages, commits, or pushes.
+It only writes the file to the local clone and returns `{path, bytes}`. The
+`branch`, `baseBranch`, and `commitMessage` parameters are removed.
+
+Migrate a write-then-publish flow to:
+
+1. `github_file_write` / `github_file_edit` / `github_file_delete` /
+   `github_file_copy` / `github_file_move` — modify the local clone.
+2. `github_commit_push` — the single gated action that stages, commits, and
+   pushes (requires `confirmed=true` plus host authorization; `dryRun=true`
+   returns a rich diffstat).
+
+New local-only tools: `github_file_edit`, `github_branch_checkout`,
+`github_status`, and `github_diff`. `github_commit_push` is added to
+`WriteToolNames()`.
+
+## tool/github: search/list return a pagination wrapper
+
+`github_file_search` and `github_file_list` now return
+`{results:[...], hasMore, nextOffset}` instead of a bare JSON array. Add the
+optional `offset` parameter (default 0) and use `nextOffset` to page.
+
+`github_file_list.maxDepth` is now a pointer in Go (`*int`) so that an omitted
+value defaults to 1 while an explicit `0` means unlimited depth, matching the
+documented behaviour.
+
+## tool/shell: workspace-aware containers and opt-in persistence
+
+`shell.Config` gains `Workspace *workspace.Layout` (root + session key +
+`RequireSession`) and `SessionIdleTTL`. `Workdir` is now
+`required_without=Workspace` and remains the fallback for non-session/non-repo
+execs.
+
+`shell.Params` (and `RawExecParams`) gain optional `owner`, `repo`, and
+`persistChanges`. When `owner`/`repo` are set, the exec runs in the session
+workspace `<root>/<session>/<owner>/<repo>` shared with the GitHub clone tools.
+Container writes are throwaway unless `persistChanges=true`, which exports
+`/workspace` back to the host **excluding `.git`**.
+
+## libs/toolkit/dagger: explicit workspace mount and export
+
+`Container` accepts `WithWorkspace(hostPath)` (and `WithWorkdir` is retained as
+an alias). `Client.ExportWorkspace(ctx, container, hostPath)` exports the
+container `/workspace` to a host path via a temporary directory, excluding
+`.git` and propagating deletions.
+
+## libs/toolkit/workspace: new shared package
+
+The session workspace layout, path validation, touch/GC, and stat-and-exist
+helpers now live in `libs/toolkit/workspace`. The exported `github` GC API
+(`CloneSessionDir`, `TouchCloneSession`, `StartCloneGC`) is unchanged and now
+delegates to it.
+
 ## tool/shell and tool/pipe: no confirmation, not write tools anymore
 
 `shell_exec` and `pipe_exec` are no longer gated by the safety middleware:

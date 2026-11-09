@@ -124,19 +124,15 @@ func (t *BranchCreateTool) createLocalBranch(ctx context.Context, params *Branch
 		return "", errors.Wrap(err, "failed to get worktree")
 	}
 
-	branchRef := plumbing.NewBranchReferenceName(params.BranchName)
-	hash, err := repo.ResolveRevision(plumbing.Revision(params.BaseBranch))
-	if err != nil {
-		return "", errors.Wrap(err, "failed to resolve base branch")
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(params.BranchName), false); err == nil {
+		return "", errors.Errorf("branch %q already exists", params.BranchName)
+	} else if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return "", errors.Wrapf(err, "failed to resolve branch %q", params.BranchName)
 	}
 
-	err = wt.Checkout(&git.CheckoutOptions{
-		Hash:   plumbing.NewHash(hash.String()),
-		Branch: branchRef,
-		Create: true,
-	})
+	hash, err := checkoutBranch(repo, wt, params.BranchName, params.BaseBranch, true)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to create local branch")
+		return "", err
 	}
 
 	return fmt.Sprintf(`{"created": true, "branch": %q, "sha": %q, "mode": "local"}`, params.BranchName, hash.String()), nil

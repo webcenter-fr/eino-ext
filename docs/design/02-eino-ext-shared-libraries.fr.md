@@ -130,7 +130,7 @@ grafana / github.
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (aucun) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
-| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
+| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_edit, file_delete, file_copy, file_move, branch_checkout, status, diff | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert, commit_push |
 
 Autres familles présentes dans le dépôt : `alertmanager`,
 `shell` (backé par Dagger), `file`, `s3`, `websearch`, `opensearch`,
@@ -761,8 +761,56 @@ type SupervisorConfig struct {
 | `fileutil` | helpers de sûreté filesystem (validation de chemins, rejet de symlinks CWE-59/22, détection de binaires, exclusion `.git`) | `ValidateRelativePath`, `ResolveSymlinkSafe`, `IsWithinPath`, `IsBinary`, `RejectDotGitPath`, `ValidateRootDir`, `CopyDir`, `WalkDirFiles`, `SanitizePathSegment`, `SessionDirName`, `SweepStaleDirs` |
 | `egress` | proxy egress HTTP/HTTPS CONNECT par politique — « réseau local interdit par défaut » (blocs RFC1918/link-local/loopback/cloud-metadata) avec allowlist ; pour les conteneurs Dagger | `Policy{AllowHosts, AllowCIDRs, AllowLocalNetwork, DefaultDeny}`, `Policy.Allows(host, ip)`, `NewProxy(pol)`, `Proxy.Serve(ctx, ln)` |
 | `osclient` | constructeur partagé du client OpenSearch v4 entre indexer/retriever/loader/memory | `Config{URLs, Username, Password, TLSSkipVerify}`, `New(ctx, cfg, timeout)` |
-| `dagger` | wrapper du client moteur Dagger (conteneurs OCI, volumes de cache partagés, bindings de proxy egress) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkdir/WithCacheVolume/WithEgressPolicy/WithUser/WithRegistryAuth`, `CacheKeyForProfile/Tool` |
+| `dagger` | wrapper du client moteur Dagger (conteneurs OCI, volumes de cache partagés, bindings de proxy egress, montage/export de workspace) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkspace/WithWorkdir/WithCacheVolume/WithEgressPolicy/WithUser/WithRegistryAuth`, `Client.ExportWorkspace(ctx, container, hostPath)`, `CacheKeyForProfile/Tool` |
+| `workspace` | layout de workspace de session partagé entre les clones GitHub et les sandboxes shell Dagger : hachage de session, résolution owner/repo, validation de chemins, touch/GC, stat-and-exist | `Layout{Root, SessionKey, RequireSession}`, `NewLayout`, `SessionDir`, `RepoDir`, `Touch`, `StartGC`, `Exists`, `ResolvePath` |
 | `profile` | détection de type de projet + sélection d'image de base pour les sandboxes shell Dagger (fichiers marqueurs : go.mod, package.json, pyproject.toml, pom.xml, Cargo.toml, composer.json, …) | `Profile{Name, BaseImage, SystemPrompt, InstallCmd, ToolPresets, Env}`, `Resolver{ImageMap}`, `NewResolver(opts...)`, `Resolver.Resolve(ctx, workdir)`, `DefaultImageMap`, `WithImageOverrides` |
+
+### 10.1 Flux de données du workspace (clone hôte ↔ conteneur Dagger)
+
+Le système de fichiers hôte est l'unique source de vérité. Les outils GitHub
+écrivent dans `<Root>/<session>/<owner>/<repo>` ; l'outil shell monte ce même
+répertoire sur `/workspace` à chaque exécution. Les écritures du conteneur sont
+jetables sauf si l'appel active `persistChanges`, qui exporte `/workspace` vers
+un répertoire temporaire puis synchronise les entrées hors `.git` vers l'hôte.
+`.git` est monté dans le conteneur mais n'est jamais réexporté.
+
+```mermaid
+flowchart LR
+    subgraph host["Système de fichiers hôte (source de vérité)"]
+        ROOT["racine workspace<br/>&lt;Root&gt;/&lt;session&gt;/&lt;owner&gt;/&lt;repo&gt;"]
+        GIT[".git (refs live)"]
+        ROOT --- GIT
+    end
+
+    subgraph github["components/tool/github"]
+        CLONE["github_repo_clone"]
+        EDIT["file_write / file_edit / delete / copy / move"]
+        STATUS["status / diff"]
+        PUSH["github_commit_push (protégé)"]
+    end
+
+    subgraph shell["components/tool/shell"]
+        EXEC["shell_exec<br/>owner + repo"]
+        PERSIST{"persistChanges ?"}
+    end
+
+    subgraph dagger["Moteur Dagger"]
+        WS["montage /workspace<br/>(Host().Directory frais à chaque exécution)"]
+        TMP["répertoire d'export temporaire"]
+    end
+
+    CLONE --> ROOT
+    EDIT --> ROOT
+    STATUS --> ROOT
+    ROOT --> PUSH
+    ROOT -->|"Host().Directory"| WS
+    EXEC --> WS
+    WS --> PERSIST
+    PERSIST -- "false (défaut)" --> DROP["couche conteneur jetable"]
+    PERSIST -- "true" --> TMP
+    TMP -->|"sync des entrées hors .git<br/>(suppressions propagées)"| ROOT
+    GIT -. "jamais exporté" .-> TMP
+```
 
 Autres `libs/` :
 

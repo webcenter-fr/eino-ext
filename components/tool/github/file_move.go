@@ -16,7 +16,7 @@ const fileMoveDescription = `
 ** General Purpose **
 It moves or renames a file or directory from a source path to a destination path
 within a previously cloned GitHub repository on the local filesystem. This tool
-does NOT commit or push — use github_file_write to persist changes.
+does NOT commit or push — use github_commit_push to persist changes.
 
 ** Output **
 It returns a JSON object with the source, destination, type ("file" or "dir"),
@@ -39,6 +39,7 @@ move status, and branch.
 - Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
+// FileMoveParams defines the parameters for moving a path in a clone.
 type FileMoveParams struct {
 	Instance    string `json:"instance"    validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner       string `json:"owner"       validate:"required" jsonschema:"(required) Repository owner."`
@@ -49,6 +50,7 @@ type FileMoveParams struct {
 	DryRun      bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the move without making changes."`
 }
 
+// FileMoveOutput is the result of a local move.
 type FileMoveOutput struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
@@ -57,6 +59,7 @@ type FileMoveOutput struct {
 	Branch      string `json:"branch"`
 }
 
+// FileMoveTool is an eino tool for moving paths in a clone.
 type FileMoveTool struct {
 	*baseTool
 	tool.InvokableTool
@@ -64,6 +67,7 @@ type FileMoveTool struct {
 
 var _ tool.InvokableTool = (*FileMoveTool)(nil)
 
+// Invoke moves the source path to the destination in the local clone.
 func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -146,6 +150,7 @@ func (t *FileMoveTool) Invoke(ctx context.Context, params *FileMoveParams) (stri
 	return string(result), nil
 }
 
+// NewFileMoveTool creates a new FileMoveTool.
 func NewFileMoveTool(ctx context.Context, configs Configs) (*FileMoveTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

@@ -14,13 +14,62 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/workspace"
 )
 
 const defaultExecTimeout = 5 * time.Minute
 
+// baseWorkdir returns the directory used for profile detection and as the
+// fallback workspace when no owner/repo is given.
+func (t *Tool) baseWorkdir() string {
+	if t.cfg.Workdir != "" {
+		return t.cfg.Workdir
+	}
+	if t.cfg.Workspace != nil {
+		return t.cfg.Workspace.Root
+	}
+	return ""
+}
+
+// resolveWorkspacePath resolves the host directory mounted at /workspace. When
+// owner/repo are set it uses the session workspace layout; otherwise it falls
+// back to cfg.Workdir.
+func (t *Tool) resolveWorkspacePath(ctx context.Context, owner, repo string) (string, error) {
+	if (owner == "") != (repo == "") {
+		return "", errors.New("owner and repo must be provided together")
+	}
+	if owner == "" && repo == "" {
+		return t.baseWorkdir(), nil
+	}
+	if t.cfg.Workspace == nil {
+		return "", errors.New("owner/repo require shell.Config.Workspace to be configured")
+	}
+	return t.cfg.Workspace.RepoDir(ctx, owner, repo)
+}
+
+// prepareWorkspace touches the session namespace and fails fast when the
+// workspace was swept mid-session, evicting the stale container cache entry.
+func (t *Tool) prepareWorkspace(ctx context.Context, key sessionKey, workspacePath string, owner, repo string) error {
+	if t.cfg.Workspace == nil || owner == "" || repo == "" {
+		return nil
+	}
+	if err := t.cfg.Workspace.Touch(ctx); err != nil {
+		return err
+	}
+	exists, err := workspace.Exists(workspacePath)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		t.sessions.evict(key)
+		return errors.Errorf("workspace no longer exists at %q; run github_repo_clone first", workspacePath)
+	}
+	return nil
+}
+
 func (t *Tool) resolveProfile(ctx context.Context, profileName string) (string, string, error) {
 	if profileName == "" {
-		detected, err := t.resolver.Resolve(ctx, t.cfg.Workdir)
+		detected, err := t.resolver.Resolve(ctx, t.baseWorkdir())
 		if err != nil {
 			return "", "", errors.Wrap(err, "failed to detect project profile")
 		}
@@ -46,7 +95,7 @@ func (t *Tool) resolveImage(profileName string) (string, error) {
 		}
 	}
 
-	profiles, err := t.resolver.Resolve(context.Background(), t.cfg.Workdir)
+	profiles, err := t.resolver.Resolve(context.Background(), t.baseWorkdir())
 	if err != nil {
 		return "", err
 	}
@@ -101,26 +150,12 @@ func (t *Tool) Invoke(ctx context.Context, params *Params) (string, error) {
 		return t.dryRunPreview(params), nil
 	}
 
-	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
-	if err != nil {
-		return "", err
-	}
-
 	re, err := filter.Compile(params.FilterPattern)
 	if err != nil {
 		return "", err
 	}
 
-	timeout := t.getTimeout(params)
-	execCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ses, err := t.sessions.getOrCreate(execCtx, profileName, baseImage)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get session container")
-	}
-
-	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
+	stdout, stderr, exitCode, err := t.runInWorkspace(ctx, params.Owner, params.Repo, params.Profile, params.Command, params.Stdin, t.getTimeout(params), params.PersistChanges)
 	if err != nil {
 		return "", err
 	}
@@ -163,26 +198,12 @@ func (t *Tool) InvokeAsStream(ctx context.Context, params *Params) (*schema.Stre
 		return sr, nil
 	}
 
-	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
-	if err != nil {
-		return nil, err
-	}
-
 	re, err := filter.Compile(params.FilterPattern)
 	if err != nil {
 		return nil, err
 	}
 
-	timeout := t.getTimeout(params)
-	execCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ses, err := t.sessions.getOrCreate(execCtx, profileName, baseImage)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get session container")
-	}
-
-	stdout, stderr, exitCode, err := t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
+	stdout, stderr, exitCode, err := t.runInWorkspace(ctx, params.Owner, params.Repo, params.Profile, params.Command, params.Stdin, t.getTimeout(params), params.PersistChanges)
 	if err != nil {
 		return nil, err
 	}
@@ -233,11 +254,6 @@ func (t *Tool) RawExec(ctx context.Context, params RawExecParams) (stdout, stder
 		return "", "", -1, err
 	}
 
-	profileName, baseImage, err := t.resolveProfile(ctx, params.Profile)
-	if err != nil {
-		return "", "", -1, errors.Wrap(err, "failed to resolve profile")
-	}
-
 	timeout := params.Timeout
 	if timeout <= 0 {
 		if t.cfg.DefaultTimeout > 0 {
@@ -246,15 +262,46 @@ func (t *Tool) RawExec(ctx context.Context, params RawExecParams) (stdout, stder
 			timeout = defaultExecTimeout
 		}
 	}
+	return t.runInWorkspace(ctx, params.Owner, params.Repo, params.Profile, params.Command, params.Stdin, timeout, params.PersistChanges)
+}
+
+// runInWorkspace resolves the workspace/profile, prepares the session, executes
+// the command, and optionally exports container changes back to the host.
+func (t *Tool) runInWorkspace(ctx context.Context, owner, repo, profileName string, command []string, stdin string, timeout time.Duration, persist bool) (stdout, stderr string, exitCode int, err error) {
+	workspacePath, err := t.resolveWorkspacePath(ctx, owner, repo)
+	if err != nil {
+		return "", "", -1, err
+	}
+
+	resolvedProfile, baseImage, err := t.resolveProfile(ctx, profileName)
+	if err != nil {
+		return "", "", -1, err
+	}
+
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ses, err := t.sessions.getOrCreate(execCtx, profileName, baseImage)
+	key := t.sessions.key(execCtx, resolvedProfile, baseImage, owner, repo)
+	if err := t.prepareWorkspace(execCtx, key, workspacePath, owner, repo); err != nil {
+		return "", "", -1, err
+	}
+
+	ses, err := t.sessions.getOrCreate(execCtx, key)
 	if err != nil {
 		return "", "", -1, errors.Wrap(err, "failed to get session container")
 	}
 
-	return t.sessions.exec(execCtx, ses, params.Command, params.Stdin)
+	stdout, stderr, exitCode, err = t.sessions.exec(execCtx, ses, workspacePath, command, stdin)
+	if err != nil {
+		return stdout, stderr, exitCode, err
+	}
+
+	if persist {
+		if err := t.sessions.export(execCtx, ses, workspacePath); err != nil {
+			return stdout, stderr, exitCode, err
+		}
+	}
+	return stdout, stderr, exitCode, nil
 }
 
 // Close shuts down the underlying Dagger client.

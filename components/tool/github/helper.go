@@ -9,12 +9,14 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/goccy/go-json"
 	ghlib "github.com/google/go-github/v71/github" // aliased to avoid conflict with package name
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/filter"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/marshal"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/workspace"
 )
 
 // CloneSessionKey is the adk session-value key under which the per-user-session
@@ -25,7 +27,7 @@ const CloneSessionKey = "github_clone_session_id"
 
 // defaultSession is the fallback clone namespace used when no session is set in
 // the invocation context.
-const defaultSession = "default"
+const defaultSession = workspace.DefaultSessionSegment
 
 // labelList splits a comma-separated labels string into a slice.
 func labelList(labels string) []string {
@@ -54,46 +56,40 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
+// workspaceLayout returns the workspace layout for this tool's clone root.
+func (b *baseTool) workspaceLayout() *workspace.Layout {
+	return &workspace.Layout{
+		Root:           b.cloneDir,
+		SessionKey:     CloneSessionKey,
+		RequireSession: b.requireSession,
+	}
+}
+
 // cloneSessionPath returns <cloneDir>/<sessionSegment>, the per-session clone
 // namespace root. An empty session falls back to the literal "default" segment;
 // a non-empty session is hashed via fileutil.SessionDirName so distinct ids
 // never collide after sanitising.
 func cloneSessionPath(cloneDir, session string) string {
-	segment := defaultSession
-	if session != "" {
-		segment = fileutil.SessionDirName(session)
-	}
-	return fmt.Sprintf("%s/%s", cloneDir, segment)
+	return (&workspace.Layout{Root: cloneDir, SessionKey: CloneSessionKey}).SessionDirFor(session)
 }
 
 // clonePath returns the safe, session-scoped local path for cloning a repository.
 func clonePath(cloneDir, session, owner, repo string) string {
-	return fmt.Sprintf("%s/%s/%s",
-		cloneSessionPath(cloneDir, session),
-		fileutil.SanitizePathSegment(owner, "repo"),
-		fileutil.SanitizePathSegment(repo, "repo"))
+	return (&workspace.Layout{Root: cloneDir, SessionKey: CloneSessionKey}).RepoDirFor(session, owner, repo)
 }
 
 // clonePathForSession returns the session-scoped clone path for owner/repo,
 // deriving the session from the invocation context. With RequireSession set and
 // no session present it fails closed instead of using the "default" namespace.
 func (b *baseTool) clonePathForSession(ctx context.Context, owner, repo string) (string, error) {
-	session := fileutil.SessionFromContext(ctx, CloneSessionKey)
-	if session == "" && b.requireSession {
-		return "", errors.Errorf("a session is required but none was found in the invocation context; set the adk session value %q", CloneSessionKey)
-	}
-	return clonePath(b.cloneDir, session, owner, repo), nil
+	return b.workspaceLayout().RepoDir(ctx, owner, repo)
 }
 
 // touchCloneSession updates the mtime of the per-session clone namespace so
 // StartCloneGC keeps the active session's clones. It is a no-op when the
 // namespace does not exist.
 func (b *baseTool) touchCloneSession(ctx context.Context) error {
-	session := fileutil.SessionFromContext(ctx, CloneSessionKey)
-	if session == "" && b.requireSession {
-		return errors.Errorf("a session is required but none was found in the invocation context; set the adk session value %q", CloneSessionKey)
-	}
-	return fileutil.TouchDir(cloneSessionPath(b.cloneDir, session))
+	return b.workspaceLayout().Touch(ctx)
 }
 
 // defaultMaxPages is the fallback page cap used when a caller does not specify
@@ -341,4 +337,27 @@ func ensureCloneExists(clonePath_, owner, repo string) error {
 		return errors.Wrapf(err, "failed to stat clone directory %q", clonePath_)
 	}
 	return nil
+}
+
+// fileStatusString returns a human-readable status for a single worktree file.
+func fileStatusString(fs *git.FileStatus) string {
+	if fs == nil {
+		return ""
+	}
+	switch {
+	case fs.Staging == git.Renamed:
+		return "renamed"
+	case fs.Staging == git.Copied:
+		return "copied"
+	case fs.Staging == git.UpdatedButUnmerged || fs.Worktree == git.UpdatedButUnmerged:
+		return "unmerged"
+	case fs.Staging == git.Added || fs.Worktree == git.Untracked:
+		return "added"
+	case fs.Staging == git.Deleted || fs.Worktree == git.Deleted:
+		return "deleted"
+	case fs.Staging == git.Modified || fs.Worktree == git.Modified:
+		return "modified"
+	default:
+		return fmt.Sprintf("%c%c", fs.Staging, fs.Worktree)
+	}
 }

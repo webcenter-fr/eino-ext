@@ -57,7 +57,7 @@ func TestToolsSortedByName(t *testing.T) {
 
 func schemaJSON(t *testing.T, info *schema.ToolInfo) string {
 	t.Helper()
-	sc, err := info.ParamsOneOf.ToJSONSchema()
+	sc, err := info.ToJSONSchema()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +100,8 @@ func TestSemanticsPreserved(t *testing.T) {
 	if out[0].Name != "t" || out[0].Desc != "d" {
 		t.Fatal("tool identity changed")
 	}
-	scIn, _ := in.ParamsOneOf.ToJSONSchema()
-	scOut, _ := out[0].ParamsOneOf.ToJSONSchema()
+	scIn, _ := in.ToJSONSchema()
+	scOut, _ := out[0].ToJSONSchema()
 	if scIn.Properties.Len() != scOut.Properties.Len() {
 		t.Fatal("property set changed")
 	}

@@ -461,7 +461,7 @@ func extractToolParams(t *schema.ToolInfo) (map[string]interface{}, []string, ma
 	if t.ParamsOneOf == nil {
 		return nil, nil, nil
 	}
-	s, err := t.ParamsOneOf.ToJSONSchema()
+	s, err := t.ToJSONSchema()
 	if err != nil || s == nil {
 		return nil, nil, nil
 	}

@@ -69,9 +69,9 @@ func dashboardGetHandler(uid, title string, version int) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(fmt.Sprintf(
+		_, _ = fmt.Fprintf(w,
 			`{"dashboard":{"uid":%q,"title":%q},"meta":{"version":%d}}`,
-			uid, title, version)))
+			uid, title, version)
 	}
 }
 
@@ -686,8 +686,8 @@ func TestDashboardWriteToolRegressionReportedIncident(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(fmt.Sprintf(
-			`{"dashboard":{"uid":%q,"title":"My Dashboard","id":1471},"meta":{"version":6}}`, uid)))
+		_, _ = fmt.Fprintf(w,
+			`{"dashboard":{"uid":%q,"title":"My Dashboard","id":1471},"meta":{"version":6}}`, uid)
 	})
 	// POST succeeds with new version 7
 	mux.HandleFunc("/api/dashboards/db", captureBody(&gotPOST, http.StatusOK, fmt.Sprintf(

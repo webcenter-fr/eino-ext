@@ -22,12 +22,6 @@ func marshalOutputs(outputs []json.RawMessage) (string, error) {
 	return marshal.Outputs(outputs)
 }
 
-// marshalString marshals a single value to a JSON string, mirroring the
-// MustMarshal semantics used across the component.
-func marshalString(v any) string {
-	return string(marshal.MustMarshal(v))
-}
-
 func instanceNotFoundError(instance string, known []string) error {
 	return toolutil.NotFoundError("Prometheus instance", instance, known)
 }

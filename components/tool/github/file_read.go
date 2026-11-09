@@ -27,6 +27,7 @@ and a truncated flag if the file exceeds the read limit.
 - Files larger than 1MB are truncated with a note.
 `
 
+// FileReadParams defines the parameters for reading a file from a clone.
 type FileReadParams struct {
 	Instance  string `json:"instance"  validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner     string `json:"owner"     validate:"required" jsonschema:"(required) Repository owner."`
@@ -36,6 +37,7 @@ type FileReadParams struct {
 	EndLine   int    `json:"endLine,omitempty"   jsonschema:"(optional) 1-indexed last line to read. 0 = read to end."`
 }
 
+// FileReadOutput is the result of a file read.
 type FileReadOutput struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
@@ -46,11 +48,13 @@ type FileReadOutput struct {
 	EndLine   int    `json:"endLine,omitempty"`
 }
 
+// FileReadTool is an eino tool for reading files from a clone.
 type FileReadTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke reads the requested file from the local clone.
 func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -140,6 +144,7 @@ func (t *FileReadTool) Invoke(ctx context.Context, params *FileReadParams) (stri
 	return string(result), nil
 }
 
+// NewFileReadTool creates a new FileReadTool.
 func NewFileReadTool(ctx context.Context, configs Configs) (*FileReadTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

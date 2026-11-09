@@ -38,7 +38,7 @@ func (f *defaultHitFormatter) FormatHit(doc *schema.Document) string {
 		if label == "" {
 			label = hf.MetaKey
 		}
-		b.WriteString(fmt.Sprintf("%s: %s\n", label, strVal))
+		fmt.Fprintf(&b, "%s: %s\n", label, strVal)
 	}
 
 	if doc.Content != "" {

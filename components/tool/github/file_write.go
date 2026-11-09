@@ -2,75 +2,69 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"emperror.dev/errors"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 )
 
 const fileWriteDescription = `
 ** General Purpose **
-It creates or overwrites a file in a previously cloned GitHub repository, commits
-the change, and pushes to the specified remote branch.
+It creates or overwrites a file in a previously cloned GitHub repository on the
+local filesystem. This tool does NOT commit or push — use github_commit_push to
+persist changes.
 
 ** Output **
-It returns the file path, commit SHA, and push status.
+It returns the file path and the number of bytes written.
 
 ** Important **
 - The repository must already be cloned under <CloneDir>/<session>/<owner>/<repo>.
-- If the target branch does not exist locally, it is created from BaseBranch
-  (defaults to current HEAD).
-- Executes directly without confirmation (commits and pushes to the target remote branch). Set DryRun=true to preview without making changes.
 - Paths are validated to stay within the clone directory.
-- Never force-pushes; a non-fast-forward rejection returns an error.
+- The .git directory and symlinks are always rejected.
+- Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
+// FileWriteParams defines the parameters for writing a file in a clone.
 type FileWriteParams struct {
-	Instance      string `json:"instance"       validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
-	Owner         string `json:"owner"          validate:"required" jsonschema:"(required) Repository owner."`
-	Repo          string `json:"repo"           validate:"required" jsonschema:"(required) Repository name."`
-	Path          string `json:"path"           validate:"required" jsonschema:"(required) Relative file path inside the cloned repo."`
-	Content       string `json:"content"        validate:"required" jsonschema:"(required) File content to write."`
-	Branch        string `json:"branch"         validate:"required" jsonschema:"(required) Target branch to commit and push to."`
-	BaseBranch    string `json:"baseBranch,omitempty" jsonschema:"(optional) Base branch to create Branch from if Branch does not exist locally. Defaults to current HEAD."`
-	CommitMessage string `json:"commitMessage"  validate:"required" jsonschema:"(required) Git commit message."`
-	DryRun        bool   `json:"dryRun,omitempty"         jsonschema:"(optional) If true, preview the write without making changes."`
+	Instance string `json:"instance"       validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
+	Owner    string `json:"owner"          validate:"required" jsonschema:"(required) Repository owner."`
+	Repo     string `json:"repo"           validate:"required" jsonschema:"(required) Repository name."`
+	Path     string `json:"path"           validate:"required" jsonschema:"(required) Relative file path inside the cloned repo."`
+	Content  string `json:"content"        validate:"required" jsonschema:"(required) File content to write."`
+	DryRun   bool   `json:"dryRun,omitempty"         jsonschema:"(optional) If true, preview the write without making changes."`
 }
 
+// FileWriteOutput is the result of a local file write.
 type FileWriteOutput struct {
-	Path      string `json:"path"`
-	Branch    string `json:"branch"`
-	CommitSHA string `json:"commitSha"`
-	Pushed    bool   `json:"pushed"`
+	Path  string `json:"path"`
+	Bytes int    `json:"bytes"`
 }
 
+// FileWriteTool is an eino tool for writing files in a clone.
 type FileWriteTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke writes the file to the local clone without committing.
 func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
+	}
+
+	if len(params.Content) > fileutil.DefaultMaxWriteBytes {
+		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), fileutil.DefaultMaxWriteBytes)
 	}
 
 	if params.DryRun {
 		preview := map[string]any{
 			"dryRun": true,
 			"wouldWrite": map[string]any{
-				"path":          params.Path,
-				"branch":        params.Branch,
-				"bytes":         len(params.Content),
-				"commitMessage": params.CommitMessage,
+				"path":  params.Path,
+				"bytes": len(params.Content),
 			},
 		}
 		previewJSON, err := json.Marshal(preview)
@@ -78,10 +72,6 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 			return "", errors.Wrap(err, "failed to marshal dry-run preview")
 		}
 		return string(previewJSON), nil
-	}
-
-	if len(params.Content) > fileutil.DefaultMaxWriteBytes {
-		return "", errors.Errorf("parameter 'content' size %d bytes exceeds the maximum %d bytes; reduce the content and retry", len(params.Content), fileutil.DefaultMaxWriteBytes)
 	}
 
 	clonePath_, err := t.clonePathForSession(ctx, params.Owner, params.Repo)
@@ -123,102 +113,14 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 		}
 	}
 
-	repo, err := git.PlainOpen(clonePath_)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to open cloned repository at %q; clone it first", clonePath_)
-	}
-
-	wt, err := repo.Worktree()
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get worktree")
-	}
-
-	branchRef := plumbing.NewBranchReferenceName(params.Branch)
-	err = wt.Checkout(&git.CheckoutOptions{
-		Branch: branchRef,
-		Keep:   true,
-	})
-	if err != nil {
-		// Branch doesn't exist; create it from BaseBranch or HEAD
-		var baseHash plumbing.Hash
-		if params.BaseBranch != "" {
-			h, resolveErr := repo.ResolveRevision(plumbing.Revision(params.BaseBranch))
-			if resolveErr != nil {
-				return "", errors.Wrapf(resolveErr, "failed to resolve base branch %q for creating branch %q", params.BaseBranch, params.Branch)
-			}
-			baseHash = *h
-		} else {
-			head, headErr := repo.Head()
-			if headErr != nil {
-				return "", errors.Wrapf(headErr, "failed to get HEAD for creating branch %q", params.Branch)
-			}
-			baseHash = head.Hash()
-		}
-
-		err = wt.Checkout(&git.CheckoutOptions{
-			Hash:   baseHash,
-			Branch: branchRef,
-			Create: true,
-		})
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to create and checkout branch %q", params.Branch)
-		}
-	}
-
 	// Parent directories were already created by fileutil.ResolveSymlinkSafe (createDirs=true).
-	// Write file using the symlink-safe path.
 	if err := os.WriteFile(safePath, []byte(params.Content), 0o644); err != nil {
 		return "", errors.Wrapf(err, "failed to write file %q", params.Path)
 	}
 
-	// Stage using the cleaned relative path (forward slashes for go-git).
-	cleanRelPath, relErr := filepath.Rel(clonePath_, fullPath)
-	if relErr != nil {
-		return "", errors.Wrapf(relErr, "failed to compute relative path for %q", params.Path)
-	}
-	cleanRelPath = filepath.ToSlash(cleanRelPath)
-	if _, err := wt.Add(cleanRelPath); err != nil {
-		return "", errors.Wrapf(err, "failed to stage file %q", params.Path)
-	}
-
-	// Commit
-	hash, err := wt.Commit(params.CommitMessage, &git.CommitOptions{
-		Author: commitIdentity,
-	})
-	if err != nil {
-		return "", errors.Wrap(err, "failed to commit")
-	}
-
-	// Push
-	tok, err := t.token(params.Instance)
-	if err != nil {
-		return "", err
-	}
-
-	host, err := t.gitHost(params.Instance)
-	if err != nil {
-		return "", err
-	}
-
-	pushed := true
-	err = repo.Push(&git.PushOptions{
-		RemoteURL: fmt.Sprintf("https://%s/%s/%s.git", host, params.Owner, params.Repo),
-		Auth:      &http.BasicAuth{Username: "x-access-token", Password: tok},
-	})
-	if err != nil {
-		if err == git.NoErrAlreadyUpToDate {
-			pushed = false
-		} else {
-			redactedErr := strings.ReplaceAll(err.Error(), tok, "***REDACTED***")
-			return "", errors.Wrap(errors.New(redactedErr), "failed to push branch")
-		}
-	}
-
 	output := &FileWriteOutput{
-		Path:      params.Path,
-		Branch:    params.Branch,
-		CommitSHA: hash.String(),
-		Pushed:    pushed,
+		Path:  params.Path,
+		Bytes: len(params.Content),
 	}
 
 	result, err := json.Marshal(output)
@@ -228,6 +130,7 @@ func (t *FileWriteTool) Invoke(ctx context.Context, params *FileWriteParams) (st
 	return string(result), nil
 }
 
+// NewFileWriteTool creates a new FileWriteTool.
 func NewFileWriteTool(ctx context.Context, configs Configs) (*FileWriteTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

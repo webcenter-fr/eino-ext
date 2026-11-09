@@ -20,17 +20,22 @@ func Check(ctx context.Context, cfg *Config) checkup.Results {
 		}}
 	}
 
-	if cfg.Workdir == "" {
+	if cfg.Workdir == "" && cfg.Workspace == nil {
 		return checkup.Results{{
 			Component: "shell_exec",
 			Status:    checkup.StatusError,
-			Error:     "workdir is required",
+			Error:     "workdir or workspace is required",
 		}}
+	}
+
+	workdir := cfg.Workdir
+	if workdir == "" && cfg.Workspace != nil {
+		workdir = cfg.Workspace.Root
 	}
 
 	daggerCfg := &daggerlib.EngineConfig{
 		RegistryAuth: cfg.RegistryAuth,
-		Workdir:      cfg.Workdir,
+		Workdir:      workdir,
 	}
 
 	checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)

@@ -14,6 +14,7 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/profile"
 	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/workspace"
 )
 
 //go:embed prompts/shell_description.md
@@ -33,6 +34,13 @@ func NewShellTool(ctx context.Context, cfg *Config) (*Tool, error) {
 	if cfg.DefaultTimeout == 0 {
 		cfg.DefaultTimeout = defaultExecTimeout
 	}
+	if cfg.Workspace != nil {
+		layout, err := workspace.NewLayout(cfg.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Workspace = layout
+	}
 	if err := validate.Struct(cfg); err != nil {
 		return nil, err
 	}
@@ -47,9 +55,13 @@ func NewShellTool(ctx context.Context, cfg *Config) (*Tool, error) {
 		return nil, err
 	}
 
+	workdir := cfg.Workdir
+	if workdir == "" && cfg.Workspace != nil {
+		workdir = cfg.Workspace.Root
+	}
 	daggerCfg := &daggerlib.EngineConfig{
 		RegistryAuth: cfg.RegistryAuth,
-		Workdir:      cfg.Workdir,
+		Workdir:      workdir,
 	}
 	client, err := daggerlib.NewClient(ctx, daggerCfg)
 	if err != nil {
@@ -88,7 +100,11 @@ func NewShellToolsForProfiles(ctx context.Context, cfg *Config) (map[string]*Too
 	}
 
 	r := profile.NewResolver()
-	profiles, err := r.Resolve(ctx, cfg.Workdir)
+	workdir := cfg.Workdir
+	if workdir == "" && cfg.Workspace != nil {
+		workdir = cfg.Workspace.Root
+	}
+	profiles, err := r.Resolve(ctx, workdir)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to resolve profiles")
 	}

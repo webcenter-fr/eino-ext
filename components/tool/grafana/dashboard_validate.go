@@ -56,6 +56,7 @@ type DashboardValidationOutput struct {
 	Panels          []PanelValidationResult `json:"panels"`
 }
 
+// ValidationSummary aggregates panel validation verdicts.
 type ValidationSummary struct {
 	OK            int `json:"ok"`
 	NoData        int `json:"noData"`
@@ -85,6 +86,7 @@ func (s *ValidationSummary) validated() int {
 	return s.OK + s.NoData + s.TooManySeries + s.Errors
 }
 
+// PanelValidationResult is the validation outcome for one panel.
 type PanelValidationResult struct {
 	PanelID    int                     `json:"panelId"`
 	Title      string                  `json:"title"`
@@ -95,6 +97,7 @@ type PanelValidationResult struct {
 	Queries    []QueryValidationResult `json:"queries,omitempty"`
 }
 
+// QueryValidationResult is the validation outcome for one panel query.
 type QueryValidationResult struct {
 	RefID        string              `json:"refId"`
 	Expr         string              `json:"expr"`
