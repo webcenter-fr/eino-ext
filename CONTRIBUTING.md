@@ -84,6 +84,8 @@ this project:
   decorators here.
 - `components/memory/` — conversation-history persistence (no eino-ext
   equivalent).
+- `components/mcp/` — MCP servers exposing eino tool families (per-family
+  packages), built on `libs/mcp`.
 
 ### OpenSearch clients
 

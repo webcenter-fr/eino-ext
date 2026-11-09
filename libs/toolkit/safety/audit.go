@@ -22,6 +22,14 @@ type AuditEvent struct {
 	Error      string            `json:"error,omitempty"`
 	PolicyPass bool              `json:"policyPass"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// Approval lifecycle metadata (out-of-band approval service).
+	ApprovalID    string `json:"approvalId,omitempty"`
+	ApproverSub   string `json:"approverSub,omitempty"`
+	JTI           string `json:"jti,omitempty"`
+	Decision      string `json:"decision,omitempty"`
+	Policy        string `json:"policy,omitempty"`
+	ArgsHash      string `json:"argsHash,omitempty"`
+	ArgsTruncated bool   `json:"argsTruncated,omitempty"`
 }
 
 // AuditSink is the interface consumers implement to receive audit events.
@@ -81,11 +89,17 @@ type LogSink struct{}
 // Write logs the audit event at info level as structured JSON.
 func (s *LogSink) Write(_ context.Context, event AuditEvent) error {
 	logrus.WithFields(logrus.Fields{
-		"audit_tool":   event.ToolName,
-		"audit_callid": event.CallID,
-		"audit_phase":  event.Phase,
-		"audit_op":     event.Operation,
-		"audit_policy": event.PolicyPass,
+		"audit_tool":          event.ToolName,
+		"audit_callid":        event.CallID,
+		"audit_phase":         event.Phase,
+		"audit_op":            event.Operation,
+		"audit_policy":        event.PolicyPass,
+		"audit_approval":      event.ApprovalID,
+		"audit_approver":      event.ApproverSub,
+		"audit_jti":           event.JTI,
+		"audit_decision":      event.Decision,
+		"audit_argshash":      event.ArgsHash,
+		"audit_argstruncated": event.ArgsTruncated,
 	}).Info("audit event")
 	return nil
 }

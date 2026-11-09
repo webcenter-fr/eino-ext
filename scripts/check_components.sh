@@ -3,14 +3,17 @@ set -euo pipefail
 
 # check_components.sh — verify that every component package has a test file and README.
 #
-# Walk each directory under components/*/* that contains a non-test .go file
-# (i.e. source files), and ensure a _test.go file AND a README.md are present.
-# Prints missing items to stderr. Exits non-zero if any package is incomplete.
+# Walk each directory under components/*/* and server/** that contains a
+# non-test .go file (i.e. source files), and ensure a _test.go file AND a
+# README.md are present. Prints missing items to stderr. Exits non-zero if any
+# package is incomplete.
 #
 # Exclusions:
 #   - Directories containing only test helpers (no non-test .go files) are skipped
 #     (they serve the parent package).
 #   - libs/ are not enforced for README (test file only).
+#   - server/approval/ui (Nuxt source + node_modules + built dist) is not a Go
+#     package and is skipped.
 #
 # Flags:
 #   --strict    also require README.md for libs/ packages (default: test-only for libs/).
@@ -73,6 +76,16 @@ if [[ -d "$ROOT/libs" ]]; then
         [[ -d "$dir" ]] || continue
         check_dir "$dir" $STRICT
     done
+fi
+
+# server/: require both test and README, including nested store subpackages.
+# The Nuxt UI (server/approval/ui) is JavaScript, not a Go package.
+if [[ -d "$ROOT/server" ]]; then
+    while IFS= read -r dir; do
+        check_dir "$dir" true
+    done < <(find "$ROOT/server" -type d \
+        \( -name node_modules -o -name .nuxt -o -name .output -o -name dist -o -name ui \) -prune -o \
+        -type d -print)
 fi
 
 if [[ $MISSING -gt 0 ]]; then

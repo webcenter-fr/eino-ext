@@ -18,10 +18,6 @@ import (
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
-// dryRunGuidance is appended to tool outputs during dry-run mode to instruct
-// the LLM to present the preview to the user and request confirmation.
-const dryRunGuidance = "\n\nDRY-RUN RESULT: This is a preview of what would happen. Show this to the user and ask for confirmation before re-calling with confirmed=true."
-
 // Middleware is an adk.ChatModelAgentMiddleware that enforces a safety control
 // layer: audit trails, policy evaluation, and gate logic (dry-run/confirmed).
 type Middleware struct {
@@ -78,7 +74,7 @@ func (m *Middleware) WrapInvokableToolCall(_ context.Context, endpoint adk.Invok
 
 		// Append dry-run guidance.
 		if phase == safety.PhaseDryRun {
-			result += dryRunGuidance
+			result += safety.DryRunGuidance
 		}
 		return result, nil
 	}, nil
@@ -131,7 +127,7 @@ func (m *Middleware) WrapEnhancedInvokableToolCall(_ context.Context, endpoint a
 		if phase == safety.PhaseDryRun {
 			result.Parts = append(result.Parts, schema.ToolOutputPart{
 				Type: schema.ToolPartTypeText,
-				Text: dryRunGuidance,
+				Text: safety.DryRunGuidance,
 			})
 		}
 		return result, nil
@@ -311,7 +307,7 @@ func wrapStreamAudit(
 				if errors.Is(err, io.EOF) {
 					// Append dry-run guidance as a final chunk before auditing.
 					if dryRun {
-						guidance := dryRunGuidance
+						guidance := safety.DryRunGuidance
 						fullResult += guidance
 						sw.Send(guidance, nil)
 					}
@@ -377,7 +373,7 @@ func wrapEnhancedStreamAudit(
 						sw.Send(&schema.ToolResult{
 							Parts: []schema.ToolOutputPart{{
 								Type: schema.ToolPartTypeText,
-								Text: dryRunGuidance,
+								Text: safety.DryRunGuidance,
 							}},
 						}, nil)
 					}

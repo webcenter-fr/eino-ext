@@ -3,7 +3,7 @@
 > **Scope:** the eino-ext shared libraries in this repository — the safety /
 > approval / mutation machinery, conversation memory (history), context
 > compaction, cost saving & observability, the long-term memory agent, the
-> callbacks, the `libs/` helpers, and the future MCP server implementation.
+> callbacks, the `libs/` helpers, and the MCP server implementation.
 >
 > **Companion documents:**
 > - [`01-eino-framework-and-adk.en.md`](./01-eino-framework-and-adk.en.md) — the
@@ -128,7 +128,7 @@ layers: `cluster` for kubernetes, `instance` for argocd / prometheus / grafana /
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (none) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
-| github | instance | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
+| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
 
 Other families present in the repo: `alertmanager`,
 `shell` (Dagger-backed), `file`, `s3`, `websearch`, `opensearch`,
@@ -143,7 +143,7 @@ would let an unconfirmed model call bypass the gate.
 
 ## 4. Safety / approval / mutation machinery
 
-Three layers, all reused by the future MCP servers (§12). The core invariant:
+Three layers, all reused by the MCP servers (§12). The core invariant:
 **real execution of a write tool requires host-app authorization carried in
 `context.Context` — never the model-supplied `confirmed=true` argument.**
 
@@ -152,7 +152,7 @@ Three layers, all reused by the future MCP servers (§12). The core invariant:
 | File | Contents |
 |---|---|
 | `types.go` | `OperationType` (create/update/delete/sync/exec), `Phase` (`read`/`dry-run`/`execute`/`rejected`), `MutabilityLevel` |
-| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata}`, `AuditSink` interface, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (buffered, non-blocking) |
+| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata, ApprovalID, ApproverSub, JTI, Decision, Policy, ArgsHash, ArgsTruncated}`, `AuditSink` interface, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (buffered, non-blocking) |
 | `policy.go` | `Policy` interface (`Evaluate(ctx, toolName, params)`), `CELPolicy` + `CELRule{Name, Expression, ToolNames}` (cel-go), `PolicyChain` (first failure stops) |
 | `gate.go` | `GateParams{DryRun, Confirmed}`, `ExtractGateParams(rawJSON)`, `NewWriteToolSet(names)`, `ShouldGateWithAuthorization(ctx, toolName, writeTools, gp, args, auth)`, `ErrGateRequired`, `DryRunGuidance` (exported guidance text appended to dry-run results) |
 | `authorization.go` | `ExecutionAuthorizer` interface (`AuthorizeExecute(ctx, toolName, args) error` — MUST derive the decision from server-side state, never from args), `ErrExecutionNotAuthorized` (fail-closed sentinel), `WithExecutionAuthorized(ctx, toolName)`, `ExecutionAuthorizedFor(ctx, toolName)` |
@@ -776,7 +776,7 @@ registered on `adk.ChatModelAgentConfig.Handlers`:
 
 ---
 
-## 12. Future: MCP servers — `libs/mcp` + `components/mcp/*`
+## 12. MCP servers — `libs/mcp` + `components/mcp/*`
 
 Full implementation plan:
 [`.opencode/plans/mcp-servers-per-tool-family.md`](../../.opencode/plans/mcp-servers-per-tool-family.md).
@@ -812,9 +812,15 @@ components/mcp/            — per-family MCP servers (project-specific extensio
   accept → `safety.WithExecutionAuthorized(ctx, toolName)` → the tool's
   `confirm.RequireConfirmationCtx` passes → executes. Decline/cancel/timeout/
   client without elicitation → fail closed (write tools are dry-run only).
-  `AllowModelConfirmation` is **not** wired.
+  `AllowModelConfirmation` is **not** wired. When `Config.Approval.Service` is
+  set, the default authorizer becomes `ApprovalURLAuthorizer` (out-of-band
+  browser approval with a signed receipt); see
+  [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
 - **Audit:** every call emits a `safety.AuditEvent` (phase read/dry-run/execute/
-  rejected + identity metadata) via `safety.AuditSink`.
+  rejected + identity metadata) via `safety.AuditSink`. Write calls also record
+  `argsHash`/`argsTruncated`; the service path emits separate
+  `approval-requested`/`approval-granted`/`approval-denied`/`approval-expired`
+  events with `approvalId`, `approverSub`, `jti`, `decision` and `policy`.
 - **CEL policy:** `safety.Policy` evaluated on every call.
 
 ### 12.3 AuthN — provider-based
@@ -823,14 +829,22 @@ The HTTP transport is wrapped with the go-sdk's `auth.RequireBearerToken`
 middleware; providers implement `auth.TokenVerifier`:
 
 - **`local`** — static bearer tokens → identity; constant-time comparison
-  (`crypto/subtle`) over all tokens (no timing leak).
+  (`crypto/subtle`) of SHA-256 digests over all tokens (fixed-length digests →
+  no timing or token-length leak; all tokens always compared → no existence
+  leak).
 - **`oidc`** — verifies OIDC-issued JWT access tokens with
   `github.com/coreos/go-oidc/v3` (JWKS signature, issuer, audience, expiry);
   claims → identity (`UserClaim` default `preferred_username`, fallback `sub`;
-  `GroupsClaim` default `groups`).
+  `SubClaim` default `sub`; `GroupsClaim` default `groups`); the `scope` claim →
+  the token's scopes.
 
-Identity = `{User, Groups}`, carried in `auth.TokenInfo` (`UserID` + `Extra`).
-Stdio = trusted local process → `Config.LocalIdentity` (still subject to RBAC).
+Identity = `{User, Sub, Groups}`, carried in `auth.TokenInfo` (`UserID` +
+`Extra`). `Sub` is the stable subject (OIDC `sub`) used for approval/anti-phishing
+binding; `User` stays the display name. Token scopes (`LocalToken.Scopes` for
+local, the `scope` claim for OIDC) are carried in `auth.TokenInfo.Scopes` and
+checked against `AuthConfig.RequiredScopes` by the SDK middleware (403 before any
+handler). Stdio = trusted local process → `Config.LocalIdentity` (still subject
+to RBAC).
 
 ### 12.4 AuthZ — RBAC
 
@@ -920,7 +934,7 @@ Every new component/middleware/lib follows:
 | Long-term memory | `components/agent/memory` | retrieve → enrich → extract → store; maintainer; trace mode |
 | Prompt quality | `components/middleware/promptenhance`, `libs/promptenhance` | small-model rewrite + human confirm interrupt |
 | Agent attribution | `components/middleware/agentattr` | agent/model metadata into callback context |
-| MCP (future) | `libs/mcp`, `components/mcp/*` | eino tools over MCP; local/OIDC auth; RBAC; elicitation approval |
+| MCP | `libs/mcp`, `components/mcp/*` | eino tools over MCP; local/OIDC auth; RBAC; elicitation approval |
 
 ---
 
@@ -1119,7 +1133,7 @@ Session/agent attribution is read from the ctx (`activity.WithSession`,
 Per `tools/call`, the handler (`makeHandler`) runs:
 
 1. **Identity**: `req.Extra.TokenInfo` (HTTP bearer, verified by
-   `auth.RequireBearerToken`) → `Identity{User, Groups}`; else
+   `auth.RequireBearerToken`) → `Identity{User, Sub, Groups}`; else
    `Config.LocalIdentity` (stdio).
 2. **AuthZ**: extract the instance arg (`Config.InstanceParam` =
    `cluster`/`instance`) from the raw args;
@@ -1133,10 +1147,20 @@ Per `tools/call`, the handler (`makeHandler`) runs:
    - `dryRun` → execute the preview, append `safety.DryRunGuidance`, audit
      `dry-run`.
    - `confirmed` → the authorizer calls `req.Session.Elicit(...)` with a message
-     built from the **actual args** (tool, target instance, user, args truncated
-     to 4000 chars); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
+     built from the **actual args** (tool, target instance, user, complete
+     args); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
      anything else (decline/cancel/timeout/no-elicitation-capability) → fail
-     closed.
+     closed. There is **no** argument-size rejection limit: the prompt renders
+     up to `ApprovalDisplayBudget` (4000) bytes and, when the payload is larger,
+     discloses `showing N of M bytes — remainder NOT displayed` plus the full
+     `argsHash`. The audit event records `argsHash` and `argsTruncated`.
+   - When `Config.Approval.Service` is set, the default authorizer is
+     `ApprovalURLAuthorizer` instead: it registers the approval with the
+     standalone service, elicits the URL (or returns a tool error carrying the
+     URL + `approvalId`), long-polls the decision, and verifies a signed receipt
+     bound to the canonical `argsHash`. It fails closed and never downgrades to
+     elicitation. See
+     [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
    - neither → `ErrGateRequired`.
 5. **Execute**: `tool.InvokableRun(execCtx, args)`; the tool's
    `confirm.RequireConfirmationCtx` re-checks the grant.

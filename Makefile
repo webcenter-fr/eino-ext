@@ -21,6 +21,10 @@ lint:
 check-components:
 	bash scripts/check_components.sh
 
+.PHONY: ui
+ui: ## Build the approval UI into server/approval/ui/dist (committed for go:embed).
+	cd server/approval/ui && npm ci && npm run build
+
 .PHONY: test
 test: envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./...

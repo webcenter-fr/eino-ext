@@ -9,12 +9,15 @@ They are written in a technical style, in **English and French**, and use
 | Document | English | Français | Covers |
 |---|---|---|---|
 | eino framework & adk | [`01-eino-framework-and-adk.en.md`](./01-eino-framework-and-adk.en.md) | [`01-eino-framework-and-adk.fr.md`](./01-eino-framework-and-adk.fr.md) | The eino framework (`v0.9.12`): component abstractions, `schema.Message`, identifying thinking / tool calls / final answer, streaming, `compose` orchestration, the `adk` subpackage (Agent, Runner, ChatModelAgent, middleware, callbacks), and the eino callback system. |
-| eino-ext shared libraries | [`02-eino-ext-shared-libraries.en.md`](./02-eino-ext-shared-libraries.en.md) | [`02-eino-ext-shared-libraries.fr.md`](./02-eino-ext-shared-libraries.fr.md) | The eino-ext building blocks: safety / approval / mutation machinery, conversation memory (history), context compaction, cost saving & observability, the long-term memory agent, the callbacks, `libs/` helpers, and the future MCP servers. |
+| eino-ext shared libraries | [`02-eino-ext-shared-libraries.en.md`](./02-eino-ext-shared-libraries.en.md) | [`02-eino-ext-shared-libraries.fr.md`](./02-eino-ext-shared-libraries.fr.md) | The eino-ext building blocks: safety / approval / mutation machinery, conversation memory (history), context compaction, cost saving & observability, the long-term memory agent, the callbacks, `libs/` helpers, and the MCP servers. |
+| MCP hard approval | [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md) | [`03-mcp-hard-approval.fr.md`](./03-mcp-hard-approval.fr.md) | The standalone out-of-band approval service: topology, approval flow, signed receipt verification, `argsHash` canonicalization, store backends, security controls, and the Nuxt UI build/embedding. |
 
 ## Related plans
 
 - MCP servers per tool family (implementation plan):
   [`.opencode/plans/mcp-servers-per-tool-family.md`](../../.opencode/plans/mcp-servers-per-tool-family.md)
+- MCP hard approval service (implementation plan):
+  [`.opencode/plans/mcp-hard-approval-service.md`](../../.opencode/plans/mcp-hard-approval-service.md)
 
 ## Conventions
 

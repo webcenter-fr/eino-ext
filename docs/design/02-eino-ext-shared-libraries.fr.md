@@ -4,7 +4,7 @@
 > machinerie de sûreté / approbation / mutation, la mémoire conversationnelle
 > (historique), la compaction de contexte, les économies de coûts &
 > l'observabilité, l'agent de mémoire long terme, les callbacks, les helpers
-> `libs/`, et la future implémentation de serveurs MCP.
+> `libs/`, et l'implémentation des serveurs MCP.
 >
 > **Documents associés :**
 > - [`01-eino-framework-and-adk.fr.md`](./01-eino-framework-and-adk.fr.md) — le
@@ -130,7 +130,7 @@ grafana / github.
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (aucun) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
-| github | instance | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
+| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
 
 Autres familles présentes dans le dépôt : `alertmanager`,
 `shell` (backé par Dagger), `file`, `s3`, `websearch`, `opensearch`,
@@ -146,7 +146,7 @@ contourner la porte.
 
 ## 4. Machinerie de sûreté / approbation / mutation
 
-Trois couches, toutes réutilisées par les futurs serveurs MCP (§12). L'invariant
+Trois couches, toutes réutilisées par les serveurs MCP (§12). L'invariant
 central : **l'exécution réelle d'un outil d'écriture requiert une autorisation de
 l'application hôte portée dans `context.Context` — jamais l'argument
 `confirmed=true` fourni par le modèle.**
@@ -156,7 +156,7 @@ l'application hôte portée dans `context.Context` — jamais l'argument
 | Fichier | Contenu |
 |---|---|
 | `types.go` | `OperationType` (create/update/delete/sync/exec), `Phase` (`read`/`dry-run`/`execute`/`rejected`), `MutabilityLevel` |
-| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata}`, interface `AuditSink`, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (bufferisé, non bloquant) |
+| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata, ApprovalID, ApproverSub, JTI, Decision, Policy, ArgsHash, ArgsTruncated}`, interface `AuditSink`, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (bufferisé, non bloquant) |
 | `policy.go` | interface `Policy` (`Evaluate(ctx, toolName, params)`), `CELPolicy` + `CELRule{Name, Expression, ToolNames}` (cel-go), `PolicyChain` (premier échec arrête) |
 | `gate.go` | `GateParams{DryRun, Confirmed}`, `ExtractGateParams(rawJSON)`, `NewWriteToolSet(names)`, `ShouldGateWithAuthorization(ctx, toolName, writeTools, gp, args, auth)`, `ErrGateRequired`, `DryRunGuidance` (texte de guidage exporté, ajouté aux résultats dry-run) |
 | `authorization.go` | interface `ExecutionAuthorizer` (`AuthorizeExecute(ctx, toolName, args) error` — DOIT dériver la décision d'un état serveur, jamais des args), `ErrExecutionNotAuthorized` (sentinelle fail-closed), `WithExecutionAuthorized(ctx, toolName)`, `ExecutionAuthorizedFor(ctx, toolName)` |
@@ -794,7 +794,7 @@ Tous sont des `adk.ChatModelAgentMiddleware` (embarquent
 
 ---
 
-## 12. Futur : serveurs MCP — `libs/mcp` + `components/mcp/*`
+## 12. Serveurs MCP — `libs/mcp` + `components/mcp/*`
 
 Plan d'implémentation complet :
 [`.opencode/plans/mcp-servers-per-tool-family.md`](../../.opencode/plans/mcp-servers-per-tool-family.md).
@@ -832,9 +832,17 @@ components/mcp/            — serveurs MCP par famille (extension spécifique a
   acceptation → `safety.WithExecutionAuthorized(ctx, toolName)` → le
   `confirm.RequireConfirmationCtx` de l'outil passe → exécution. Refus/annulation/
   timeout/client sans élicitation → fail closed (outils d'écriture en dry-run
-  seul). `AllowModelConfirmation` **n'est pas** câblé.
+  seul). `AllowModelConfirmation` **n'est pas** câblé. Quand
+  `Config.Approval.Service` est défini, l'authorizer par défaut devient
+  `ApprovalURLAuthorizer` (approbation hors bande dans un navigateur avec reçu
+  signé) ; voir
+  [`03-mcp-hard-approval.fr.md`](./03-mcp-hard-approval.fr.md).
 - **Audit :** chaque appel émet un `safety.AuditEvent` (phase
   read/dry-run/execute/rejected + métadonnées d'identité) via `safety.AuditSink`.
+  Les appels d'écriture enregistrent aussi `argsHash`/`argsTruncated` ; le
+  chemin service émet des événements séparés
+  `approval-requested`/`approval-granted`/`approval-denied`/`approval-expired`
+  avec `approvalId`, `approverSub`, `jti`, `decision` et `policy`.
 - **Politique CEL :** `safety.Policy` évaluée à chaque appel.
 
 ### 12.3 AuthN — par fournisseur
@@ -843,15 +851,22 @@ Le transport HTTP est enveloppé par le middleware `auth.RequireBearerToken` du
 go-sdk ; les fournisseurs implémentent `auth.TokenVerifier` :
 
 - **`local`** — tokens bearer statiques → identité ; comparaison à temps constant
-  (`crypto/subtle`) sur tous les tokens (pas de fuite par timing).
+  (`crypto/subtle`) des condensés SHA-256 sur tous les tokens (condensés de
+  longueur fixe → pas de fuite par timing ni sur la longueur des tokens ; tous
+  les tokens toujours comparés → pas de fuite d'existence).
 - **`oidc`** — vérifie les tokens d'accès JWT émis par un OIDC avec
   `github.com/coreos/go-oidc/v3` (signature JWKS, issuer, audience, expiry) ;
   claims → identité (`UserClaim` défaut `preferred_username`, repli `sub` ;
-  `GroupsClaim` défaut `groups`).
+  `SubClaim` défaut `sub` ; `GroupsClaim` défaut `groups`) ; le claim `scope` →
+  les scopes du token.
 
-Identité = `{User, Groups}`, portée dans `auth.TokenInfo` (`UserID` + `Extra`).
-Stdio = processus local de confiance → `Config.LocalIdentity` (toujours soumis au
-RBAC).
+Identité = `{User, Sub, Groups}`, portée dans `auth.TokenInfo` (`UserID` +
+`Extra`). `Sub` est le sujet stable (le `sub` OIDC) utilisé pour la liaison
+d'approbation/anti-hameçonnage ; `User` reste le nom d'affichage. Les scopes du
+token (`LocalToken.Scopes` en local, le claim `scope` en OIDC) sont portés dans
+`auth.TokenInfo.Scopes` et vérifiés contre `AuthConfig.RequiredScopes` par le
+middleware du SDK (403 avant tout handler). Stdio = processus local de confiance
+→ `Config.LocalIdentity` (toujours soumis au RBAC).
 
 ### 12.4 AuthZ — RBAC
 
@@ -944,7 +959,7 @@ Chaque nouveau composant/middleware/lib suit :
 | Mémoire long terme | `components/agent/memory` | retrieve → enrich → extract → store ; maintainer ; mode trace |
 | Qualité de prompt | `components/middleware/promptenhance`, `libs/promptenhance` | réécriture par petit modèle + interruption de confirmation humaine |
 | Attribution d'agent | `components/middleware/agentattr` | métadonnées agent/modèle dans le contexte des callbacks |
-| MCP (futur) | `libs/mcp`, `components/mcp/*` | outils eino sur MCP ; auth local/OIDC ; RBAC ; approbation par élicitation |
+| MCP | `libs/mcp`, `components/mcp/*` | outils eino sur MCP ; auth local/OIDC ; RBAC ; approbation par élicitation |
 
 ---
 
@@ -1155,7 +1170,7 @@ L'attribution session/agent est lue depuis le ctx (`activity.WithSession`,
 Par `tools/call`, le handler (`makeHandler`) exécute :
 
 1. **Identité** : `req.Extra.TokenInfo` (bearer HTTP, vérifié par
-   `auth.RequireBearerToken`) → `Identity{User, Groups}` ; sinon
+   `auth.RequireBearerToken`) → `Identity{User, Sub, Groups}` ; sinon
    `Config.LocalIdentity` (stdio).
 2. **AuthZ** : extraire l'argument d'instance (`Config.InstanceParam` =
    `cluster`/`instance`) depuis les args bruts ;
@@ -1170,9 +1185,20 @@ Par `tools/call`, le handler (`makeHandler`) exécute :
      `dry-run`.
    - `confirmed` → l'authorizer appelle `req.Session.Elicit(...)` avec un message
      construit depuis les **args réels** (outil, instance cible, utilisateur,
-     args tronqués à 4000 caractères) ; `accept` →
+     args complets) ; `accept` →
      `safety.WithExecutionAuthorized(ctx, toolName)` ; tout le reste
      (refus/annulation/timeout/pas de capacité d'élicitation) → fail closed.
+     Il n'y a **aucune** limite de rejet sur la taille des args : l'invite
+     affiche jusqu'à `ApprovalDisplayBudget` (4000) octets et, au-delà, indique
+     `showing N of M bytes — remainder NOT displayed` ainsi que l'`argsHash`
+     complet. L'événement d'audit enregistre `argsHash` et `argsTruncated`.
+   - Quand `Config.Approval.Service` est défini, l'authorizer par défaut est
+     `ApprovalURLAuthorizer` : il enregistre l'approbation auprès du service
+     autonome, déclenche l'élicitation d'URL (ou renvoie une erreur d'outil avec
+     l'URL + `approvalId`), interroge la décision en long-poll et vérifie un reçu
+     signé lié à l'`argsHash` canonique. Il fail closed et ne retombe jamais sur
+     l'élicitation. Voir
+     [`03-mcp-hard-approval.fr.md`](./03-mcp-hard-approval.fr.md).
    - ni l'un ni l'autre → `ErrGateRequired`.
 5. **Exécution** : `tool.InvokableRun(execCtx, args)` ; le
    `confirm.RequireConfirmationCtx` de l'outil revérifie le grant.
