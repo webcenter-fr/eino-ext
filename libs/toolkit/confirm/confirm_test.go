@@ -29,7 +29,7 @@ func TestRequireConfirmationCtx(t *testing.T) {
 		t.Fatalf("expected ErrExecutionNotAuthorized, got %v", err)
 	}
 
-	if err := RequireConfirmationCtx(nil, "tool", false, true); !errors.Is(err, safety.ErrExecutionNotAuthorized) {
+	if err := RequireConfirmationCtx(context.TODO(), "tool", false, true); !errors.Is(err, safety.ErrExecutionNotAuthorized) {
 		t.Fatalf("expected ErrExecutionNotAuthorized for nil ctx, got %v", err)
 	}
 }

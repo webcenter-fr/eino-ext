@@ -14,7 +14,7 @@ import (
 const fileDeleteDescription = `
 ** General Purpose **
 It deletes a file or directory from a previously cloned GitHub repository on the
-local filesystem. This tool does NOT commit or push — use github_file_write to
+local filesystem. This tool does NOT commit or push — use github_commit_push to
 persist changes.
 
 ** Output **
@@ -31,6 +31,7 @@ status, and branch.
 - Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
+// FileDeleteParams defines the parameters for deleting a path in a clone.
 type FileDeleteParams struct {
 	Instance string `json:"instance"  validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner    string `json:"owner"     validate:"required" jsonschema:"(required) Repository owner."`
@@ -40,6 +41,7 @@ type FileDeleteParams struct {
 	DryRun   bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the deletion without making changes."`
 }
 
+// FileDeleteOutput is the result of a local deletion.
 type FileDeleteOutput struct {
 	Path    string `json:"path"`
 	Type    string `json:"type"` // "file" or "dir"
@@ -47,6 +49,7 @@ type FileDeleteOutput struct {
 	Branch  string `json:"branch"`
 }
 
+// FileDeleteTool is an eino tool for deleting paths in a clone.
 type FileDeleteTool struct {
 	*baseTool
 	tool.InvokableTool
@@ -54,6 +57,7 @@ type FileDeleteTool struct {
 
 var _ tool.InvokableTool = (*FileDeleteTool)(nil)
 
+// Invoke deletes the requested path from the local clone.
 func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -174,6 +178,7 @@ func (t *FileDeleteTool) Invoke(ctx context.Context, params *FileDeleteParams) (
 	return string(result), nil
 }
 
+// NewFileDeleteTool creates a new FileDeleteTool.
 func NewFileDeleteTool(ctx context.Context, configs Configs) (*FileDeleteTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

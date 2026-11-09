@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/workspace"
 )
 
 // cloneSettingsFromConfigs returns the single shared CloneDir and RequireSession
@@ -28,7 +29,7 @@ func cloneSettingsFromConfigs(configs Configs) (cloneDir string, requireSession 
 			requireSession = cfg.RequireSession
 			requireSessionSet = true
 		} else if cfg.RequireSession != requireSession {
-			return "", false, errors.Errorf("all instances must share the same RequireSession (got %v and %v)", cfg.RequireSession, requireSession)
+			return "", false, errors.Errorf("all instances must share the same RequireSession (got %v and %v)", requireSession, cfg.RequireSession)
 		}
 	}
 	return cloneDir, requireSession, nil
@@ -41,30 +42,39 @@ func cloneDirFromConfigs(configs Configs) (string, error) {
 	return cloneDir, err
 }
 
+// cloneLayoutFromConfigs builds the workspace layout shared by all instances.
+func cloneLayoutFromConfigs(configs Configs) (*workspace.Layout, error) {
+	cloneDir, requireSession, err := cloneSettingsFromConfigs(configs)
+	if err != nil {
+		return nil, err
+	}
+	return &workspace.Layout{
+		Root:           cloneDir,
+		SessionKey:     CloneSessionKey,
+		RequireSession: requireSession,
+	}, nil
+}
+
 // CloneSessionDir returns the per-session clone namespace <CloneDir>/<session>
 // for the session carried in ctx, failing closed when RequireSession is set and
 // no session is present. It validates that all configs share the same CloneDir.
 func CloneSessionDir(ctx context.Context, configs Configs) (string, error) {
-	cloneDir, requireSession, err := cloneSettingsFromConfigs(configs)
+	layout, err := cloneLayoutFromConfigs(configs)
 	if err != nil {
 		return "", err
 	}
-	session := fileutil.SessionFromContext(ctx, CloneSessionKey)
-	if session == "" && requireSession {
-		return "", errors.Errorf("a session is required but none was found in the invocation context; set the adk session value %q", CloneSessionKey)
-	}
-	return cloneSessionPath(cloneDir, session), nil
+	return layout.SessionDir(ctx)
 }
 
 // TouchCloneSession updates the mtime of the per-session clone namespace so
 // StartCloneGC keeps the active session's clones. No-op when the directory does
 // not exist.
 func TouchCloneSession(ctx context.Context, configs Configs) error {
-	dir, err := CloneSessionDir(ctx, configs)
+	layout, err := cloneLayoutFromConfigs(configs)
 	if err != nil {
 		return err
 	}
-	return fileutil.TouchDir(dir)
+	return layout.Touch(ctx)
 }
 
 // StartCloneGC starts a background goroutine that every interval sweeps
@@ -76,16 +86,5 @@ func StartCloneGC(ctx context.Context, configs Configs, ttl, interval time.Durat
 	if err != nil || ttl == 0 || interval <= 0 {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				fileutil.SweepStaleDirs(cloneDir, ttl)
-			}
-		}
-	}()
+	(&workspace.Layout{Root: cloneDir, SessionKey: CloneSessionKey}).StartGC(ctx, ttl, interval)
 }

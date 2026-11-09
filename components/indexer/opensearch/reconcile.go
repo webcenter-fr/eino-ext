@@ -117,10 +117,7 @@ func BulkLookupSourceHashes(ctx context.Context, client opensearch.Client, index
 			_, _ = client.Search().ClearScroll(ctx, []string{scrollID})
 		}
 	}()
-	for {
-		if result.Hits == nil || len(result.Hits.Hits) == 0 {
-			break
-		}
+	for result.Hits != nil && len(result.Hits.Hits) > 0 {
 		for _, h := range result.Hits.Hits {
 			src := map[string]any{}
 			if unmarshalErr := json.Unmarshal(h.Source, &src); unmarshalErr != nil {
@@ -199,10 +196,7 @@ func Reconcile(ctx context.Context, client opensearch.Client, index string, seen
 			_, _ = client.Search().ClearScroll(ctx, []string{scrollID})
 		}
 	}()
-	for {
-		if result.Hits == nil || len(result.Hits.Hits) == 0 {
-			break
-		}
+	for result.Hits != nil && len(result.Hits.Hits) > 0 {
 		for _, h := range result.Hits.Hits {
 			src := map[string]any{}
 			if unmarshalErr := json.Unmarshal(h.Source, &src); unmarshalErr != nil {

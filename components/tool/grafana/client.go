@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/goccy/go-json"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -381,25 +380,6 @@ func (c *grafanaClient) SaveDashboard(ctx context.Context, payload []byte) ([]by
 		return nil, errors.Wrap(err, "failed to save dashboard")
 	}
 	return body, nil
-}
-
-// dashboardVersion returns the current version of the dashboard identified
-// by uid. Returns (0, false, nil) when the dashboard does not exist (HTTP 404).
-func (c *grafanaClient) dashboardVersion(ctx context.Context, uid string) (int, bool, error) {
-	body, err := c.GetDashboard(ctx, uid)
-	if err != nil {
-		if isHTTPStatus(err, http.StatusNotFound) {
-			return 0, false, nil
-		}
-		return 0, false, err
-	}
-
-	var dr dashboardResponse
-	if err := json.Unmarshal(body, &dr); err != nil {
-		return 0, false, errors.Wrap(err, "failed to unmarshal dashboard response")
-	}
-
-	return dr.Meta.Version, true, nil
 }
 
 // DeleteDashboard calls DELETE /api/dashboards/uid/:uid.

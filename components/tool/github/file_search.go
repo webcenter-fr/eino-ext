@@ -21,36 +21,49 @@ It searches file contents in a previously cloned GitHub repository using a regex
 (equivalent to 'grep -rn pattern dir/').
 
 ** Output **
-It returns a JSON array of matches, each with the file path, line number, and
-matched line content.
+It returns {results:[{path, line, content}], hasMore, nextOffset}. Results are
+ordered by file path (lexical) and then by line number.
 
 ** Important **
 - The repository must already be cloned under <CloneDir>/<owner>/<repo>.
 - Binary files and the .git directory are skipped.
 - MaxResults (default 100) caps the number of returned matches.
+- Use Offset with NextOffset to page through large result sets.
 - Pattern uses Go RE2 syntax; lookahead/lookbehind/backreferences are NOT supported.
 `
 
+// FileSearchParams defines the parameters for searching file contents.
 type FileSearchParams struct {
 	Instance   string `json:"instance"   validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner      string `json:"owner"      validate:"required" jsonschema:"(required) Repository owner."`
 	Repo       string `json:"repo"       validate:"required" jsonschema:"(required) Repository name."`
 	Pattern    string `json:"pattern"    validate:"required" jsonschema:"(required) Go RE2 regex to search for in file contents."`
 	PathPrefix string `json:"pathPrefix,omitempty" jsonschema:"(optional) Subdirectory to search within. Defaults to repo root."`
+	Offset     int    `json:"offset,omitempty" validate:"omitempty,gte=0" jsonschema:"(optional) Number of matches to skip. Defaults to 0."`
 	MaxResults int    `json:"maxResults,omitempty" jsonschema:"(optional) Maximum number of matches to return. Defaults to 100."`
 }
 
+// FileSearchOutput describes one matching line.
 type FileSearchOutput struct {
 	Path    string `json:"path"`
 	Line    int    `json:"line"`
 	Content string `json:"content"`
 }
 
+// FileSearchResult is a page of content-search matches.
+type FileSearchResult struct {
+	Results    []FileSearchOutput `json:"results"`
+	HasMore    bool               `json:"hasMore"`
+	NextOffset int                `json:"nextOffset"`
+}
+
+// FileSearchTool is an eino tool for searching file contents.
 type FileSearchTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke searches file contents with the requested regex.
 func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -93,8 +106,14 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 	if maxResults <= 0 {
 		maxResults = 100
 	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	var results []FileSearchOutput
+	results := make([]FileSearchOutput, 0, maxResults)
+	hasMore := false
+	seen := 0
 	err = filepath.WalkDir(searchRoot, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -134,16 +153,23 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
-			if re.MatchString(line) {
-				results = append(results, FileSearchOutput{
-					Path:    relPath,
-					Line:    i + 1,
-					Content: line,
-				})
-				if len(results) >= maxResults {
-					return filepath.SkipAll
-				}
+			if !re.MatchString(line) {
+				continue
 			}
+			if seen < offset {
+				seen++
+				continue
+			}
+			if len(results) >= maxResults {
+				hasMore = true
+				return filepath.SkipAll
+			}
+			results = append(results, FileSearchOutput{
+				Path:    relPath,
+				Line:    i + 1,
+				Content: line,
+			})
+			seen++
 		}
 		return nil
 	})
@@ -151,17 +177,19 @@ func (t *FileSearchTool) Invoke(ctx context.Context, params *FileSearchParams) (
 		return "", errors.Wrap(err, "failed to search files")
 	}
 
-	if results == nil {
-		results = make([]FileSearchOutput, 0)
+	output := &FileSearchResult{
+		Results:    results,
+		HasMore:    hasMore,
+		NextOffset: offset + len(results),
 	}
-
-	data, err := json.Marshal(results)
+	data, err := json.Marshal(output)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to marshal output")
 	}
 	return string(data), nil
 }
 
+// NewFileSearchTool creates a new FileSearchTool.
 func NewFileSearchTool(ctx context.Context, configs Configs) (*FileSearchTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

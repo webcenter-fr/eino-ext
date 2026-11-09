@@ -19,23 +19,28 @@ const fileListDescription = `
 It lists files and directories in a previously cloned GitHub repository.
 
 ** Output **
-It returns a JSON array of entries with name, type (file/dir), size, and relative path.
+It returns {results:[{name, type, size, path}], hasMore, nextOffset}. Results are
+ordered by path (lexical).
 
 ** Important **
 - The repository must already be cloned under <CloneDir>/<owner>/<repo>.
 - MaxDepth=1 (default) lists immediate children; 0 = unlimited depth (capped by MaxResults).
+- Use Offset with NextOffset to page through large result sets.
 - Symlinks are skipped. The .git directory is always skipped.
 `
 
+// FileListParams defines the parameters for listing files in a clone.
 type FileListParams struct {
 	Instance   string `json:"instance"   validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner      string `json:"owner"      validate:"required" jsonschema:"(required) Repository owner."`
 	Repo       string `json:"repo"       validate:"required" jsonschema:"(required) Repository name."`
 	SubPath    string `json:"subPath,omitempty" jsonschema:"(optional) Relative subdirectory to list. Defaults to repo root."`
-	MaxDepth   int    `json:"maxDepth,omitempty" jsonschema:"(optional) Maximum recursion depth. 1 = immediate children (default). 0 = unlimited."`
+	MaxDepth   *int   `json:"maxDepth,omitempty" validate:"omitempty,gte=0" jsonschema:"(optional) Maximum recursion depth. 1 = immediate children (default). 0 = unlimited."`
+	Offset     int    `json:"offset,omitempty" validate:"omitempty,gte=0" jsonschema:"(optional) Number of entries to skip. Defaults to 0."`
 	MaxResults int    `json:"maxResults,omitempty" jsonschema:"(optional) Maximum number of entries to return. Defaults to 100."`
 }
 
+// FileListOutput describes one file or directory entry.
 type FileListOutput struct {
 	Name string `json:"name"`
 	Type string `json:"type"` // "file" or "dir"
@@ -43,11 +48,20 @@ type FileListOutput struct {
 	Path string `json:"path"` // relative to repo root
 }
 
+// FileListResult is a page of file-list entries.
+type FileListResult struct {
+	Results    []FileListOutput `json:"results"`
+	HasMore    bool             `json:"hasMore"`
+	NextOffset int              `json:"nextOffset"`
+}
+
+// FileListTool is an eino tool for listing files in a clone.
 type FileListTool struct {
 	*baseTool
 	tool.InvokableTool
 }
 
+// Invoke lists files and directories under the requested sub-path.
 func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -81,17 +95,28 @@ func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (stri
 		}
 	}
 
-	maxDepth := params.MaxDepth
-	if maxDepth == 0 {
-		maxDepth = 1
+	maxDepth := 1
+	unlimitedDepth := false
+	if params.MaxDepth != nil {
+		if *params.MaxDepth == 0 {
+			unlimitedDepth = true
+		} else {
+			maxDepth = *params.MaxDepth
+		}
 	}
 
 	maxResults := params.MaxResults
 	if maxResults <= 0 {
 		maxResults = 100
 	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	var results []FileListOutput
+	results := make([]FileListOutput, 0, maxResults)
+	hasMore := false
+	seen := 0
 	err = filepath.WalkDir(listRoot, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -122,27 +147,31 @@ func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (stri
 		fullRelPath = filepath.ToSlash(fullRelPath)
 
 		depth := strings.Count(relPath, "/") + 1
+		withinDepth := unlimitedDepth || depth <= maxDepth
 
-		entryType := "file"
-		if d.IsDir() {
-			entryType = "dir"
-		}
-
-		// Add entry if within depth limit.
-		if depth <= maxDepth {
-			results = append(results, FileListOutput{
-				Name: d.Name(),
-				Type: entryType,
-				Size: fi.Size(),
-				Path: fullRelPath,
-			})
-			if len(results) >= maxResults {
+		if withinDepth {
+			if seen < offset {
+				seen++
+			} else if len(results) >= maxResults {
+				hasMore = true
 				return filepath.SkipAll
+			} else {
+				entryType := "file"
+				if d.IsDir() {
+					entryType = "dir"
+				}
+				results = append(results, FileListOutput{
+					Name: d.Name(),
+					Type: entryType,
+					Size: fi.Size(),
+					Path: fullRelPath,
+				})
+				seen++
 			}
 		}
 
 		// Don't descend into directories at or beyond maxDepth.
-		if d.IsDir() && depth >= maxDepth {
+		if !unlimitedDepth && d.IsDir() && depth >= maxDepth {
 			return filepath.SkipDir
 		}
 
@@ -152,17 +181,19 @@ func (t *FileListTool) Invoke(ctx context.Context, params *FileListParams) (stri
 		return "", errors.Wrap(err, "failed to list files")
 	}
 
-	if results == nil {
-		results = make([]FileListOutput, 0)
+	output := &FileListResult{
+		Results:    results,
+		HasMore:    hasMore,
+		NextOffset: offset + len(results),
 	}
-
-	data, err := json.Marshal(results)
+	data, err := json.Marshal(output)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to marshal output")
 	}
 	return string(data), nil
 }
 
+// NewFileListTool creates a new FileListTool.
 func NewFileListTool(ctx context.Context, configs Configs) (*FileListTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

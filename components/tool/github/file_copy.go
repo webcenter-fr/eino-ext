@@ -15,7 +15,7 @@ const fileCopyDescription = `
 ** General Purpose **
 It copies a file or directory from a source path to a destination path within a
 previously cloned GitHub repository on the local filesystem. This tool does NOT
-commit or push — use github_file_write to persist changes.
+commit or push — use github_commit_push to persist changes.
 
 ** Output **
 It returns a JSON object with the source, destination, type ("file" or "dir"),
@@ -35,6 +35,7 @@ copy status, branch, and (for directories) file count and total bytes.
 - Executes directly without confirmation. Set DryRun=true to preview without making changes.
 `
 
+// FileCopyParams defines the parameters for copying a path in a clone.
 type FileCopyParams struct {
 	Instance    string `json:"instance"    validate:"required" jsonschema:"(required) The GitHub instance to connect to."`
 	Owner       string `json:"owner"       validate:"required" jsonschema:"(required) Repository owner."`
@@ -45,6 +46,7 @@ type FileCopyParams struct {
 	DryRun      bool   `json:"dryRun,omitempty"    jsonschema:"(optional) If true, preview the copy without making changes."`
 }
 
+// FileCopyOutput is the result of a local copy.
 type FileCopyOutput struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
@@ -55,6 +57,7 @@ type FileCopyOutput struct {
 	TotalBytes  int64  `json:"totalBytes,omitempty"` // only for directory copies
 }
 
+// FileCopyTool is an eino tool for copying paths in a clone.
 type FileCopyTool struct {
 	*baseTool
 	tool.InvokableTool
@@ -62,6 +65,7 @@ type FileCopyTool struct {
 
 var _ tool.InvokableTool = (*FileCopyTool)(nil)
 
+// Invoke copies the source path to the destination in the local clone.
 func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (string, error) {
 	if err := validateParams(params); err != nil {
 		return "", err
@@ -128,6 +132,7 @@ func (t *FileCopyTool) Invoke(ctx context.Context, params *FileCopyParams) (stri
 	return string(result), nil
 }
 
+// NewFileCopyTool creates a new FileCopyTool.
 func NewFileCopyTool(ctx context.Context, configs Configs) (*FileCopyTool, error) {
 	base, err := newBaseTool(ctx, configs)
 	if err != nil {

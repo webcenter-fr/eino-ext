@@ -104,7 +104,7 @@ func run(turns int) []int64 {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	mem, err := file.NewFileMemory(file.FileMemoryConfig{
 		Dir:             dir,

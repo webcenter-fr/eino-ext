@@ -91,10 +91,14 @@ because every read tool touches the namespace after resolving the clone.
 | `github_file_read` | Read file contents from a cloned repo (plain read, no confirmation required) |
 | `github_file_search` | Grep (regex) within a cloned repo (plain read, no confirmation required) |
 | `github_file_list` | List files/dirs in a cloned repo (plain read, no confirmation required) |
-| `github_file_write` | Write/create a file in a cloned repo, commit, and push to the remote branch (no confirmation required) — `DryRun` still returns a preview |
+| `github_file_write` | Write/create a file in a cloned repo (local only, no commit/push, no confirmation required) — `DryRun` still returns a preview |
+| `github_file_edit` | Replace an exact string in a cloned file (local only, no commit/push, no confirmation required) — `DryRun` previews the replacement count |
 | `github_file_delete` | Delete a file or directory from a cloned repo (local only, no commit/push, no confirmation required) — `DryRun` still returns a preview |
 | `github_file_copy` | Copy a file or directory within a cloned repo (local only, no commit/push, no confirmation required) — `DryRun` still returns a preview |
 | `github_file_move` | Move/rename a file or directory within a cloned repo (local only, no commit/push, no confirmation required) — `DryRun` still returns a preview |
+| `github_branch_checkout` | Check out an existing local branch, or create it from a base branch (local only, no confirmation required) — `DryRun` still returns a preview |
+| `github_status` | Report the current branch, clean state, and changed files (local only, no confirmation required) |
+| `github_diff` | Return the staged + unstaged diff relative to HEAD, bounded with a `truncated` flag (local only, no confirmation required) |
 
 ### Write Tools
 
@@ -111,6 +115,7 @@ because every read tool touches the namespace after resolving the clone.
 | `github_pr_request_reviewers` | Request reviewers on a PR |
 | `github_repo_settings_update` | Update repository settings |
 | `github_webhook_upsert` | Create or update a repository webhook |
+| `github_commit_push` | Stage, commit, and push local clone changes in one gated action (dry-run returns a diffstat) |
 
 ### File Tools
 
@@ -118,10 +123,11 @@ File tools operate on repositories cloned by `github_repo_clone`. The workflow i
 
 1. `github_repo_clone` — clone the repo to <CloneDir>/<session>/<owner>/<repo>
 2. `github_file_read` / `github_file_search` / `github_file_list` — inspect
-3. `github_branch_create` (optional) — create a working branch
-4. `github_file_write` / `github_file_delete` / `github_file_copy` / `github_file_move` — modify files locally
-5. `github_file_write` — commit and push changes
-6. `github_pr_create` — open a PR from the pushed branch
+3. `github_branch_checkout` (optional) — check out or create a working branch
+4. `github_file_write` / `github_file_edit` / `github_file_delete` / `github_file_copy` / `github_file_move` — modify files locally
+5. `github_status` / `github_diff` — review the pending changes
+6. `github_commit_push` — stage, commit, and push once (gated)
+7. `github_pr_create` — open a PR from the pushed branch
 
 `github_repo_pull` refreshes an existing clone to the latest remote state without
 destroying local work: it fails on a dirty worktree, only fast-forwards (local
@@ -129,18 +135,21 @@ commits ahead of the remote are preserved and reported as an error), and never
 resets, stashes, or force-updates. Use it to re-sync after others have pushed,
 instead of re-cloning.
 
-All file tools (`github_file_read`, `github_file_search`, `github_file_list`,
-`github_file_write`, `github_file_delete`, `github_file_copy`, `github_file_move`)
-execute without the confirmation gate; `DryRun=true` remains available on
-`write`/`delete`/`copy`/`move` for a no-mutation preview.
+All local file tools (`github_file_read`, `github_file_search`,
+`github_file_list`, `github_file_write`, `github_file_edit`,
+`github_file_delete`, `github_file_copy`, `github_file_move`,
+`github_branch_checkout`, `github_status`, `github_diff`) execute without the
+confirmation gate; `DryRun=true` remains available on the mutating tools for a
+no-mutation preview. `github_commit_push` is the single gated action that
+persists changes.
 
 All file paths are validated to stay within the clone directory. Symlinks and
 the `.git` directory are always skipped or rejected.
 
 Note the behavior and risk: `github_file_delete` and `github_file_move` remove
 local paths in the clone, `github_file_copy` and `github_file_move` overwrite
-existing local destinations, and `github_file_write` commits and pushes directly
-to the specified remote branch (without force-pushing).
+existing local destinations, and `github_commit_push` commits and pushes the
+selected branch (without force-pushing).
 
 ## Usage
 
@@ -162,7 +171,7 @@ tools, mw, err := github.NewAllToolsWithSafety(ctx, configs, &safety.Config{
 - **Path safety**: Clone target always under `Config.CloneDir`; session ids are hashed and owner/repo segments are sanitized (no traversal). `RequireSession` fails closed when no session id is present.
 - **SSRF protection**: Webhook URLs must use HTTPS; loopback/private/metadata IPs are blocked.
 - **Secret redaction**: GitHub tokens are redacted from all tool output.
-- **Confirmation gating**: The 11 GitHub API/branch write tools (`github_branch_create`, `github_release_create`, `github_issue_create`, `github_issue_comment`, `github_pr_create`, `github_pr_comment`, `github_pr_review`, `github_pr_suggest_change`, `github_pr_request_reviewers`, `github_repo_settings_update`, `github_webhook_upsert`) require `Confirmed=true` and host authorization (or `DryRun=true` to preview). Repository clone/pull and file tools (`github_file_read`, `github_file_search`, `github_file_list`, `github_file_write`, `github_file_delete`, `github_file_copy`, `github_file_move`) are not gated and execute without confirmation; note that `github_file_write` commits and pushes to the remote branch, while `github_file_delete`, `github_file_copy`, and `github_file_move` mutate/overwrite/remove paths in the local clone.
+- **Confirmation gating**: The 12 GitHub API/branch/commit write tools (`github_branch_create`, `github_release_create`, `github_issue_create`, `github_issue_comment`, `github_pr_create`, `github_pr_comment`, `github_pr_review`, `github_pr_suggest_change`, `github_pr_request_reviewers`, `github_repo_settings_update`, `github_webhook_upsert`, `github_commit_push`) require `Confirmed=true` and host authorization (or `DryRun=true` to preview). Repository clone/pull and local file tools (`github_file_read`, `github_file_search`, `github_file_list`, `github_file_write`, `github_file_edit`, `github_file_delete`, `github_file_copy`, `github_file_move`, `github_branch_checkout`, `github_status`, `github_diff`) are not gated and execute without confirmation; they only mutate the local clone. `github_commit_push` is the single gated action that commits and pushes.
 - **Timeouts**: Every API call bounded by `Config.Timeout` (default 30s).
 - **Pagination caps**: List/search tools cap results to prevent resource exhaustion.
 - **Copy size limits**: Directory copy/move is capped by `Config.MaxCopyBytes`

@@ -96,7 +96,7 @@ func NewTool(ctx context.Context, cfg *Config) (*Tool, error) {
 		return nil, errors.Wrap(err, "failed to create OpenSearch retriever")
 	}
 
-	var formatter HitFormatter = cfg.Formatter
+	formatter := cfg.Formatter
 	if formatter == nil {
 		formatter = NewDefaultHitFormatter(cfg.HeaderFields)
 	}

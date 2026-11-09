@@ -160,10 +160,11 @@ func TestWithExecutionAuthorizedAndFor(t *testing.T) {
 		t.Fatal("expected false for ungranted tool")
 	}
 
-	if ExecutionAuthorizedFor(nil, "t") {
+	var nilCtx context.Context
+	if ExecutionAuthorizedFor(nilCtx, "t") {
 		t.Fatal("expected false for nil ctx")
 	}
-	if WithExecutionAuthorized(nil, "t") != nil {
+	if WithExecutionAuthorized(nilCtx, "t") != nil {
 		t.Fatal("expected nil for nil ctx")
 	}
 

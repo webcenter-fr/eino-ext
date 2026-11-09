@@ -13,18 +13,25 @@ import (
 type ContainerOpt func(*containerConfig)
 
 type containerConfig struct {
-	workdir      string
+	workspace    string
 	cacheVolumes map[string]string
 	egressPolicy *egress.Policy
 	user         string
 	registryAuth map[string]RegistryAuth
 }
 
-// WithWorkdir sets the working directory inside the container.
-func WithWorkdir(workdir string) ContainerOpt {
+// WithWorkspace mounts hostPath at /workspace and sets it as the container
+// working directory.
+func WithWorkspace(hostPath string) ContainerOpt {
 	return func(c *containerConfig) {
-		c.workdir = workdir
+		c.workspace = hostPath
 	}
+}
+
+// WithWorkdir is kept for backward compatibility; it mounts the host directory
+// at /workspace exactly like WithWorkspace.
+func WithWorkdir(workdir string) ContainerOpt {
+	return WithWorkspace(workdir)
 }
 
 // WithCacheVolume adds a cache volume mount to the container.
@@ -83,8 +90,8 @@ func (c *Client) Container(ctx context.Context, baseImage string, opts ...Contai
 		cont = cont.WithMountedCache(containerPath, cv)
 	}
 
-	if cc.workdir != "" {
-		hostDir := c.client.Host().Directory(cc.workdir)
+	if cc.workspace != "" {
+		hostDir := c.client.Host().Directory(cc.workspace)
 		cont = cont.WithMountedDirectory("/workspace", hostDir)
 		cont = cont.WithWorkdir("/workspace")
 	}

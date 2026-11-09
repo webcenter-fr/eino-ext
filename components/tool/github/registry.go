@@ -30,15 +30,21 @@ var readOnlyConstructors = []toolConstructor{
 	// Pull repo is the read action. It updates an existing clone non-destructively (fast-forward only)
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newRepoPullTool(ctx, b) },
 	// File tools operate on the local clone under <CloneDir>/<session>/<owner>/<repo>
-	// (and github_file_write commits and pushes to the target branch) without
-	// requiring the confirmation gate.
+	// without requiring the confirmation gate. github_commit_push is the single
+	// gated action that persists a batch of local changes.
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileReadTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileSearchTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileListTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileWriteTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileEditTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileDeleteTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileCopyTool(ctx, b) },
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newFileMoveTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newBranchCheckoutTool(ctx, b)
+	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newStatusTool(ctx, b) },
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) { return newDiffTool(ctx, b) },
 }
 
 // writeConstructors lists all gated write/destructive GitHub API tools.
@@ -63,6 +69,9 @@ var writeConstructors = []toolConstructor{
 	},
 	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
 		return newWebhookUpsertTool(ctx, b)
+	},
+	func(ctx context.Context, b *baseTool) (tool.InvokableTool, error) {
+		return newCommitPushTool(ctx, b)
 	},
 }
 
@@ -116,6 +125,7 @@ func WriteToolNames() []string {
 		"github_pr_request_reviewers",
 		"github_repo_settings_update",
 		"github_webhook_upsert",
+		"github_commit_push",
 	}
 }
 
@@ -185,7 +195,12 @@ var (
 	_ tool.InvokableTool = (*FileSearchTool)(nil)
 	_ tool.InvokableTool = (*FileListTool)(nil)
 	_ tool.InvokableTool = (*FileWriteTool)(nil)
+	_ tool.InvokableTool = (*FileEditTool)(nil)
 	_ tool.InvokableTool = (*FileDeleteTool)(nil)
 	_ tool.InvokableTool = (*FileCopyTool)(nil)
 	_ tool.InvokableTool = (*FileMoveTool)(nil)
+	_ tool.InvokableTool = (*BranchCheckoutTool)(nil)
+	_ tool.InvokableTool = (*StatusTool)(nil)
+	_ tool.InvokableTool = (*DiffTool)(nil)
+	_ tool.InvokableTool = (*CommitPushTool)(nil)
 )

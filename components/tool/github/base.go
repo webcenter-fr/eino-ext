@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"reflect"
 
@@ -31,6 +32,8 @@ type baseTool struct {
 	baseURLs       map[string]string
 	requireSession bool
 	maxCopyBytes   int64
+	// pushURLOverride is used by tests to push to a local bare repository.
+	pushURLOverride string
 }
 
 // client returns the GitHub API client for the given instance name, or an error
@@ -153,4 +156,17 @@ func (b *baseTool) gitHost(instance string) (string, error) {
 		return "", errors.Wrap(err, "invalid base URL for git host")
 	}
 	return u.Host, nil
+}
+
+// pushURL returns the HTTPS URL a branch is pushed to. Tests may override it to
+// point at a local bare repository.
+func (b *baseTool) pushURL(instance, owner, repo string) (string, error) {
+	if b.pushURLOverride != "" {
+		return b.pushURLOverride, nil
+	}
+	host, err := b.gitHost(instance)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("https://%s/%s/%s.git", host, owner, repo), nil
 }

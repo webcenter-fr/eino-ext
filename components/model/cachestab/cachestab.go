@@ -79,7 +79,7 @@ func NormalizeTools(tools []*schema.ToolInfo) ([]*schema.ToolInfo, error) {
 		}
 		clone := *t
 		if t.ParamsOneOf != nil {
-			sc, err := t.ParamsOneOf.ToJSONSchema()
+			sc, err := t.ToJSONSchema()
 			if err != nil {
 				return nil, errors.Wrapf(err, "cachestab: schema for tool %q", t.Name)
 			}

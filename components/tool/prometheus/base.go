@@ -1,3 +1,4 @@
+// Package prometheus provides eino tools for querying Prometheus.
 package prometheus
 
 import (

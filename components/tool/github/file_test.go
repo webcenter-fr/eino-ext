@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/goccy/go-json"
@@ -49,7 +50,7 @@ func (s *GitHubToolTestSuite) setupClone() (cloneDir string, cleanup func()) {
 	_, err = wt.Commit("initial", &git.CommitOptions{Author: commitIdentity})
 	s.NoError(err)
 
-	return dir, func() { os.RemoveAll(dir) }
+	return dir, func() { _ = os.RemoveAll(dir) }
 }
 
 func (s *GitHubToolTestSuite) fileConfigs(cloneDir string) Configs {
@@ -220,7 +221,7 @@ func (s *GitHubToolTestSuite) TestFileReadSymlinkTraversal() {
 	// Create a file outside the clone directory.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
@@ -303,11 +304,11 @@ func (s *GitHubToolTestSuite) TestFileSearchBasic() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": "line"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 3)
-	for _, o := range outputs {
+	s.Len(output.Results, 3)
+	for _, o := range output.Results {
 		s.Equal("README.md", o.Path)
 	}
 }
@@ -323,11 +324,11 @@ func (s *GitHubToolTestSuite) TestFileSearchRegex() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": "func .*\\{"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 1)
-	s.Equal("sub/main.go", outputs[0].Path)
+	s.Len(output.Results, 1)
+	s.Equal("sub/main.go", output.Results[0].Path)
 }
 
 func (s *GitHubToolTestSuite) TestFileSearchPathPrefix() {
@@ -341,11 +342,11 @@ func (s *GitHubToolTestSuite) TestFileSearchPathPrefix() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": "package|func", "pathPrefix": "sub"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.NotEmpty(outputs)
-	for _, o := range outputs {
+	s.NotEmpty(output.Results)
+	for _, o := range output.Results {
 		s.Contains(o.Path, "sub/")
 	}
 }
@@ -361,10 +362,10 @@ func (s *GitHubToolTestSuite) TestFileSearchMaxResults() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": "line", "maxResults": 1}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 1)
+	s.Len(output.Results, 1)
 }
 
 func (s *GitHubToolTestSuite) TestFileSearchInvalidRegex() {
@@ -391,10 +392,10 @@ func (s *GitHubToolTestSuite) TestFileSearchNoMatches() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": "zzz"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 0)
+	s.Len(output.Results, 0)
 }
 
 func (s *GitHubToolTestSuite) TestFileSearchSkipsBinary() {
@@ -408,10 +409,10 @@ func (s *GitHubToolTestSuite) TestFileSearchSkipsBinary() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": ".*"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		s.NotEqual("binary.bin", o.Path)
 	}
 }
@@ -427,10 +428,10 @@ func (s *GitHubToolTestSuite) TestFileSearchSkipsGit() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "pattern": ".*"}`)
 	s.NoError(err)
 
-	var outputs []FileSearchOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileSearchResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		s.NotContains(o.Path, ".git/")
 	}
 }
@@ -472,13 +473,13 @@ func (s *GitHubToolTestSuite) TestFileListRoot() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo"}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.NotEmpty(outputs)
+	s.NotEmpty(output.Results)
 
 	names := make(map[string]bool)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		names[o.Name] = true
 	}
 	s.True(names["README.md"], "README.md should be present")
@@ -497,11 +498,11 @@ func (s *GitHubToolTestSuite) TestFileListSubPath() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "subPath": "sub"}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 1)
-	s.Equal("main.go", outputs[0].Name)
+	s.Len(output.Results, 1)
+	s.Equal("main.go", output.Results[0].Name)
 }
 
 func (s *GitHubToolTestSuite) TestFileListMaxDepth1() {
@@ -515,10 +516,10 @@ func (s *GitHubToolTestSuite) TestFileListMaxDepth1() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "maxDepth": 1}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		s.NotEqual("main.go", o.Name, "main.go in sub/ should not be present at depth 1")
 	}
 }
@@ -534,12 +535,12 @@ func (s *GitHubToolTestSuite) TestFileListMaxDepth2() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "maxDepth": 2}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
 
 	hasMainGo := false
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		if o.Name == "main.go" {
 			hasMainGo = true
 			break
@@ -559,10 +560,10 @@ func (s *GitHubToolTestSuite) TestFileListMaxResults() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "maxResults": 1}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	s.Len(outputs, 1)
+	s.Len(output.Results, 1)
 }
 
 func (s *GitHubToolTestSuite) TestFileListSkipsGit() {
@@ -576,10 +577,10 @@ func (s *GitHubToolTestSuite) TestFileListSkipsGit() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "maxDepth": 5}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		s.NotEqual(".git", o.Name)
 		s.NotContains(o.Path, ".git/")
 	}
@@ -600,10 +601,10 @@ func (s *GitHubToolTestSuite) TestFileListSkipsSymlinks() {
 	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo"}`)
 	s.NoError(err)
 
-	var outputs []FileListOutput
-	err = json.Unmarshal([]byte(result), &outputs)
+	var output FileListResult
+	err = json.Unmarshal([]byte(result), &output)
 	s.NoError(err)
-	for _, o := range outputs {
+	for _, o := range output.Results {
 		s.NotEqual("link.md", o.Name, "symlink should not appear")
 	}
 }
@@ -644,26 +645,6 @@ func (s *GitHubToolTestSuite) TestFileListPathTraversal() {
 
 // ---- github_file_write ----
 
-// TestDryRunNoMutation asserts that a dry-run write returns a preview and
-// does not create the file (the dry-run branch returns before the clone is
-// even resolved).
-func (s *GitHubToolTestSuite) TestDryRunNoMutation() {
-	ctx := context.Background()
-	cloneDir, cleanup := s.setupClone()
-	defer cleanup()
-
-	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
-	s.NoError(err)
-
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello", "branch": "master", "commitMessage": "commit msg", "dryRun": true}`)
-	s.NoError(err)
-	s.Contains(result, `"dryRun":true`)
-	s.Contains(result, `"wouldWrite"`)
-
-	_, statErr := os.Stat(filepath.Join(testRepoPath(cloneDir), "newfile.txt"))
-	s.True(os.IsNotExist(statErr), "dry-run must not write the file")
-}
-
 func (s *GitHubToolTestSuite) TestFileWriteDryRun() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
@@ -675,11 +656,12 @@ func (s *GitHubToolTestSuite) TestFileWriteDryRun() {
 	_, err = tool.Info(ctx)
 	s.NoError(err)
 
-	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello", "branch": "master", "commitMessage": "commit msg", "dryRun": true}`)
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello", "dryRun": true}`)
 	s.NoError(err)
 	s.Contains(result, `"dryRun":true`)
 	s.Contains(result, `"wouldWrite"`)
 	s.Contains(result, `newfile.txt`)
+	s.Contains(result, `"bytes":5`)
 
 	// Verify file was not actually written
 	repoPath := testRepoPath(cloneDir)
@@ -687,7 +669,7 @@ func (s *GitHubToolTestSuite) TestFileWriteDryRun() {
 	s.True(os.IsNotExist(err))
 }
 
-func (s *GitHubToolTestSuite) TestFileWriteWithoutConfirmation() {
+func (s *GitHubToolTestSuite) TestFileWriteDryRunSizeLimit() {
 	ctx := context.Background()
 	cloneDir, cleanup := s.setupClone()
 	defer cleanup()
@@ -695,32 +677,52 @@ func (s *GitHubToolTestSuite) TestFileWriteWithoutConfirmation() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	// Push will fail against the mock server, but the commit should succeed locally
-	// without confirmed or safety.WithExecutionAuthorized.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello world", "branch": "master", "commitMessage": "add newfile"}`)
+	content := strings.Repeat("a", fileutil.DefaultMaxWriteBytes+1)
+	args, err := json.Marshal(map[string]any{
+		"instance": "test",
+		"owner":    "testowner",
+		"repo":     "testrepo",
+		"path":     "large.txt",
+		"content":  content,
+		"dryRun":   true,
+	})
+	s.NoError(err)
+
+	_, err = tool.InvokableRun(ctx, string(args))
+	s.Error(err)
+	s.Contains(err.Error(), "exceeds the maximum")
+}
+
+func (s *GitHubToolTestSuite) TestFileWriteLocalOnly() {
+	ctx := context.Background()
+	cloneDir, cleanup := s.setupClone()
+	defer cleanup()
+
 	repoPath := testRepoPath(cloneDir)
+	repo, err := git.PlainOpen(repoPath)
+	s.NoError(err)
+	headBefore, err := repo.Head()
+	s.NoError(err)
+
+	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
+	s.NoError(err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "newfile.txt", "content": "hello world"}`)
+	s.NoError(err)
+
+	var output FileWriteOutput
+	s.NoError(json.Unmarshal([]byte(result), &output))
+	s.Equal("newfile.txt", output.Path)
+	s.Equal(11, output.Bytes)
+
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "newfile.txt"))
 	s.NoError(readErr)
 	s.Equal("hello world", string(data))
-	_ = err // push error is expected
-}
 
-func (s *GitHubToolTestSuite) TestFileWriteNewBranch() {
-	ctx := context.Background()
-	cloneDir, cleanup := s.setupClone()
-	defer cleanup()
-
-	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
+	// file_write is local-only: it must not commit.
+	headAfter, err := repo.Head()
 	s.NoError(err)
-
-	// Push will fail against mock server, but branch creation and commit should succeed locally.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "feature.txt", "content": "feature content", "branch": "new-feature", "baseBranch": "master", "commitMessage": "add feature"}`)
-	// Verify file was written locally (commit succeeded before push failed)
-	repoPath := testRepoPath(cloneDir)
-	data, readErr := os.ReadFile(filepath.Join(repoPath, "feature.txt"))
-	s.NoError(readErr)
-	s.Equal("feature content", string(data))
-	_ = err
+	s.Equal(headBefore.Hash(), headAfter.Hash(), "file_write must not create a commit")
 }
 
 func (s *GitHubToolTestSuite) TestFileWriteOverwrite() {
@@ -731,13 +733,13 @@ func (s *GitHubToolTestSuite) TestFileWriteOverwrite() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	// Push will fail against mock server, but overwrite should succeed locally.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "content": "overwritten content", "branch": "master", "commitMessage": "update readme"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "README.md", "content": "overwritten content"}`)
+	s.NoError(err)
+
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "README.md"))
 	s.NoError(readErr)
 	s.Equal("overwritten content", string(data))
-	_ = err
 }
 
 func (s *GitHubToolTestSuite) TestFileWritePathTraversal() {
@@ -748,7 +750,7 @@ func (s *GitHubToolTestSuite) TestFileWritePathTraversal() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "../../evil.txt", "content": "evil"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "escapes root directory")
 }
@@ -761,7 +763,7 @@ func (s *GitHubToolTestSuite) TestFileWriteSymlinkTraversal() {
 	// Create a directory outside the clone.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 
 	// Plant a symlink inside the clone that points outside.
 	repoPath := testRepoPath(cloneDir)
@@ -772,7 +774,7 @@ func (s *GitHubToolTestSuite) TestFileWriteSymlinkTraversal() {
 	s.NoError(err)
 
 	// Attempt to write through the symlink — must be rejected.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "link/evil.txt", "content": "evil"}`)
 	s.Error(err)
 	s.Contains(err.Error(), "symlink")
 
@@ -789,7 +791,7 @@ func (s *GitHubToolTestSuite) TestFileWriteDotGitBypass() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "./.git/evil.txt", "content": "evil", "branch": "master", "commitMessage": "test"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "./.git/evil.txt", "content": "evil"}`)
 	s.Error(err)
 	s.Contains(err.Error(), ".git")
 }
@@ -810,7 +812,7 @@ func (s *GitHubToolTestSuite) TestFileWriteNotCloned() {
 	tool, err := NewFileWriteTool(ctx, configs)
 	s.NoError(err)
 
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "test.txt", "content": "test", "branch": "master", "commitMessage": "test"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "test.txt", "content": "test"}`)
 	s.Error(err)
 }
 
@@ -822,29 +824,13 @@ func (s *GitHubToolTestSuite) TestFileWriteCreatesParentDirs() {
 	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
 	s.NoError(err)
 
-	// Push will fail against mock server, but dirs should be created locally.
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "deep/nested/file.txt", "content": "nested content", "branch": "master", "commitMessage": "create nested file"}`)
+	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "deep/nested/file.txt", "content": "nested content"}`)
+	s.NoError(err)
+
 	repoPath := testRepoPath(cloneDir)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "deep", "nested", "file.txt"))
 	s.NoError(readErr)
 	s.Equal("nested content", string(data))
-	_ = err
-}
-
-func (s *GitHubToolTestSuite) TestFileWritePushRejection() {
-	ctx := context.Background()
-	cloneDir, cleanup := s.setupClone()
-	defer cleanup()
-
-	// Use a mock server URL that points to a non-git HTTP server; the push
-	// will fail with a transport/connection error and the token should be
-	// redacted in the error message.
-	tool, err := NewFileWriteTool(ctx, s.fileConfigs(cloneDir))
-	s.NoError(err)
-
-	_, err = tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "push-test.txt", "content": "push test", "branch": "master", "commitMessage": "test push rejection"}`)
-	s.Error(err, "expected push error with mock server")
-	s.NotContains(err.Error(), "test-token", "token should be redacted")
 }
 
 // ---- github_file_delete ----
@@ -1039,7 +1025,7 @@ func (s *GitHubToolTestSuite) TestFileDeleteSymlink() {
 	// Create a directory outside the clone and plant a symlink inside it.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 
 	repoPath := testRepoPath(cloneDir)
 	err = os.Symlink(outsideDir, filepath.Join(repoPath, "link"))
@@ -1386,7 +1372,7 @@ func (s *GitHubToolTestSuite) TestFileCopySymlinkSource() {
 	// Create a file outside the clone and plant a symlink inside it.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
@@ -1462,7 +1448,7 @@ func (s *GitHubToolTestSuite) TestFileCopySkipsSymlinkInsideTree() {
 	// directory inside the copied tree.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 
@@ -1840,7 +1826,7 @@ func (s *GitHubToolTestSuite) TestFileMoveSymlinkSource() {
 	// Create a directory outside the clone and plant a symlink inside it.
 	outsideDir, err := os.MkdirTemp("", "eino-ext-outside")
 	s.NoError(err)
-	defer os.RemoveAll(outsideDir)
+	defer func() { _ = os.RemoveAll(outsideDir) }()
 	err = os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("top secret"), 0o644)
 	s.NoError(err)
 

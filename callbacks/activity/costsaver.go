@@ -240,15 +240,15 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, summary *SessionSummar
 
 func (a *ComplexityAnalyzer) buildPrompt(summary *SessionSummary) string {
 	prompt := complexityAnalysisPrompt
-	prompt = strings.Replace(prompt, "{{.Duration}}", summary.Duration.String(), -1)
-	prompt = strings.Replace(prompt, "{{.TotalTokens}}", fmt.Sprintf("%d", summary.TotalTokens), -1)
-	prompt = strings.Replace(prompt, "{{.Steps}}", fmt.Sprintf("%d", summary.Steps), -1)
-	prompt = strings.Replace(prompt, "{{.ToolsCalled}}", fmt.Sprintf("%v", summary.ToolsCalled), -1)
-	prompt = strings.Replace(prompt, "{{.TextOutput}}", summary.TextOutput, -1)
-	prompt = strings.Replace(prompt, "{{.ReasoningContent}}", summary.ReasoningContent, -1)
-	prompt = strings.Replace(prompt, "{{.FinishReasons}}", fmt.Sprintf("%v", summary.FinishReasons), -1)
-	prompt = strings.Replace(prompt, "{{.HadFailures}}", fmt.Sprintf("%t", summary.HadFailures), -1)
-	prompt = strings.Replace(prompt, "{{.HumanHourlyRate}}", fmt.Sprintf("%.2f", a.config.HumanHourlyRate), -1)
+	prompt = strings.ReplaceAll(prompt, "{{.Duration}}", summary.Duration.String())
+	prompt = strings.ReplaceAll(prompt, "{{.TotalTokens}}", fmt.Sprintf("%d", summary.TotalTokens))
+	prompt = strings.ReplaceAll(prompt, "{{.Steps}}", fmt.Sprintf("%d", summary.Steps))
+	prompt = strings.ReplaceAll(prompt, "{{.ToolsCalled}}", fmt.Sprintf("%v", summary.ToolsCalled))
+	prompt = strings.ReplaceAll(prompt, "{{.TextOutput}}", summary.TextOutput)
+	prompt = strings.ReplaceAll(prompt, "{{.ReasoningContent}}", summary.ReasoningContent)
+	prompt = strings.ReplaceAll(prompt, "{{.FinishReasons}}", fmt.Sprintf("%v", summary.FinishReasons))
+	prompt = strings.ReplaceAll(prompt, "{{.HadFailures}}", fmt.Sprintf("%t", summary.HadFailures))
+	prompt = strings.ReplaceAll(prompt, "{{.HumanHourlyRate}}", fmt.Sprintf("%.2f", a.config.HumanHourlyRate))
 	return prompt
 }
 

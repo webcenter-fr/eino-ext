@@ -59,7 +59,7 @@ func TestNewReadOnlyToolsClassification(t *testing.T) {
 	ctx := context.Background()
 	tools, err := NewReadOnlyTools(ctx, registryTestConfigs(t.TempDir(), ""))
 	require.NoError(t, err)
-	require.Len(t, tools, 16)
+	require.Len(t, tools, 20)
 
 	names := make([]string, 0, len(tools))
 	for _, tl := range tools {
@@ -92,9 +92,13 @@ func TestNewReadOnlyToolsClassification(t *testing.T) {
 		"github_file_search",
 		"github_file_list",
 		"github_file_write",
+		"github_file_edit",
 		"github_file_delete",
 		"github_file_copy",
 		"github_file_move",
+		"github_branch_checkout",
+		"github_status",
+		"github_diff",
 	}, names)
 }
 
@@ -105,16 +109,20 @@ func TestWriteToolNamesAndExtractMatch(t *testing.T) {
 	extracted, err := ExtractWriteToolNames(ctx, configs)
 	require.NoError(t, err)
 	assert.Equal(t, WriteToolNames(), extracted)
-	require.Len(t, WriteToolNames(), 11)
+	require.Len(t, WriteToolNames(), 12)
 
 	for _, name := range []string{
 		"github_file_read",
 		"github_file_search",
 		"github_file_list",
 		"github_file_write",
+		"github_file_edit",
 		"github_file_delete",
 		"github_file_copy",
 		"github_file_move",
+		"github_branch_checkout",
+		"github_status",
+		"github_diff",
 		"github_repo_clone",
 		"github_repo_pull",
 	} {
@@ -126,7 +134,7 @@ func TestNewAllToolsCount(t *testing.T) {
 	ctx := context.Background()
 	tools, err := NewAllTools(ctx, registryTestConfigs(t.TempDir(), ""))
 	require.NoError(t, err)
-	require.Len(t, tools, 27)
+	require.Len(t, tools, 32)
 
 	seen := make(map[string]bool, len(tools))
 	for _, tl := range tools {
@@ -181,10 +189,9 @@ func TestFileToolsUngatedUnderSafetyMiddleware(t *testing.T) {
 	assert.Contains(t, result, `"deleted":true`)
 	assert.NoFileExists(t, filepath.Join(repoPath, "moved.md"))
 
-	_, err = invoke("github_file_write", `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "written.txt", "content": "hello", "branch": "master", "commitMessage": "add written"}`)
-	require.Error(t, err, "push against the mock remote is expected to fail")
-	assert.NotErrorIs(t, err, toolkitsafety.ErrGateRequired)
-	assert.NotErrorIs(t, err, toolkitsafety.ErrExecutionNotAuthorized)
+	result, err = invoke("github_file_write", `{"instance": "test", "owner": "testowner", "repo": "testrepo", "path": "written.txt", "content": "hello"}`)
+	require.NoError(t, err)
+	assert.Contains(t, result, `"bytes":5`)
 	data, readErr := os.ReadFile(filepath.Join(repoPath, "written.txt"))
 	require.NoError(t, readErr)
 	assert.Equal(t, "hello", string(data))

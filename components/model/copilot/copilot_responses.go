@@ -436,7 +436,7 @@ func toolParamsToMap(t *schema.ToolInfo) map[string]interface{} {
 		"additionalProperties": false,
 	}
 	if t.ParamsOneOf != nil {
-		s, err := t.ParamsOneOf.ToJSONSchema()
+		s, err := t.ToJSONSchema()
 		if err == nil && s != nil {
 			if s.Properties != nil && s.Properties.Len() > 0 {
 				props := make(map[string]interface{}, s.Properties.Len())

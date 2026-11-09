@@ -128,7 +128,7 @@ layers: `cluster` for kubernetes, `instance` for argocd / prometheus / grafana /
 | `argocd` | `instance` | instance_list, application_list/describe, certificate_list, cluster_list/describe, project_list/describe, repository_list/describe | application_create, application_delete, application_sync |
 | `prometheus` | `instance` | instance_list, metric, target_list | — (none) |
 | `grafana` | `instance` | instance_list, dashboard, datasource, query, dashboard_validate | dashboard_write |
-| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_delete, file_copy, file_move | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert |
+| `github` | `instance` | instance_list, issue_list/get, pr_list/get, org_repo_list, repo_search, repo_clone, repo_pull, file_read, file_search, file_list, file_write, file_edit, file_delete, file_copy, file_move, branch_checkout, status, diff | branch_create, release_create, issue_create/comment, pr_create/comment/review/suggest_change/request_reviewers, repo_settings_update, webhook_upsert, commit_push |
 
 Other families present in the repo: `alertmanager`,
 `shell` (Dagger-backed), `file`, `s3`, `websearch`, `opensearch`,
@@ -744,8 +744,56 @@ type SupervisorConfig struct {
 | `fileutil` | filesystem safety helpers (path validation, symlink rejection CWE-59/22, binary detection, `.git` exclusion) | `ValidateRelativePath`, `ResolveSymlinkSafe`, `IsWithinPath`, `IsBinary`, `RejectDotGitPath`, `ValidateRootDir`, `CopyDir`, `WalkDirFiles`, `SanitizePathSegment`, `SessionDirName`, `SweepStaleDirs` |
 | `egress` | policy-driven HTTP/HTTPS CONNECT egress proxy — « local network forbidden by default » (RFC1918/link-local/loopback/cloud-metadata blocks) with allowlist; for Dagger containers | `Policy{AllowHosts, AllowCIDRs, AllowLocalNetwork, DefaultDeny}`, `Policy.Allows(host, ip)`, `NewProxy(pol)`, `Proxy.Serve(ctx, ln)` |
 | `osclient` | shared constructor for the OpenSearch v4 client across indexer/retriever/loader/memory components | `Config{URLs, Username, Password, TLSSkipVerify}`, `New(ctx, cfg, timeout)` |
-| `dagger` | wrapper around the Dagger engine client (OCI containers, shared cache volumes, egress-proxy bindings) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkdir/WithCacheVolume/WithEgressPolicy/WithUser/WithRegistryAuth`, `CacheKeyForProfile/Tool` |
+| `dagger` | wrapper around the Dagger engine client (OCI containers, shared cache volumes, egress-proxy bindings, workspace mount/export) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkspace/WithWorkdir/WithCacheVolume/WithEgressPolicy/WithUser/WithRegistryAuth`, `Client.ExportWorkspace(ctx, container, hostPath)`, `CacheKeyForProfile/Tool` |
+| `workspace` | shared session workspace layout for GitHub clones and Dagger shell sandboxes: session hashing, owner/repo resolution, path validation, touch/GC, stat-and-exist | `Layout{Root, SessionKey, RequireSession}`, `NewLayout`, `SessionDir`, `RepoDir`, `Touch`, `StartGC`, `Exists`, `ResolvePath` |
 | `profile` | project-type detection + base-image selection for Dagger-backed shell sandboxes (marker files: go.mod, package.json, pyproject.toml, pom.xml, Cargo.toml, composer.json, …) | `Profile{Name, BaseImage, SystemPrompt, InstallCmd, ToolPresets, Env}`, `Resolver{ImageMap}`, `NewResolver(opts...)`, `Resolver.Resolve(ctx, workdir)`, `DefaultImageMap`, `WithImageOverrides` |
+
+### 10.1 Workspace data flow (host clone ↔ Dagger container)
+
+The host filesystem is the single source of truth. The GitHub tools write to
+`<Root>/<session>/<owner>/<repo>`; the shell tool mounts that same directory at
+`/workspace` on every exec. Container writes are throwaway unless the call opts
+into `persistChanges`, which exports `/workspace` to a temporary directory and
+syncs the non-`.git` entries back onto the host. `.git` is mounted into the
+container but never exported back.
+
+```mermaid
+flowchart LR
+    subgraph host["Host filesystem (source of truth)"]
+        ROOT["workspace root<br/>&lt;Root&gt;/&lt;session&gt;/&lt;owner&gt;/&lt;repo&gt;"]
+        GIT[".git (live refs)"]
+        ROOT --- GIT
+    end
+
+    subgraph github["components/tool/github"]
+        CLONE["github_repo_clone"]
+        EDIT["file_write / file_edit / delete / copy / move"]
+        STATUS["status / diff"]
+        PUSH["github_commit_push (gated)"]
+    end
+
+    subgraph shell["components/tool/shell"]
+        EXEC["shell_exec<br/>owner + repo"]
+        PERSIST{"persistChanges?"}
+    end
+
+    subgraph dagger["Dagger engine"]
+        WS["/workspace mount<br/>(fresh Host().Directory on every exec)"]
+        TMP["temporary export dir"]
+    end
+
+    CLONE --> ROOT
+    EDIT --> ROOT
+    STATUS --> ROOT
+    ROOT --> PUSH
+    ROOT -->|"Host().Directory"| WS
+    EXEC --> WS
+    WS --> PERSIST
+    PERSIST -- "false (default)" --> DROP["throwaway container layer"]
+    PERSIST -- "true" --> TMP
+    TMP -->|"sync non-.git entries<br/>(deletions propagated)"| ROOT
+    GIT -. "never exported" .-> TMP
+```
 
 Other `libs/`:
 
@@ -935,6 +983,7 @@ Every new component/middleware/lib follows:
 | Prompt quality | `components/middleware/promptenhance`, `libs/promptenhance` | small-model rewrite + human confirm interrupt |
 | Agent attribution | `components/middleware/agentattr` | agent/model metadata into callback context |
 | MCP | `libs/mcp`, `components/mcp/*` | eino tools over MCP; local/OIDC auth; RBAC; elicitation approval |
+| Workspace | `libs/toolkit/workspace`, `components/tool/github`, `components/tool/shell` | host clone is the source of truth; container mounts it per exec; opt-in export excludes `.git` |
 
 ---
 
