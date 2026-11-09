@@ -229,8 +229,13 @@ func (t *CommitPushTool) push(ctx context.Context, repo *git.Repository, params 
 	case errors.Is(err, git.ErrNonFastForwardUpdate):
 		return false, errors.Errorf("push of branch %q was rejected as non-fast-forward; pull/rebase and retry (force-push is never used)", params.Branch)
 	default:
-		redacted := strings.ReplaceAll(err.Error(), tok, "***REDACTED***")
-		return false, errors.Wrap(errors.New(redacted), "failed to push branch")
+		msg := err.Error()
+		// Guard against an empty token: strings.ReplaceAll(s, "", x) would
+		// insert the marker between every character and garble the message.
+		if tok != "" {
+			msg = strings.ReplaceAll(msg, tok, "***REDACTED***")
+		}
+		return false, errors.Wrap(errors.New(msg), "failed to push branch")
 	}
 }
 

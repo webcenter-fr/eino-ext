@@ -102,8 +102,22 @@ func (t *DiffTool) Invoke(ctx context.Context, params *DiffParams) (string, erro
 		}
 	}
 
+	maxBytes := params.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultDiffMaxBytes
+	}
+
+	// Bound the buffer as it is built so a repository with many large changed
+	// files cannot exhaust memory before the final truncation (CWE-400). Each
+	// individual file is already capped by diffContents, so the buffer stays
+	// within maxBytes plus one file's diff.
 	var buf bytes.Buffer
+	truncated := false
 	for _, path := range paths {
+		if buf.Len() >= maxBytes {
+			truncated = true
+			break
+		}
 		oldContent, newContent, note := diffContents(clonePath_, headTree, path)
 		if note != "" {
 			buf.WriteString(note)
@@ -134,12 +148,10 @@ func (t *DiffTool) Invoke(ctx context.Context, params *DiffParams) (string, erro
 		}
 	}
 
-	maxBytes := params.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = defaultDiffMaxBytes
-	}
 	diffText := buf.String()
-	truncated := len(diffText) > maxBytes
+	if len(diffText) > maxBytes {
+		truncated = true
+	}
 	diffText = strutil.Truncate(diffText, maxBytes, "\n... (truncated)")
 
 	output := &DiffOutput{Diff: diffText, Truncated: truncated}
@@ -153,6 +165,11 @@ func (t *DiffTool) Invoke(ctx context.Context, params *DiffParams) (string, erro
 func diffContents(clonePath_ string, headTree *object.Tree, path string) (oldContent, newContent, note string) {
 	if headTree != nil {
 		if file, err := headTree.File(path); err == nil {
+			// Check the blob size before reading so a large committed file is
+			// never fully loaded into memory (CWE-400).
+			if file.Size > fileutil.DefaultMaxSearchFileBytes {
+				return "", "", "[skipped large file: " + path + "]"
+			}
 			if content, contentErr := file.Contents(); contentErr == nil {
 				oldContent = content
 			}
@@ -163,7 +180,12 @@ func diffContents(clonePath_ string, headTree *object.Tree, path string) (oldCon
 	if err != nil {
 		return "", "", "[skipped unsafe path: " + path + "]"
 	}
-	if _, statErr := os.Lstat(fullPath); statErr == nil {
+	if fi, statErr := os.Lstat(fullPath); statErr == nil {
+		// Check the working-tree file size before reading so a large modified
+		// or untracked file is never fully loaded into memory (CWE-400).
+		if fi.Size() > fileutil.DefaultMaxSearchFileBytes {
+			return "", "", "[skipped large file: " + path + "]"
+		}
 		safePath, safeErr := fileutil.ResolveSymlinkSafe(clonePath_, fullPath, false)
 		if safeErr != nil {
 			return "", "", "[skipped unsafe path: " + path + "]"

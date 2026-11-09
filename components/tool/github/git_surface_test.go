@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/fileutil"
 	toolkitsafety "github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
@@ -298,6 +299,28 @@ func TestDiffTruncated(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(result), &output))
 	assert.True(t, output.Truncated)
 	assert.Contains(t, output.Diff, "truncated")
+}
+
+func TestDiffSkipsLargeFile(t *testing.T) {
+	ctx := context.Background()
+	_, cloneDir := newLocalClone(t)
+	repoPath := testRepoPath(cloneDir)
+
+	// A file larger than DefaultMaxSearchFileBytes must be reported as a note
+	// and never fully read into memory (CWE-400).
+	large := make([]byte, fileutil.DefaultMaxSearchFileBytes+1)
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "big.txt"), large, 0o644))
+
+	tool, err := NewDiffTool(ctx, pullConfigs(cloneDir))
+	require.NoError(t, err)
+
+	result, err := tool.InvokableRun(ctx, `{"instance": "test", "owner": "testowner", "repo": "testrepo"}`)
+	require.NoError(t, err)
+
+	var output DiffOutput
+	require.NoError(t, json.Unmarshal([]byte(result), &output))
+	assert.Contains(t, output.Diff, "[skipped large file: big.txt]")
+	assert.False(t, output.Truncated)
 }
 
 func TestDiffClean(t *testing.T) {
