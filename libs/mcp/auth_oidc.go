@@ -15,6 +15,7 @@ import (
 type OIDCProvider struct {
 	verifier    *oidc.IDTokenVerifier
 	userClaim   string
+	subClaim    string
 	groupsClaim string
 }
 
@@ -28,6 +29,10 @@ func NewOIDCProvider(ctx context.Context, cfg *OIDCProviderConfig) (*OIDCProvide
 	userClaim := cfg.UserClaim
 	if userClaim == "" {
 		userClaim = "preferred_username"
+	}
+	subClaim := cfg.SubClaim
+	if subClaim == "" {
+		subClaim = "sub"
 	}
 	groupsClaim := cfg.GroupsClaim
 	if groupsClaim == "" {
@@ -45,7 +50,7 @@ func NewOIDCProvider(ctx context.Context, cfg *OIDCProviderConfig) (*OIDCProvide
 		}
 		verifier = provider.Verifier(verifierConfig)
 	}
-	return &OIDCProvider{verifier: verifier, userClaim: userClaim, groupsClaim: groupsClaim}, nil
+	return &OIDCProvider{verifier: verifier, userClaim: userClaim, subClaim: subClaim, groupsClaim: groupsClaim}, nil
 }
 
 // Verify implements Provider. The returned expiration is the JWT's exp claim,
@@ -63,8 +68,15 @@ func (p *OIDCProvider) Verify(ctx context.Context, token string, _ *http.Request
 	if user == "" {
 		user = idToken.Subject
 	}
+	// The subject is the stable identity used for approval/anti-phishing
+	// binding. It defaults to the OIDC "sub" claim (idToken.Subject), which is
+	// always present and verified; a custom SubClaim overrides it.
+	sub := stringClaim(claims, p.subClaim)
+	if sub == "" {
+		sub = idToken.Subject
+	}
 	return &Verification{
-		Identity:  &Identity{User: user, Groups: stringSliceClaim(claims, p.groupsClaim)},
+		Identity:  &Identity{User: user, Sub: sub, Groups: stringSliceClaim(claims, p.groupsClaim)},
 		ExpiresAt: idToken.Expiry,
 		Scopes:    scopeClaim(claims),
 	}, nil

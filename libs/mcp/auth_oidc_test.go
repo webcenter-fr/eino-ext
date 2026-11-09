@@ -118,6 +118,40 @@ func TestOIDCProviderClaimsMapping(t *testing.T) {
 	assert.Equal(t, []string{"admin"}, v.Identity.Groups)
 }
 
+func TestOIDCProviderSubClaim(t *testing.T) {
+	idp := newTestIDP(t)
+	// Default: Sub is the OIDC "sub" claim, distinct from User (preferred_username).
+	p, err := NewOIDCProvider(context.Background(), &OIDCProviderConfig{
+		Issuer:   idp.issuer(),
+		Audience: "mcp-server",
+	})
+	require.NoError(t, err)
+	v, err := p.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+		"sub": "user-123", "preferred_username": "alice",
+	}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "alice", v.Identity.User)
+	assert.Equal(t, "user-123", v.Identity.Sub, "Sub must be the OIDC sub, not the display name")
+
+	// Custom SubClaim is honored.
+	p2, err := NewOIDCProvider(context.Background(), &OIDCProviderConfig{
+		Issuer:   idp.issuer(),
+		Audience: "mcp-server",
+		SubClaim: "email",
+	})
+	require.NoError(t, err)
+	v, err = p2.Verify(context.Background(), idp.sign(t, jwt.MapClaims{
+		"sub": "user-123", "email": "alice@example.com",
+	}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "alice@example.com", v.Identity.Sub)
+
+	// Missing SubClaim → falls back to the verified OIDC sub.
+	v, err = p2.Verify(context.Background(), idp.sign(t, jwt.MapClaims{"sub": "user-42"}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "user-42", v.Identity.Sub)
+}
+
 func TestOIDCProviderScopeClaimArray(t *testing.T) {
 	// Some issuers send the scope claim as a JSON array instead of a
 	// space-separated string.

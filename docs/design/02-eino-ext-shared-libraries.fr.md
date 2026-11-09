@@ -156,7 +156,7 @@ l'application hôte portée dans `context.Context` — jamais l'argument
 | Fichier | Contenu |
 |---|---|
 | `types.go` | `OperationType` (create/update/delete/sync/exec), `Phase` (`read`/`dry-run`/`execute`/`rejected`), `MutabilityLevel` |
-| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata}`, interface `AuditSink`, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (bufferisé, non bloquant) |
+| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata, ApprovalID, ApproverSub, JTI, Decision, Policy, ArgsHash, ArgsTruncated}`, interface `AuditSink`, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (bufferisé, non bloquant) |
 | `policy.go` | interface `Policy` (`Evaluate(ctx, toolName, params)`), `CELPolicy` + `CELRule{Name, Expression, ToolNames}` (cel-go), `PolicyChain` (premier échec arrête) |
 | `gate.go` | `GateParams{DryRun, Confirmed}`, `ExtractGateParams(rawJSON)`, `NewWriteToolSet(names)`, `ShouldGateWithAuthorization(ctx, toolName, writeTools, gp, args, auth)`, `ErrGateRequired`, `DryRunGuidance` (texte de guidage exporté, ajouté aux résultats dry-run) |
 | `authorization.go` | interface `ExecutionAuthorizer` (`AuthorizeExecute(ctx, toolName, args) error` — DOIT dériver la décision d'un état serveur, jamais des args), `ErrExecutionNotAuthorized` (sentinelle fail-closed), `WithExecutionAuthorized(ctx, toolName)`, `ExecutionAuthorizedFor(ctx, toolName)` |
@@ -832,9 +832,17 @@ components/mcp/            — serveurs MCP par famille (extension spécifique a
   acceptation → `safety.WithExecutionAuthorized(ctx, toolName)` → le
   `confirm.RequireConfirmationCtx` de l'outil passe → exécution. Refus/annulation/
   timeout/client sans élicitation → fail closed (outils d'écriture en dry-run
-  seul). `AllowModelConfirmation` **n'est pas** câblé.
+  seul). `AllowModelConfirmation` **n'est pas** câblé. Quand
+  `Config.Approval.Service` est défini, l'authorizer par défaut devient
+  `ApprovalURLAuthorizer` (approbation hors bande dans un navigateur avec reçu
+  signé) ; voir
+  [`03-mcp-hard-approval.fr.md`](./03-mcp-hard-approval.fr.md).
 - **Audit :** chaque appel émet un `safety.AuditEvent` (phase
   read/dry-run/execute/rejected + métadonnées d'identité) via `safety.AuditSink`.
+  Les appels d'écriture enregistrent aussi `argsHash`/`argsTruncated` ; le
+  chemin service émet des événements séparés
+  `approval-requested`/`approval-granted`/`approval-denied`/`approval-expired`
+  avec `approvalId`, `approverSub`, `jti`, `decision` et `policy`.
 - **Politique CEL :** `safety.Policy` évaluée à chaque appel.
 
 ### 12.3 AuthN — par fournisseur
@@ -849,14 +857,16 @@ go-sdk ; les fournisseurs implémentent `auth.TokenVerifier` :
 - **`oidc`** — vérifie les tokens d'accès JWT émis par un OIDC avec
   `github.com/coreos/go-oidc/v3` (signature JWKS, issuer, audience, expiry) ;
   claims → identité (`UserClaim` défaut `preferred_username`, repli `sub` ;
-  `GroupsClaim` défaut `groups`) ; le claim `scope` → les scopes du token.
+  `SubClaim` défaut `sub` ; `GroupsClaim` défaut `groups`) ; le claim `scope` →
+  les scopes du token.
 
-Identité = `{User, Groups}`, portée dans `auth.TokenInfo` (`UserID` + `Extra`).
-Les scopes du token (`LocalToken.Scopes` en local, le claim `scope` en OIDC)
-sont portés dans `auth.TokenInfo.Scopes` et vérifiés contre
-`AuthConfig.RequiredScopes` par le middleware du SDK (403 avant tout handler).
-Stdio = processus local de confiance → `Config.LocalIdentity` (toujours soumis au
-RBAC).
+Identité = `{User, Sub, Groups}`, portée dans `auth.TokenInfo` (`UserID` +
+`Extra`). `Sub` est le sujet stable (le `sub` OIDC) utilisé pour la liaison
+d'approbation/anti-hameçonnage ; `User` reste le nom d'affichage. Les scopes du
+token (`LocalToken.Scopes` en local, le claim `scope` en OIDC) sont portés dans
+`auth.TokenInfo.Scopes` et vérifiés contre `AuthConfig.RequiredScopes` par le
+middleware du SDK (403 avant tout handler). Stdio = processus local de confiance
+→ `Config.LocalIdentity` (toujours soumis au RBAC).
 
 ### 12.4 AuthZ — RBAC
 
@@ -1160,7 +1170,7 @@ L'attribution session/agent est lue depuis le ctx (`activity.WithSession`,
 Par `tools/call`, le handler (`makeHandler`) exécute :
 
 1. **Identité** : `req.Extra.TokenInfo` (bearer HTTP, vérifié par
-   `auth.RequireBearerToken`) → `Identity{User, Groups}` ; sinon
+   `auth.RequireBearerToken`) → `Identity{User, Sub, Groups}` ; sinon
    `Config.LocalIdentity` (stdio).
 2. **AuthZ** : extraire l'argument d'instance (`Config.InstanceParam` =
    `cluster`/`instance`) depuis les args bruts ;
@@ -1178,9 +1188,17 @@ Par `tools/call`, le handler (`makeHandler`) exécute :
      args complets) ; `accept` →
      `safety.WithExecutionAuthorized(ctx, toolName)` ; tout le reste
      (refus/annulation/timeout/pas de capacité d'élicitation) → fail closed.
-     Les args de plus de 4000 octets sont rejetés **sans** élicitation : le
-     humain ne pourrait lire qu'un préfixe tronqué alors que la charge complète
-     s'exécuterait — l'approbation doit couvrir exactement ce qui sera exécuté.
+     Il n'y a **aucune** limite de rejet sur la taille des args : l'invite
+     affiche jusqu'à `ApprovalDisplayBudget` (4000) octets et, au-delà, indique
+     `showing N of M bytes — remainder NOT displayed` ainsi que l'`argsHash`
+     complet. L'événement d'audit enregistre `argsHash` et `argsTruncated`.
+   - Quand `Config.Approval.Service` est défini, l'authorizer par défaut est
+     `ApprovalURLAuthorizer` : il enregistre l'approbation auprès du service
+     autonome, déclenche l'élicitation d'URL (ou renvoie une erreur d'outil avec
+     l'URL + `approvalId`), interroge la décision en long-poll et vérifie un reçu
+     signé lié à l'`argsHash` canonique. Il fail closed et ne retombe jamais sur
+     l'élicitation. Voir
+     [`03-mcp-hard-approval.fr.md`](./03-mcp-hard-approval.fr.md).
    - ni l'un ni l'autre → `ErrGateRequired`.
 5. **Exécution** : `tool.InvokableRun(execCtx, args)` ; le
    `confirm.RequireConfirmationCtx` de l'outil revérifie le grant.

@@ -152,7 +152,7 @@ Three layers, all reused by the MCP servers (§12). The core invariant:
 | File | Contents |
 |---|---|
 | `types.go` | `OperationType` (create/update/delete/sync/exec), `Phase` (`read`/`dry-run`/`execute`/`rejected`), `MutabilityLevel` |
-| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata}`, `AuditSink` interface, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (buffered, non-blocking) |
+| `audit.go` | `AuditEvent{Timestamp, ToolName, CallID, Phase, Operation, Arguments, Result, Error, PolicyPass, Metadata, ApprovalID, ApproverSub, JTI, Decision, Policy, ArgsHash, ArgsTruncated}`, `AuditSink` interface, `AuditSinkFunc`, `LogSink` (logrus), `ChannelSink` (buffered, non-blocking) |
 | `policy.go` | `Policy` interface (`Evaluate(ctx, toolName, params)`), `CELPolicy` + `CELRule{Name, Expression, ToolNames}` (cel-go), `PolicyChain` (first failure stops) |
 | `gate.go` | `GateParams{DryRun, Confirmed}`, `ExtractGateParams(rawJSON)`, `NewWriteToolSet(names)`, `ShouldGateWithAuthorization(ctx, toolName, writeTools, gp, args, auth)`, `ErrGateRequired`, `DryRunGuidance` (exported guidance text appended to dry-run results) |
 | `authorization.go` | `ExecutionAuthorizer` interface (`AuthorizeExecute(ctx, toolName, args) error` — MUST derive the decision from server-side state, never from args), `ErrExecutionNotAuthorized` (fail-closed sentinel), `WithExecutionAuthorized(ctx, toolName)`, `ExecutionAuthorizedFor(ctx, toolName)` |
@@ -812,9 +812,15 @@ components/mcp/            — per-family MCP servers (project-specific extensio
   accept → `safety.WithExecutionAuthorized(ctx, toolName)` → the tool's
   `confirm.RequireConfirmationCtx` passes → executes. Decline/cancel/timeout/
   client without elicitation → fail closed (write tools are dry-run only).
-  `AllowModelConfirmation` is **not** wired.
+  `AllowModelConfirmation` is **not** wired. When `Config.Approval.Service` is
+  set, the default authorizer becomes `ApprovalURLAuthorizer` (out-of-band
+  browser approval with a signed receipt); see
+  [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
 - **Audit:** every call emits a `safety.AuditEvent` (phase read/dry-run/execute/
-  rejected + identity metadata) via `safety.AuditSink`.
+  rejected + identity metadata) via `safety.AuditSink`. Write calls also record
+  `argsHash`/`argsTruncated`; the service path emits separate
+  `approval-requested`/`approval-granted`/`approval-denied`/`approval-expired`
+  events with `approvalId`, `approverSub`, `jti`, `decision` and `policy`.
 - **CEL policy:** `safety.Policy` evaluated on every call.
 
 ### 12.3 AuthN — provider-based
@@ -829,13 +835,16 @@ middleware; providers implement `auth.TokenVerifier`:
 - **`oidc`** — verifies OIDC-issued JWT access tokens with
   `github.com/coreos/go-oidc/v3` (JWKS signature, issuer, audience, expiry);
   claims → identity (`UserClaim` default `preferred_username`, fallback `sub`;
-  `GroupsClaim` default `groups`); the `scope` claim → the token's scopes.
+  `SubClaim` default `sub`; `GroupsClaim` default `groups`); the `scope` claim →
+  the token's scopes.
 
-Identity = `{User, Groups}`, carried in `auth.TokenInfo` (`UserID` + `Extra`).
-Token scopes (`LocalToken.Scopes` for local, the `scope` claim for OIDC) are
-carried in `auth.TokenInfo.Scopes` and checked against
-`AuthConfig.RequiredScopes` by the SDK middleware (403 before any handler).
-Stdio = trusted local process → `Config.LocalIdentity` (still subject to RBAC).
+Identity = `{User, Sub, Groups}`, carried in `auth.TokenInfo` (`UserID` +
+`Extra`). `Sub` is the stable subject (OIDC `sub`) used for approval/anti-phishing
+binding; `User` stays the display name. Token scopes (`LocalToken.Scopes` for
+local, the `scope` claim for OIDC) are carried in `auth.TokenInfo.Scopes` and
+checked against `AuthConfig.RequiredScopes` by the SDK middleware (403 before any
+handler). Stdio = trusted local process → `Config.LocalIdentity` (still subject
+to RBAC).
 
 ### 12.4 AuthZ — RBAC
 
@@ -1124,7 +1133,7 @@ Session/agent attribution is read from the ctx (`activity.WithSession`,
 Per `tools/call`, the handler (`makeHandler`) runs:
 
 1. **Identity**: `req.Extra.TokenInfo` (HTTP bearer, verified by
-   `auth.RequireBearerToken`) → `Identity{User, Groups}`; else
+   `auth.RequireBearerToken`) → `Identity{User, Sub, Groups}`; else
    `Config.LocalIdentity` (stdio).
 2. **AuthZ**: extract the instance arg (`Config.InstanceParam` =
    `cluster`/`instance`) from the raw args;
@@ -1141,9 +1150,17 @@ Per `tools/call`, the handler (`makeHandler`) runs:
      built from the **actual args** (tool, target instance, user, complete
      args); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
      anything else (decline/cancel/timeout/no-elicitation-capability) → fail
-     closed. Args larger than 4000 bytes are rejected **without** eliciting:
-     the human could only review a truncated prefix while the full payload
-     would execute, so the approval must cover exactly what will run.
+     closed. There is **no** argument-size rejection limit: the prompt renders
+     up to `ApprovalDisplayBudget` (4000) bytes and, when the payload is larger,
+     discloses `showing N of M bytes — remainder NOT displayed` plus the full
+     `argsHash`. The audit event records `argsHash` and `argsTruncated`.
+   - When `Config.Approval.Service` is set, the default authorizer is
+     `ApprovalURLAuthorizer` instead: it registers the approval with the
+     standalone service, elicits the URL (or returns a tool error carrying the
+     URL + `approvalId`), long-polls the decision, and verifies a signed receipt
+     bound to the canonical `argsHash`. It fails closed and never downgrades to
+     elicitation. See
+     [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
    - neither → `ErrGateRequired`.
 5. **Execute**: `tool.InvokableRun(execCtx, args)`; the tool's
    `confirm.RequireConfirmationCtx` re-checks the grant.

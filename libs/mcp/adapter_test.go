@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	mcpapproval "github.com/webcenter-fr/eino-ext/libs/mcp/approval"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
@@ -23,7 +25,7 @@ func TestInputSchemaJSON(t *testing.T) {
 			"dryRun":  {Type: schema.Boolean, Desc: "preview only"},
 		}),
 	}
-	m, err := inputSchemaJSON(info)
+	m, err := inputSchemaJSON(info, true)
 	require.NoError(t, err)
 	schemaMap, ok := m.(map[string]any)
 	require.True(t, ok)
@@ -32,10 +34,11 @@ func TestInputSchemaJSON(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, props, "cluster")
 	assert.Contains(t, props, "dryRun")
+	assert.Contains(t, props, "approvalId")
 	assert.Contains(t, schemaMap["required"], "cluster")
 
 	// Tool without params (nil ParamsOneOf) → empty object schema.
-	m, err = inputSchemaJSON(&schema.ToolInfo{Name: "no_params"})
+	m, err = inputSchemaJSON(&schema.ToolInfo{Name: "no_params"}, false)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"type": "object"}, m)
 }
@@ -324,4 +327,62 @@ func TestHandlerAuditIdentityMetadata(t *testing.T) {
 	event := nextAuditEvent(t, sink)
 	assert.Equal(t, "alice", event.Metadata["user"])
 	assert.Equal(t, "dev", event.Metadata["groups"])
+}
+
+func TestHandlerStripsApprovalID(t *testing.T) {
+	var gotArgs string
+	ft := &fakeTool{name: "write_tool", run: func(_ context.Context, args string) (string, error) {
+		gotArgs = args
+		return "ok", nil
+	}}
+	s := newTestServer(t, &Config{
+		Tools:               []tool.InvokableTool{ft},
+		WriteTools:          []string{"write_tool"},
+		ExecutionAuthorizer: stubAuthorizer{},
+		AuditSink:           newTestSink(t),
+	})
+	cs := connectInMemory(t, s, nil, nil)
+	res := callTool(t, cs, "write_tool", map[string]any{
+		"cluster": "prod", "confirmed": true, "approvalId": "a1",
+	})
+	assert.False(t, res.IsError)
+	assert.NotContains(t, gotArgs, "approvalId")
+	assert.Contains(t, gotArgs, "cluster")
+}
+
+func TestAuditApprovalPhases(t *testing.T) {
+	sink := newTestSink(t)
+	s := newTestServer(t, &Config{AuditSink: sink})
+	ctx := context.Background()
+	args := json.RawMessage(`{"cluster":"prod"}`)
+
+	read := func() safety.AuditEvent {
+		t.Helper()
+		select {
+		case event := <-sink.Events():
+			return event
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for approval audit event")
+			return safety.AuditEvent{}
+		}
+	}
+
+	// Granted: a verified receipt is present and there is no error.
+	s.auditApproval(ctx, "write_tool", "call1", args, "", &ApprovalURLAuthorizer{
+		lastReceipt: &mcpapproval.ReceiptClaims{ApprovalID: "a1", ApproverSub: "bob", Decision: "approve"},
+	}, nil)
+	ev := read()
+	assert.Equal(t, safety.PhaseApprovalGranted, ev.Phase)
+	assert.Equal(t, "a1", ev.ApprovalID)
+	assert.Equal(t, "bob", ev.ApproverSub)
+
+	// Expired: the decision wait ended in expiry/timeout.
+	s.auditApproval(ctx, "write_tool", "call2", args, "", &ApprovalURLAuthorizer{expired: true}, errors.New("expired"))
+	ev = read()
+	assert.Equal(t, safety.PhaseApprovalExpired, ev.Phase)
+
+	// Denied: any other failure.
+	s.auditApproval(ctx, "write_tool", "call3", args, "", &ApprovalURLAuthorizer{}, errors.New("denied"))
+	ev = read()
+	assert.Equal(t, safety.PhaseApprovalDenied, ev.Phase)
 }

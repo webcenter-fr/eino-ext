@@ -53,7 +53,7 @@ func (p *LocalProvider) Verify(_ context.Context, token string, _ *http.Request)
 	for i, t := range p.tokens {
 		if subtle.ConstantTimeCompare(p.digests[i][:], presented[:]) == 1 {
 			return &Verification{
-				Identity:  &Identity{User: t.User, Groups: append([]string(nil), t.Groups...)},
+				Identity:  &Identity{User: t.User, Sub: t.User, Groups: append([]string(nil), t.Groups...)},
 				ExpiresAt: time.Time{},
 				Scopes:    append([]string(nil), t.Scopes...),
 			}, nil

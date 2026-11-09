@@ -99,6 +99,11 @@ type OIDCProviderConfig struct {
 	// UserClaim is the JWT claim mapped to Identity.User. Default
 	// "preferred_username"; falls back to "sub" when empty.
 	UserClaim string `validate:"omitempty" jsonschema:"description=JWT claim mapped to Identity.User (default 'preferred_username', fallback 'sub')"`
+	// SubClaim is the JWT claim mapped to Identity.Sub (the stable subject used
+	// for approval/anti-phishing binding). Default "sub". It must match the
+	// approval service's OIDC subject so the default self-approve policy can
+	// compare like-for-like.
+	SubClaim string `validate:"omitempty" jsonschema:"description=JWT claim mapped to Identity.Sub (default 'sub'; must match the approval service's OIDC subject)"`
 	// GroupsClaim is the JWT claim mapped to Identity.Groups. Default "groups".
 	GroupsClaim string `validate:"omitempty" jsonschema:"description=JWT claim mapped to Identity.Groups (default 'groups')"`
 	// JWKSURL overrides the JWKS endpoint (default: from issuer discovery).
@@ -135,4 +140,34 @@ type ApprovalConfig struct {
 	// duration string, e.g. "5m"). Default "5m". On timeout the write is
 	// rejected (fail closed).
 	Timeout string `validate:"omitempty" jsonschema:"description=Max time to wait for the human approval decision (Go duration, e.g. '5m'). Default '5m'. On timeout the write is rejected (fail closed)"`
+	// Service configures the standalone approval service. When set, the
+	// default authorizer becomes ApprovalURLAuthorizer (out-of-band browser
+	// approval). When nil, the default remains ElicitationAuthorizer.
+	Service *ApprovalServiceConfig `validate:"omitempty" jsonschema:"description=Standalone approval service (out-of-band browser approval)"`
+}
+
+// ApprovalServiceConfig configures the REST client to the standalone approval
+// service.
+type ApprovalServiceConfig struct {
+	// URL is the approval service base URL.
+	URL string `validate:"required,url" jsonschema:"(required) Approval service base URL"`
+	// ServerName is the MCP server name asserted to the approval service. It
+	// must match the credential's binding.
+	ServerName string `validate:"required" jsonschema:"(required) MCP server name asserted to the approval service"`
+	// ServerToken is the per-server bearer token. Hidden from JSON schema.
+	ServerToken string `validate:"required" json:"-" jsonschema:"(required) Per-server bearer token"`
+	// ReceiptSecret is the HS256 shared secret used to verify receipts.
+	ReceiptSecret string `validate:"required_without=ReceiptPrivateKeyPEM" json:"-" jsonschema:"description=HS256 receipt secret"`
+	// ReceiptPrivateKeyPEM is the PEM private key for RS256/EdDSA receipts.
+	ReceiptPrivateKeyPEM string `validate:"required_without=ReceiptSecret" json:"-" jsonschema:"description=PEM private key for RS256/EdDSA receipts"`
+	// ReceiptKeyID is the JWT kid header.
+	ReceiptKeyID string `validate:"omitempty" jsonschema:"description=Receipt JWT key id"`
+	// ReceiptAlgorithm is HS256 (default), RS256 or EdDSA.
+	ReceiptAlgorithm string `validate:"omitempty,oneof=HS256 RS256 EdDSA" jsonschema:"description=Receipt algorithm (default 'HS256')"`
+	// PollInterval is the delay between long-poll slices. Default 250ms.
+	PollInterval string `validate:"omitempty" jsonschema:"description=Long-poll slice interval (default '250ms')"`
+	// RequestTimeout is the per-request HTTP timeout. Default 35s.
+	RequestTimeout string `validate:"omitempty" jsonschema:"description=Per-request HTTP timeout (default '35s')"`
+	// TTL is the approval record TTL requested from the service. Default 15m.
+	TTL string `validate:"omitempty" jsonschema:"description=Approval record TTL (default '15m')"`
 }

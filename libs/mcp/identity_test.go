@@ -37,6 +37,32 @@ func TestIdentityFromTokenInfo(t *testing.T) {
 	}
 }
 
+func TestIdentityFromTokenInfoSub(t *testing.T) {
+	// The subject is carried in Extra["sub"] and kept distinct from User.
+	id := identityFromTokenInfo(&auth.TokenInfo{
+		UserID: "alice",
+		Extra:  map[string]any{"sub": "user-123", "groups": []string{"dev"}},
+	})
+	if assert.NotNil(t, id) {
+		assert.Equal(t, "alice", id.User)
+		assert.Equal(t, "user-123", id.Sub)
+		assert.Equal(t, "user-123", id.Subject())
+	}
+
+	// Missing sub → Subject() falls back to User.
+	id = identityFromTokenInfo(&auth.TokenInfo{UserID: "bob"})
+	if assert.NotNil(t, id) {
+		assert.Empty(t, id.Sub)
+		assert.Equal(t, "bob", id.Subject())
+	}
+}
+
+func TestIdentitySubject(t *testing.T) {
+	assert.Equal(t, "", (*Identity)(nil).Subject())
+	assert.Equal(t, "alice", (&Identity{User: "alice"}).Subject())
+	assert.Equal(t, "user-123", (&Identity{User: "alice", Sub: "user-123"}).Subject())
+}
+
 func TestIdentityCacheKey(t *testing.T) {
 	assert.Equal(t, "anonymous", identityCacheKey(nil))
 

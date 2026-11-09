@@ -10,8 +10,27 @@ import (
 
 // Identity is the authenticated caller.
 type Identity struct {
-	User   string   `json:"user"`
+	// User is the display name (e.g. preferred_username, or the local token
+	// user). It is used for RBAC and audit display.
+	User string `json:"user"`
+	// Sub is the stable subject (the OIDC "sub" claim) used for approval and
+	// anti-phishing binding. It may be empty for identities without a distinct
+	// subject (local tokens); Subject() falls back to User in that case.
+	Sub    string   `json:"sub,omitempty"`
 	Groups []string `json:"groups,omitempty"`
+}
+
+// Subject returns the identity's subject for approval/anti-phishing binding.
+// It is the OIDC sub when available, falling back to User for identities
+// without a distinct subject (local tokens, or a LocalIdentity with no Sub).
+func (id *Identity) Subject() string {
+	if id == nil {
+		return ""
+	}
+	if id.Sub != "" {
+		return id.Sub
+	}
+	return id.User
 }
 
 // identityFromTokenInfo builds an Identity from the SDK's auth.TokenInfo.
@@ -21,6 +40,9 @@ func identityFromTokenInfo(ti *auth.TokenInfo) *Identity {
 		return nil
 	}
 	id := &Identity{User: ti.UserID}
+	if sub, ok := ti.Extra["sub"].(string); ok {
+		id.Sub = sub
+	}
 	switch g := ti.Extra["groups"].(type) {
 	case []string:
 		id.Groups = g

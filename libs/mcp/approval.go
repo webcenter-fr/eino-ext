@@ -9,11 +9,15 @@ import (
 	emperrors "emperror.dev/errors"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	mcpapproval "github.com/webcenter-fr/eino-ext/libs/mcp/approval"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 )
 
-// maxApprovalArgsLen truncates the arguments shown in the approval message.
-const maxApprovalArgsLen = 4000
+// ApprovalDisplayBudget is the number of argument bytes rendered in the
+// elicitation prompt. It is a display budget, not a rejection limit: larger
+// payloads are still approvable, with the withheld amount disclosed and the
+// full argsHash shown.
+const ApprovalDisplayBudget = 4000
 
 // ErrApprovalDenied is returned when the human declines or cancels the approval.
 var ErrApprovalDenied = emperrors.New("mcp: write execution was not approved by the user")
@@ -42,16 +46,6 @@ func (a *ElicitationAuthorizer) AuthorizeExecute(ctx context.Context, toolName s
 		return emperrors.Wrap(safety.ErrExecutionNotAuthorized,
 			"client does not support elicitation; write tools are limited to dry-run")
 	}
-	// Fail closed on oversized arguments: the approval prompt can only show a
-	// truncated prefix, so the human would approve a payload they cannot fully
-	// review while the full arguments execute. The invariant is that the human
-	// approves exactly what will run — when that is impossible, deny.
-	if len(args) > maxApprovalArgsLen {
-		return emperrors.Wrapf(safety.ErrExecutionNotAuthorized,
-			"arguments are %d bytes, exceeding the maximum approvable size of %d bytes; "+
-				"the approval prompt cannot show the full payload, so execution is denied (fail closed)",
-			len(args), maxApprovalArgsLen)
-	}
 	if a.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, a.timeout)
@@ -79,23 +73,30 @@ func resAction(res *mcpsdk.ElicitResult) string {
 }
 
 // buildApprovalMessage builds the human-readable approval prompt. It shows the
-// ACTUAL arguments of the execution call, never a stale preview. Arguments are
-// truncated at maxApprovalArgsLen as defense in depth — AuthorizeExecute
-// rejects oversized arguments before eliciting, so the human always reviews
-// the complete payload that will execute.
+// ACTUAL arguments of the execution call, never a stale preview. When the
+// payload exceeds ApprovalDisplayBudget the prompt discloses exactly how many
+// bytes are withheld and shows the full argsHash, so consent stays informed
+// and auditable without blocking legitimate work.
 func buildApprovalMessage(id *Identity, toolName, instance string, args json.RawMessage) string {
 	user := "anonymous"
 	if id != nil && id.User != "" {
 		user = id.User
 	}
 	argsStr := string(args)
-	if len(argsStr) > maxApprovalArgsLen {
-		argsStr = argsStr[:maxApprovalArgsLen] + "… (truncated)"
+	hash, err := mcpapproval.ArgsHash(args)
+	if err != nil {
+		hash = "unavailable"
 	}
 	msg := fmt.Sprintf("Approve write operation?\n\nTool: %s\nUser: %s", toolName, user)
 	if instance != "" {
 		msg += fmt.Sprintf("\nTarget: %s", instance)
 	}
-	msg += fmt.Sprintf("\nArguments: %s", argsStr)
+	if len(argsStr) > ApprovalDisplayBudget {
+		msg += fmt.Sprintf("\nArguments (showing %d of %d bytes — remainder NOT displayed):\n%s",
+			ApprovalDisplayBudget, len(argsStr), argsStr[:ApprovalDisplayBudget])
+	} else {
+		msg += fmt.Sprintf("\nArguments:\n%s", argsStr)
+	}
+	msg += fmt.Sprintf("\nSHA-256 of full arguments: %s", hash)
 	return msg
 }

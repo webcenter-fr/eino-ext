@@ -48,12 +48,12 @@ func tokenVerifier(providers []Provider) auth.TokenVerifier {
 				if expiresAt.IsZero() {
 					expiresAt = neverExpires
 				}
-				return &auth.TokenInfo{
-					UserID:     v.Identity.User,
-					Expiration: expiresAt,
-					Scopes:     v.Scopes,
-					Extra:      map[string]any{"groups": v.Identity.Groups},
-				}, nil
+return &auth.TokenInfo{
+				UserID:     v.Identity.User,
+				Expiration: expiresAt,
+				Scopes:     v.Scopes,
+				Extra:      map[string]any{"groups": v.Identity.Groups, "sub": v.Identity.Sub},
+			}, nil
 			}
 		}
 		return nil, emperrors.Wrap(auth.ErrInvalidToken, "no auth provider accepted the token")

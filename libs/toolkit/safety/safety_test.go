@@ -1,11 +1,13 @@
 package safety
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -113,6 +115,28 @@ func TestLogSink(t *testing.T) {
 	// LogSink should not error.
 	if err := sink.Write(context.Background(), AuditEvent{ToolName: "test", Phase: PhaseRead}); err != nil {
 		t.Fatalf("Write: %v", err)
+	}
+}
+
+func TestLogSinkLogsArgsHashAndTruncated(t *testing.T) {
+	var buf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&buf)
+	defer logrus.SetOutput(oldOut)
+
+	sink := &LogSink{}
+	if err := sink.Write(context.Background(), AuditEvent{
+		ToolName: "write_tool", Phase: PhaseExecute,
+		ArgsHash: "abc123", ArgsTruncated: true,
+	}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "audit_argshash=abc123") {
+		t.Fatalf("expected argsHash in log output, got: %s", out)
+	}
+	if !strings.Contains(out, "audit_argstruncated=true") {
+		t.Fatalf("expected argsTruncated in log output, got: %s", out)
 	}
 }
 

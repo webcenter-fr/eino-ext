@@ -12,6 +12,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
 
+	mcpapproval "github.com/webcenter-fr/eino-ext/libs/mcp/approval"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/safety"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
@@ -24,6 +25,8 @@ type Server struct {
 	providers       []Provider
 	writeTools      map[string]bool
 	approvalTimeout time.Duration
+	approvalTTL     time.Duration
+	approvalClient  *mcpapproval.Client
 	impl            *mcpsdk.Implementation
 
 	mu      sync.Mutex
@@ -71,6 +74,19 @@ func NewServer(ctx context.Context, cfg *Config) (*Server, error) {
 			return nil, emperrors.Errorf("invalid approval timeout %q: must be positive", cfg.Approval.Timeout)
 		}
 		s.approvalTimeout = d
+	}
+
+	if cfg.Approval != nil && cfg.Approval.Service != nil {
+		client, err := newApprovalClient(cfg.Approval.Service)
+		if err != nil {
+			return nil, err
+		}
+		s.approvalClient = client
+		ttl, err := parseOptionalDuration(cfg.Approval.Service.TTL, 0)
+		if err != nil {
+			return nil, emperrors.Wrap(err, "invalid approval service TTL")
+		}
+		s.approvalTTL = ttl
 	}
 
 	if cfg.Authorization != nil {

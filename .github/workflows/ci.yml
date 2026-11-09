@@ -45,6 +45,21 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash scripts/check_components.sh
 
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+          cache-dependency-path: server/approval/ui/package-lock.json
+      - name: Build approval UI
+        working-directory: server/approval/ui
+        run: npm ci && npm run build
+      - name: Fail if committed dist is stale
+        run: git diff --exit-code -- server/approval/ui/dist
+
   integration-test:
     runs-on: ubuntu-latest
     steps:

@@ -85,16 +85,26 @@ func newTestSink(t *testing.T) *safety.ChannelSink {
 	return sink
 }
 
-// nextAuditEvent returns the next audit event from the sink (fails the test on
-// timeout).
+// nextAuditEvent returns the next tool-call audit event from the sink, skipping
+// the approval lifecycle events (which are emitted separately). It fails the
+// test on timeout.
 func nextAuditEvent(t *testing.T, sink *safety.ChannelSink) safety.AuditEvent {
 	t.Helper()
-	select {
-	case event := <-sink.Events():
-		return event
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for audit event")
-		return safety.AuditEvent{}
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case event := <-sink.Events():
+			switch event.Phase {
+			case safety.PhaseApprovalRequested, safety.PhaseApprovalGranted,
+				safety.PhaseApprovalDenied, safety.PhaseApprovalExpired:
+				continue
+			default:
+				return event
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for audit event")
+			return safety.AuditEvent{}
+		}
 	}
 }
 
