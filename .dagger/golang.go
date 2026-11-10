@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	envtestK8sVersion = "1.34.0"
-	golangciLintTag   = "v2.12.0"
+	envtestK8sVersion  = "1.34.0"
+	golangciLintTag    = "v2.12.0"
+	govulncheckVersion = "v1.9.0"
 )
 
 // golang returns the upstream Golang module with the repository source and a
@@ -64,12 +65,13 @@ func (m *EinoExt) Test(ctx context.Context) *dagger.File {
 	return container.File("coverage.out")
 }
 
-// Vulncheck installs the latest govulncheck with the container's Go toolchain.
+// Vulncheck installs a pinned govulncheck with the container's Go toolchain.
 // The upstream Vulncheck reuses a cached binary built with the go.mod
-// toolchain, which fails when the base image is newer.
+// toolchain, which fails when the base image is newer. The version is pinned
+// (not @latest) so the supply chain is reproducible.
 func (m *EinoExt) Vulncheck(ctx context.Context) (string, error) {
 	return m.goContainer().
-		WithExec([]string{"bash", "-c", "GOBIN=/usr/local/bin go install golang.org/x/vuln/cmd/govulncheck@latest"}).
+		WithExec([]string{"bash", "-c", "GOBIN=/usr/local/bin go install golang.org/x/vuln/cmd/govulncheck@" + govulncheckVersion}).
 		WithExec([]string{"/usr/local/bin/govulncheck", "./..."}).
 		Stdout(ctx)
 }

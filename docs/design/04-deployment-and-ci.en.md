@@ -82,6 +82,10 @@ The chart fails at render time when:
 - A family is enabled with zero clusters/instances.
 - `mcp.auth.enabled` is false while `allowWrite` or `allowExec` is true.
 - OIDC is enabled without an issuer or client ID.
+- OIDC is enabled without a client secret (a generated secret cannot
+  authenticate to the IdP).
+- The `file` store is selected with `persistence.enabled: false` (the root
+  filesystem is read-only and no volume is mounted at the store path).
 - A required `existingSecret` key is missing (checked with `lookup` when a
   cluster is available).
 

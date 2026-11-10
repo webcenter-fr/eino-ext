@@ -90,6 +90,11 @@ Le chart échoue au rendu lorsque :
 - Une famille est activée sans cluster/instance.
 - `mcp.auth.enabled` est faux alors que `allowWrite` ou `allowExec` est vrai.
 - OIDC est activé sans issuer ni client ID.
+- OIDC est activé sans client secret (un secret généré ne peut pas
+  s'authentifier auprès de l'IdP).
+- Le store `file` est sélectionné avec `persistence.enabled: false` (le
+  filesystem racine est en lecture seule et aucun volume n'est monté sur le
+  chemin du store).
 - Une clé obligatoire manque dans un `existingSecret` (vérifié via `lookup`
   quand un cluster est disponible).
 

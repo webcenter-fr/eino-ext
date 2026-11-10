@@ -37,13 +37,15 @@ mkdir -p /out
 helm template t . > /out/default.yaml
 for f in tests/values-*.yaml; do
   name=$(basename "$f" .yaml)
-  if [ "$name" = "values-memory-multi-replica" ]; then
-    if helm template t . -f "$f" >/dev/null 2>&1; then
-      echo "GUARD BROKEN: $f must fail" >&2
-      exit 1
-    fi
-    continue
-  fi
+  case "$name" in
+    values-memory-multi-replica|values-file-no-persistence|values-oidc-no-secret)
+      if helm template t . -f "$f" >/dev/null 2>&1; then
+        echo "GUARD BROKEN: $f must fail" >&2
+        exit 1
+      fi
+      continue
+      ;;
+  esac
   helm template t . -f "$f" > "/out/$name.yaml"
 done
 count=$(helm template t . | grep -c 'readOnlyRootFilesystem: true' || true)

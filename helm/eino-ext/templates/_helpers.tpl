@@ -180,8 +180,14 @@ Chart guards.
 {{- if and $approval.enabled $approval.oidc.enabled (or (not $approval.oidc.issuer) (not $approval.oidc.clientID)) -}}
 {{- fail "approval.oidc.enabled requires approval.oidc.issuer and approval.oidc.clientID" -}}
 {{- end -}}
+{{- if and $approval.enabled $approval.oidc.enabled (not $approval.oidc.existingSecret) (not $approval.oidc.clientSecret) -}}
+{{- fail "approval.oidc.enabled requires approval.oidc.clientSecret or approval.oidc.existingSecret (a generated client secret cannot authenticate to the IdP)" -}}
+{{- end -}}
 {{- if and $approval.enabled (eq $approval.store.type "postgresql") (not $approval.store.postgresql.dsn) (not $approval.store.postgresql.existingSecret) -}}
 {{- fail "approval.store.type=postgresql requires approval.store.postgresql.dsn or approval.store.postgresql.existingSecret" -}}
+{{- end -}}
+{{- if and $approval.enabled (eq $approval.store.type "file") (not $approval.persistence.enabled) -}}
+{{- fail "approval.store.type=file requires approval.persistence.enabled=true (the root filesystem is read-only and no volume is mounted at the store path)" -}}
 {{- end -}}
 {{- $writeFamilies := list -}}
 {{- $dangerous := false -}}

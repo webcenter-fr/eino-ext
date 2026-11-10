@@ -55,13 +55,16 @@ helm-lint: ## Lint the Helm chart.
 helm-template: ## Render the chart and every fixture; assert the guards.
 	helm template t helm/eino-ext > /dev/null
 	for f in helm/eino-ext/tests/values-*.yaml; do \
-		if [ "$$f" = "helm/eino-ext/tests/values-memory-multi-replica.yaml" ]; then \
-			if helm template t helm/eino-ext -f "$$f" > /dev/null 2>&1; then \
-				echo "GUARD BROKEN: $$f must fail"; exit 1; \
-			fi; \
-		else \
-			helm template t helm/eino-ext -f "$$f" > /dev/null; \
-		fi; \
+		case "$$(basename "$$f" .yaml)" in \
+			values-memory-multi-replica|values-file-no-persistence|values-oidc-no-secret) \
+				if helm template t helm/eino-ext -f "$$f" > /dev/null 2>&1; then \
+					echo "GUARD BROKEN: $$f must fail"; exit 1; \
+				fi; \
+				;; \
+			*) \
+				helm template t helm/eino-ext -f "$$f" > /dev/null; \
+				;; \
+		esac; \
 	done
 
 .PHONY: helm-schema

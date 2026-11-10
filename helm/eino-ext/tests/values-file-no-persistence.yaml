@@ -1,0 +1,5 @@
+approval:
+  store:
+    type: file
+  persistence:
+    enabled: false
