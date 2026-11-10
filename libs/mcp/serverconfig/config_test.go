@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/secretref"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -78,7 +80,7 @@ func TestLoadSecretFileWinsOverEnv(t *testing.T) {
 func TestLoadSecretErrors(t *testing.T) {
 	dir := t.TempDir()
 	empty := writeFile(t, dir, "empty", "\n")
-	oversize := writeFile(t, dir, "oversize", strings.Repeat("x", maxSecretBytes+1))
+	oversize := writeFile(t, dir, "oversize", strings.Repeat("x", secretref.MaxBytes+1))
 
 	tests := []struct {
 		name    string

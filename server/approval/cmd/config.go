@@ -6,10 +6,10 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/urfave/cli/v3"
 
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/secretref"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -151,7 +151,7 @@ func loadOptions(cmd *cli.Command) (*options, error) {
 		return nil, err
 	}
 
-	receiptSecret, err := resolveSecret(
+	receiptSecret, err := secretref.Resolve(
 		firstNonEmpty(cmd.String("receipt-secret-file"), cfg.ReceiptSecretFile),
 		firstNonEmpty(cfg.ReceiptSecretEnv, "EINO_APPROVAL_RECEIPT_SECRET"),
 		cmd.String("receipt-secret"),
@@ -160,7 +160,7 @@ func loadOptions(cmd *cli.Command) (*options, error) {
 	if err != nil {
 		return nil, err
 	}
-	receiptKey, err := resolveSecret(
+	receiptKey, err := secretref.Resolve(
 		firstNonEmpty(cmd.String("receipt-key-file"), cfg.ReceiptKeyFile),
 		firstNonEmpty(cfg.ReceiptKeyEnv, "EINO_APPROVAL_RECEIPT_KEY"),
 		cmd.String("receipt-key"),
@@ -169,7 +169,7 @@ func loadOptions(cmd *cli.Command) (*options, error) {
 	if err != nil {
 		return nil, err
 	}
-	oidcClientSecret, err := resolveSecret(
+	oidcClientSecret, err := secretref.Resolve(
 		firstNonEmpty(cmd.String("oidc-client-secret-file"), cfg.OIDCClientSecretFile),
 		firstNonEmpty(cfg.OIDCClientSecretEnv, "EINO_APPROVAL_OIDC_CLIENT_SECRET"),
 		cmd.String("oidc-client-secret"),
@@ -178,7 +178,7 @@ func loadOptions(cmd *cli.Command) (*options, error) {
 	if err != nil {
 		return nil, err
 	}
-	postgresDSN, err := resolveSecret(
+	postgresDSN, err := secretref.Resolve(
 		firstNonEmpty(cmd.String("postgres-dsn-file"), cfg.PostgresDSNFile),
 		firstNonEmpty(cfg.PostgresDSNEnv, "EINO_APPROVAL_POSTGRES_DSN"),
 		cmd.String("postgres-dsn"),
@@ -248,41 +248,6 @@ func applyFileDefaults(cfg *fileConfig) {
 	if cfg.LogFormat == "" {
 		cfg.LogFormat = defaultLogFormat
 	}
-}
-
-// maxSecretBytes bounds a secret file so a misconfigured path cannot exhaust
-// memory.
-const maxSecretBytes = 64 << 10
-
-// resolveSecret reads a secret from a file, an environment variable, or a
-// literal flag value, in that order. The value is never logged.
-func resolveSecret(file, env, literal, name string) (string, error) {
-	if file != "" {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to read %s file %q", name, file)
-		}
-		if len(data) > maxSecretBytes {
-			return "", errors.Errorf("%s file %q exceeds %d bytes", name, file, maxSecretBytes)
-		}
-		value := strings.TrimRight(string(data), "\r\n")
-		if value == "" {
-			return "", errors.Errorf("%s file %q is empty", name, file)
-		}
-		logrus.Debugf("approval: resolved %s from file", name)
-		return value, nil
-	}
-	if env != "" {
-		if value, ok := os.LookupEnv(env); ok {
-			value = strings.TrimRight(value, "\r\n")
-			if value == "" {
-				return "", errors.Errorf("%s environment variable %q is empty", name, env)
-			}
-			logrus.Debugf("approval: resolved %s from environment", name)
-			return value, nil
-		}
-	}
-	return literal, nil
 }
 
 // readCredentialFile parses one name=token[@instance,...] entry per line.

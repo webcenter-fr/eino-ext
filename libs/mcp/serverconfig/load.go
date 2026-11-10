@@ -1,14 +1,13 @@
 package serverconfig
 
 import (
-	"os"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/secretref"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/validate"
 )
 
@@ -161,7 +160,7 @@ func resolveSecrets(cfg *Config) error {
 			continue
 		}
 		for name, instance := range family.Instances {
-			token, err := resolveSecret(instance.TokenFile, instance.TokenEnv, "instance "+name+" token")
+			token, err := secretref.Resolve(instance.TokenFile, instance.TokenEnv, "", "instance "+name+" token")
 			if err != nil {
 				return err
 			}
@@ -178,7 +177,7 @@ func resolveSecrets(cfg *Config) error {
 			}
 			for j := range provider.Local.Tokens {
 				token := &provider.Local.Tokens[j]
-				value, err := resolveSecret(token.TokenFile, token.TokenEnv, "local auth token")
+				value, err := secretref.Resolve(token.TokenFile, token.TokenEnv, "", "local auth token")
 				if err != nil {
 					return err
 				}
@@ -189,60 +188,23 @@ func resolveSecrets(cfg *Config) error {
 
 	if cfg.Approval != nil && cfg.Approval.Service != nil {
 		service := cfg.Approval.Service
-		serverToken, err := resolveSecret(service.ServerTokenFile, service.ServerTokenEnv, "approval server token")
+		serverToken, err := secretref.Resolve(service.ServerTokenFile, service.ServerTokenEnv, "", "approval server token")
 		if err != nil {
 			return err
 		}
 		service.ServerToken = serverToken
 
-		receiptSecret, err := resolveSecret(service.ReceiptSecretFile, service.ReceiptSecretEnv, "approval receipt secret")
+		receiptSecret, err := secretref.Resolve(service.ReceiptSecretFile, service.ReceiptSecretEnv, "", "approval receipt secret")
 		if err != nil {
 			return err
 		}
 		service.ReceiptSecret = receiptSecret
 
-		privateKey, err := resolveSecret(service.ReceiptPrivateKeyFile, service.ReceiptPrivateKeyEnv, "approval receipt private key")
+		privateKey, err := secretref.Resolve(service.ReceiptPrivateKeyFile, service.ReceiptPrivateKeyEnv, "", "approval receipt private key")
 		if err != nil {
 			return err
 		}
 		service.ReceiptPrivateKeyPEM = privateKey
 	}
 	return nil
-}
-
-// maxSecretBytes bounds a secret file so a misconfigured path cannot exhaust
-// memory.
-const maxSecretBytes = 64 << 10
-
-// resolveSecret reads a secret from a file or an environment variable. A file
-// wins when both are set. The value is never logged.
-func resolveSecret(file, env, name string) (string, error) {
-	if file != "" {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return "", errors.Wrapf(err, "failed to read %s file %q", name, file)
-		}
-		if len(data) > maxSecretBytes {
-			return "", errors.Errorf("%s file %q exceeds %d bytes", name, file, maxSecretBytes)
-		}
-		value := strings.TrimRight(string(data), "\r\n")
-		if value == "" {
-			return "", errors.Errorf("%s file %q is empty", name, file)
-		}
-		logrus.Debugf("serverconfig: resolved %s from file", name)
-		return value, nil
-	}
-	if env != "" {
-		value, ok := os.LookupEnv(env)
-		if !ok {
-			return "", errors.Errorf("%s environment variable %q is not set", name, env)
-		}
-		value = strings.TrimRight(value, "\r\n")
-		if value == "" {
-			return "", errors.Errorf("%s environment variable %q is empty", name, env)
-		}
-		logrus.Debugf("serverconfig: resolved %s from environment", name)
-		return value, nil
-	}
-	return "", nil
 }
