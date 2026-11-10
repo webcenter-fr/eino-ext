@@ -4,69 +4,64 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v9
+          fetch-depth: 0
+      - name: Resolve version
+        id: v
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-main.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: dagger/dagger-for-github@v8
         with:
-          version: v2.12
-          install-mode: goinstall
-          only-new-issues: true
+          version: "0.21.10"
+          verb: call
+          args: >-
+            ci
+            --version ${{ steps.v.outputs.version }}
+            --registry ghcr.io
+            --repository webcenter-fr/eino-ext
+            ${{ github.event_name == 'pull_request' && '--dry-run' || '--publish' }}
+            --registry-username env:REGISTRY_USERNAME
+            --registry-password env:REGISTRY_PASSWORD
+            --codecov-token env:CODECOV_TOKEN
+            export --path ./ci-out
+        env:
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-out
+          path: ./ci-out
 
-  build-and-vet:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go build ./...
-      - run: go vet ./...
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: make test
-
-  check-components:
+  integration-test:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/check_components.sh
-
-  ui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dagger/dagger-for-github@v8
         with:
-          node-version: '22.14.0'
-          cache: npm
-          cache-dependency-path: server/approval/ui/package-lock.json
-      - name: Build approval UI
-        working-directory: server/approval/ui
-        run: npm ci && npm run build
-      - name: Fail if committed dist is stale
-        run: git diff --exit-code -- server/approval/ui/dist
-
-  integration-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go test -tags=integration -v ./components/model/copilot/...
+          version: "0.21.10"
+          verb: call
+          args: integration-test --copilot-token env:COPILOT_TOKEN
         env:
-          COPILOT_INTEGRATION: "1"
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
