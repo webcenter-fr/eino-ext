@@ -143,6 +143,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /auth/logout", s.handleLogout)
 	s.mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
 	s.mux.Handle("/", s.spaHandler())
 }
 
@@ -509,6 +510,19 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+// handleReadyz reports whether the approval store is reachable. It performs a
+// bounded read so a broken backend fails the readiness probe instead of
+// accepting traffic.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if _, err := s.store.ListPending(r.Context(), store.ListFilter{Limit: 1}); err != nil {
+		http.Error(w, "store unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
