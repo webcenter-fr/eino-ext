@@ -1,0 +1,4 @@
+approval:
+  store:
+    type: memory
+  replicaCount: 2

@@ -54,7 +54,9 @@ config with `libs/toolkit/validate`, builds the receipt signer and (when OIDC is
 configured) fetches the discovery document.
 
 `Server.Handler()` returns the HTTP handler with security headers. The service
-is normally run through [`cmd`](./cmd).
+is normally run through [`cmd`](./cmd), which supports a YAML `--config` file,
+`*File` secret references, `EINO_APPROVAL_*` environment fallbacks and
+`--log-level`/`--log-format`.
 
 ## REST contract
 
@@ -70,6 +72,7 @@ browser-facing endpoints require the cookie session.
 | `POST` | `/approvals/{id}/decide` | cookie + CSRF | Body `{decision: approve\|reject}` |
 | `GET` | `/auth/login`, `/auth/callback`, `/auth/logout` | — | OIDC auth-code + PKCE |
 | `GET` | `/healthz` | — | Liveness |
+| `GET` | `/readyz` | — | Readiness (bounded store read; 503 when unreachable) |
 | `GET` | `/*` | — | SPA shell from the embedded `ui/dist` |
 
 Rules:

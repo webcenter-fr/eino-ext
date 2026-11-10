@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,7 +13,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/urfave/cli/v3"
 
+	"github.com/webcenter-fr/eino-ext/libs/toolkit/logging"
 	"github.com/webcenter-fr/eino-ext/libs/toolkit/osclient"
 	approvalserver "github.com/webcenter-fr/eino-ext/server/approval"
 	"github.com/webcenter-fr/eino-ext/server/approval/store"
@@ -24,68 +25,65 @@ import (
 	"github.com/webcenter-fr/eino-ext/server/approval/store/redis"
 )
 
-type options struct {
-	addr             string
-	baseURL          string
-	storeType        string
-	storeDir         string
-	redisAddr        string
-	postgresDSN      string
-	opensearchURL    string
-	receiptSecret    string
-	receiptKey       string
-	receiptAlg       string
-	oidcIssuer       string
-	oidcClientID     string
-	oidcClientSecret string
-	oidcRedirectURL  string
-	policyFile       string
-	credentials      multiFlag
-}
-
-type multiFlag []string
-
-func (m *multiFlag) String() string { return strings.Join(*m, ",") }
-
-func (m *multiFlag) Set(value string) error {
-	*m = append(*m, value)
-	return nil
-}
-
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:]); err != nil {
+	if err := run(ctx, os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, args []string) error {
-	opts := &options{}
-	fs := flag.NewFlagSet("approval", flag.ContinueOnError)
-	fs.StringVar(&opts.addr, "addr", ":8080", "HTTP listen address")
-	fs.StringVar(&opts.baseURL, "base-url", "", "public base URL (default derived from -addr)")
-	fs.StringVar(&opts.storeType, "store", "memory", "store backend: memory|file|redis|postgresql|opensearch")
-	fs.StringVar(&opts.storeDir, "store-dir", "./approval-data", "file store directory")
-	fs.StringVar(&opts.redisAddr, "redis-addr", "localhost:6379", "Redis address")
-	fs.StringVar(&opts.postgresDSN, "postgres-dsn", "", "PostgreSQL DSN")
-	fs.StringVar(&opts.opensearchURL, "opensearch-url", "", "OpenSearch URL")
-	fs.StringVar(&opts.receiptSecret, "receipt-secret", "", "HS256 receipt secret")
-	fs.StringVar(&opts.receiptKey, "receipt-key", "", "PEM receipt private key (RS256/EdDSA)")
-	fs.StringVar(&opts.receiptAlg, "receipt-alg", "HS256", "receipt algorithm: HS256|RS256|EdDSA")
-	fs.StringVar(&opts.oidcIssuer, "oidc-issuer", "", "OIDC issuer URL")
-	fs.StringVar(&opts.oidcClientID, "oidc-client-id", "", "OIDC client id")
-	fs.StringVar(&opts.oidcClientSecret, "oidc-client-secret", "", "OIDC client secret")
-	fs.StringVar(&opts.oidcRedirectURL, "oidc-redirect-url", "", "OIDC redirect URL")
-	fs.StringVar(&opts.policyFile, "policy-file", "", "JSON approver policy file")
-	fs.Var(&opts.credentials, "server-credential", "server credential: name=token[@instance1,instance2] or name=sha256:hash")
-	if err := fs.Parse(args); err != nil {
+	return newCommand(serve).Run(ctx, args)
+}
+
+func newCommand(action cli.ActionFunc) *cli.Command {
+	return &cli.Command{
+		Name:  "approval",
+		Usage: "Run the standalone MCP approval service",
+		// Credential values contain commas (name=token@prod,staging); keep the
+		// repeatable flag value intact instead of splitting it.
+		DisableSliceFlagSeparator: true,
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Usage: "YAML configuration file"},
+			&cli.StringFlag{Name: "addr", Value: defaultAddr, Usage: "HTTP listen address"},
+			&cli.StringFlag{Name: "base-url", Usage: "public base URL (default derived from -addr)"},
+			&cli.StringFlag{Name: "store", Value: defaultStore, Usage: "store backend: memory|file|redis|postgresql|opensearch"},
+			&cli.StringFlag{Name: "store-dir", Value: defaultStoreDir, Usage: "file store directory"},
+			&cli.StringFlag{Name: "redis-addr", Value: defaultRedisAddr, Usage: "Redis address"},
+			&cli.StringFlag{Name: "postgres-dsn", Usage: "PostgreSQL DSN"},
+			&cli.StringFlag{Name: "opensearch-url", Usage: "OpenSearch URL"},
+			&cli.StringFlag{Name: "receipt-secret", Usage: "HS256 receipt secret"},
+			&cli.StringFlag{Name: "receipt-key", Usage: "PEM receipt private key (RS256/EdDSA)"},
+			&cli.StringFlag{Name: "receipt-alg", Value: defaultReceiptAlg, Usage: "receipt algorithm: HS256|RS256|EdDSA"},
+			&cli.StringFlag{Name: "oidc-issuer", Usage: "OIDC issuer URL"},
+			&cli.StringFlag{Name: "oidc-client-id", Usage: "OIDC client id"},
+			&cli.StringFlag{Name: "oidc-client-secret", Usage: "OIDC client secret"},
+			&cli.StringFlag{Name: "oidc-redirect-url", Usage: "OIDC redirect URL"},
+			&cli.StringFlag{Name: "policy-file", Usage: "JSON approver policy file"},
+			&cli.StringSliceFlag{Name: "server-credential", Usage: "server credential: name=token[@instance1,instance2] or name=sha256:hash"},
+			&cli.StringFlag{Name: "receipt-secret-file", Usage: "file containing the HS256 receipt secret"},
+			&cli.StringFlag{Name: "receipt-key-file", Usage: "file containing the PEM receipt private key"},
+			&cli.StringFlag{Name: "oidc-client-secret-file", Usage: "file containing the OIDC client secret"},
+			&cli.StringFlag{Name: "postgres-dsn-file", Usage: "file containing the PostgreSQL DSN"},
+			&cli.StringFlag{Name: "server-credential-file", Usage: "file with one name=token[@instance,...] credential per line"},
+			&cli.StringFlag{Name: "log-level", Usage: "log level"},
+			&cli.StringFlag{Name: "log-format", Usage: "log format: text or json"},
+		},
+		Action: action,
+	}
+}
+
+func serve(ctx context.Context, cmd *cli.Command) error {
+	opts, err := loadOptions(cmd)
+	if err != nil {
 		return err
 	}
-	if opts.baseURL == "" {
-		opts.baseURL = defaultBaseURL(opts.addr)
+	if err := logging.Configure(opts.logLevel, opts.logFormat); err != nil {
+		return err
 	}
+
 	credentials, err := parseCredentials(opts.credentials)
 	if err != nil {
 		return err

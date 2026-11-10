@@ -1,0 +1,19 @@
+{{- if .Values.approval.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eino-ext.fullname" . }}-approval
+  labels:
+    {{- include "eino-ext.labels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "eino-ext.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+{{- end }}

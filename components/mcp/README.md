@@ -14,6 +14,15 @@ RBAC, and elicitation-based human approval for write tools.
 | [`prometheus`](./prometheus) | [`components/tool/prometheus`](../tool/prometheus) | `instance` | 0 (read-only) |
 | [`grafana`](./grafana) | [`components/tool/grafana`](../tool/grafana) | `instance` | 1 (`grafana_dashboard_write`) |
 
+## Deployable binary
+
+For production, use [`cmd/mcp-server`](../../cmd/mcp-server) instead of writing
+a `main` per family. It selects the family with `--server`, loads a YAML config
+through [`libs/mcp/serverconfig`](../../libs/mcp/serverconfig), and serves stdio
+or streamable HTTP with an unauthenticated operations port (`/healthz`,
+`/readyz`, `/metrics`). The [`helm/eino-ext`](../../helm/eino-ext) chart deploys
+one MCP Deployment per enabled family.
+
 ## Running a server
 
 ```go

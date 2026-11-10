@@ -326,3 +326,27 @@ func TestLoginWithoutOIDC(t *testing.T) {
 	rec := doJSON(t, s, http.MethodGet, "/auth/login", "", nil)
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 }
+
+type failingStore struct {
+	store.ApprovalStore
+}
+
+func (failingStore) ListPending(context.Context, store.ListFilter) ([]*store.Record, error) {
+	return nil, assert.AnError
+}
+
+func TestReadyz(t *testing.T) {
+	s, _ := newTestServer(t, nil)
+	rec := doJSON(t, s, http.MethodGet, "/readyz", "", nil)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	failing, err := New(context.Background(), &Config{
+		BaseURL:           "https://approve.example",
+		Store:             failingStore{store.NewMemory()},
+		ServerCredentials: []ServerCredential{{ServerName: "grafana", TokenHash: HashServerToken(grafanaToken)}},
+		Receipt:           ReceiptConfig{Secret: receiptKey},
+	})
+	require.NoError(t, err)
+	rec = doJSON(t, failing, http.MethodGet, "/readyz", "", nil)
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}

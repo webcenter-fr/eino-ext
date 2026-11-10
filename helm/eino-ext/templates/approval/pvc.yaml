@@ -1,0 +1,18 @@
+{{- if and .Values.approval.enabled (eq .Values.approval.store.type "file") .Values.approval.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "eino-ext.fullname" . }}-approval
+  labels:
+    {{- include "eino-ext.labels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+spec:
+  accessModes:
+    - {{ .Values.approval.persistence.accessMode }}
+  {{- with .Values.approval.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.approval.persistence.size }}
+{{- end }}

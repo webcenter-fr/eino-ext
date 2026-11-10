@@ -1,0 +1,96 @@
+{{- $root := . -}}
+{{- $cfg := index .Values.mcpServers "kubernetes" -}}
+{{- if and $cfg.enabled $cfg.rbac.create }}
+{{- $fullname := include "eino-ext.fullname" $root }}
+{{- $sa := include "eino-ext.serviceAccountName" (dict "root" $root "component" "kubernetes" "serviceAccount" $root.Values.mcp.serviceAccount) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-kubernetes
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: kubernetes
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - configmaps
+      - namespaces
+      - nodes
+      - events
+      - persistentvolumes
+      - persistentvolumeclaims
+      - serviceaccounts
+      - endpoints
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  {{- if $cfg.rbac.allowExec }}
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  {{- end }}
+  {{- if $cfg.rbac.allowWrite }}
+  - apiGroups: [""]
+    resources: [pods, services, configmaps, persistentvolumeclaims, serviceaccounts, endpoints]
+    verbs: [create, update, patch, delete, deletecollection]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [create, update, patch, delete, deletecollection]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [create, update, patch, delete, deletecollection]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [create, update, patch, delete, deletecollection]
+  {{- end }}
+---
+{{- if eq $cfg.rbac.scope "cluster" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}-kubernetes
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: kubernetes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-kubernetes
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $root.Release.Namespace }}
+{{- else }}
+{{- $namespaces := $cfg.rbac.namespaces }}
+{{- if not $namespaces }}{{ $namespaces = list $root.Release.Namespace }}{{ end }}
+{{- range $namespace := $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-kubernetes
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: kubernetes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-kubernetes
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
