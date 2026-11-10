@@ -1,0 +1,15 @@
+{{- if and .Values.approval.enabled .Values.approval.podDisruptionBudget.enabled (gt (int .Values.approval.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "eino-ext.fullname" . }}-approval
+  labels:
+    {{- include "eino-ext.labels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+spec:
+  minAvailable: {{ .Values.approval.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "eino-ext.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: approval
+{{- end }}

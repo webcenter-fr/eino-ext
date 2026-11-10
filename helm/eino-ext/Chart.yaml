@@ -1,0 +1,6 @@
+apiVersion: v2
+name: eino-ext
+description: Deploy the eino-ext MCP servers and the standalone approval service.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

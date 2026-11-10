@@ -1,0 +1,133 @@
+{{- $root := . -}}
+{{- range $name, $cfg := .Values.mcpServers }}
+{{- if $cfg.enabled }}
+{{- $sa := include "eino-ext.serviceAccountName" (dict "root" $root "component" $name "serviceAccount" $root.Values.mcp.serviceAccount) }}
+{{- $familySecret := include "eino-ext.familySecretName" (dict "root" $root "name" $name) }}
+{{- if $cfg.existingSecret }}{{ $familySecret = $cfg.existingSecret }}{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eino-ext.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if not $cfg.autoscaling.enabled }}
+  replicas: {{ $cfg.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "eino-ext.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "eino-ext.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+      {{- with $cfg.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with $root.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $sa }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        {{- with $root.Values.mcp.podSecurityContext }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: mcp
+          image: {{ include "eino-ext.image" (dict "root" $root "image" $root.Values.mcp.image) }}
+          imagePullPolicy: {{ $root.Values.mcp.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/eino-ext/config.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: ops
+              containerPort: 9090
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            {{- with $root.Values.mcp.securityContext }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: ops
+          resources:
+            {{- toYaml $cfg.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/eino-ext/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: family
+              mountPath: /etc/eino-ext/secrets/{{ $name }}
+              readOnly: true
+            {{- if $root.Values.mcp.auth.enabled }}
+            - name: auth
+              mountPath: /etc/eino-ext/secrets/auth
+              readOnly: true
+            {{- end }}
+            {{- if and $root.Values.mcp.approval.enabled (include "eino-ext.familyHasWriteTools" $name) }}
+            - name: receipt
+              mountPath: /etc/eino-ext/secrets/receipt-secret
+              subPath: {{ $root.Values.approval.receipt.secretKey }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "eino-ext.fullname" $root }}-{{ $name }}
+        - name: tmp
+          emptyDir: {}
+        - name: family
+          secret:
+            secretName: {{ $familySecret }}
+        {{- if $root.Values.mcp.auth.enabled }}
+        - name: auth
+          secret:
+            secretName: {{ include "eino-ext.authSecretName" $root }}
+        {{- end }}
+        {{- if and $root.Values.mcp.approval.enabled (include "eino-ext.familyHasWriteTools" $name) }}
+        - name: receipt
+          secret:
+            secretName: {{ include "eino-ext.receiptSecretName" $root }}
+        {{- end }}
+      {{- with $cfg.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $cfg.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $cfg.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- end }}
+{{- end }}

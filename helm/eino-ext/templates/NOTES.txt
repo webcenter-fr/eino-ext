@@ -1,0 +1,32 @@
+eino-ext has been deployed.
+
+{{- if .Values.approval.enabled }}
+Approval service:
+{{- if .Values.approval.ingress.enabled }}
+{{- if .Values.approval.ingress.tls.enabled }}
+  https://{{ .Values.approval.ingress.host }}
+{{- else }}
+  http://{{ .Values.approval.ingress.host }}
+{{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "eino-ext.fullname" . }}-approval 8080:8080
+{{- end }}
+{{- end }}
+
+MCP servers (ClusterIP only):
+{{- range $name, $cfg := .Values.mcpServers }}
+{{- if $cfg.enabled }}
+  {{ include "eino-ext.fullname" $ }}-{{ $name }}:{{ $cfg.service.port }}
+{{- end }}
+{{- end }}
+
+{{- if and .Values.mcp.auth.enabled (not .Values.mcp.auth.existingSecret) (not .Values.mcp.auth.tokens) }}
+The generated MCP bearer token is stored in Secret
+{{ include "eino-ext.fullname" . }}-mcp-auth. Retrieve it with:
+
+  kubectl get secret {{ include "eino-ext.fullname" . }}-mcp-auth -o jsonpath='{.data.admin-token}' | base64 -d
+
+{{- end }}
+
+Security defaults: Kubernetes RBAC is read-only. allowWrite and allowExec are
+dangerous opt-ins. The operations port 9090 is not exposed by any Service.

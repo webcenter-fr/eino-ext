@@ -1,0 +1,149 @@
+{{- if .Values.approval.enabled }}
+{{- $fullname := include "eino-ext.fullname" . }}
+{{- $sa := include "eino-ext.serviceAccountName" (dict "root" . "component" "approval" "serviceAccount" .Values.approval.serviceAccount) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-approval
+  labels:
+    {{- include "eino-ext.labels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+spec:
+  replicas: {{ .Values.approval.replicaCount }}
+  {{- if eq .Values.approval.store.type "file" }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "eino-ext.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: approval
+  template:
+    metadata:
+      labels:
+        {{- include "eino-ext.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: approval
+      {{- with .Values.approval.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $sa }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        {{- with .Values.approval.podSecurityContext }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: approval
+          image: {{ include "eino-ext.image" (dict "root" . "image" .Values.approval.image) }}
+          imagePullPolicy: {{ .Values.approval.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/eino-ext/config.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            {{- with .Values.approval.securityContext }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          resources:
+            {{- toYaml .Values.approval.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/eino-ext/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: config
+              mountPath: /etc/eino-ext/policy.json
+              subPath: policy.json
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: receipt
+              mountPath: /run/secrets/receipt-secret
+              subPath: {{ .Values.approval.receipt.secretKey }}
+              readOnly: true
+            - name: credentials
+              mountPath: /run/secrets/credentials
+              subPath: {{ .Values.approval.credentials.secretKey }}
+              readOnly: true
+            {{- if .Values.approval.oidc.enabled }}
+            - name: oidc
+              mountPath: /run/secrets/oidc-client-secret
+              subPath: {{ .Values.approval.oidc.clientSecretKey }}
+              readOnly: true
+            {{- end }}
+            {{- if eq .Values.approval.store.type "postgresql" }}
+            - name: postgres
+              mountPath: /run/secrets/postgres-dsn
+              subPath: {{ .Values.approval.store.postgresql.dsnSecretKey }}
+              readOnly: true
+            {{- end }}
+            {{- if and (eq .Values.approval.store.type "file") .Values.approval.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.approval.store.path }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}-approval
+        - name: tmp
+          emptyDir: {}
+        - name: receipt
+          secret:
+            secretName: {{ include "eino-ext.receiptSecretName" . }}
+        - name: credentials
+          secret:
+            secretName: {{ include "eino-ext.credentialsSecretName" . }}
+        {{- if .Values.approval.oidc.enabled }}
+        - name: oidc
+          secret:
+            secretName: {{ include "eino-ext.oidcSecretName" . }}
+        {{- end }}
+        {{- if eq .Values.approval.store.type "postgresql" }}
+        - name: postgres
+          secret:
+            secretName: {{ include "eino-ext.postgresSecretName" . }}
+        {{- end }}
+        {{- if and (eq .Values.approval.store.type "file") .Values.approval.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $fullname }}-approval
+        {{- end }}
+      {{- with .Values.approval.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.approval.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.approval.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

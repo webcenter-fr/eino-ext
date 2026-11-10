@@ -1,0 +1,38 @@
+{{- $root := . -}}
+{{- range $name, $cfg := .Values.mcpServers }}
+{{- if and $cfg.enabled $cfg.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "eino-ext.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+  {{- with $cfg.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $cfg.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $cfg.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $cfg.ingress.host }}
+      secretName: {{ $cfg.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $cfg.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "eino-ext.fullname" $root }}-{{ $name }}
+                port:
+                  name: http
+---
+{{- end }}
+{{- end }}

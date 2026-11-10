@@ -1,0 +1,34 @@
+{{- if and .Values.approval.enabled .Values.approval.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "eino-ext.fullname" . }}-approval
+  labels:
+    {{- include "eino-ext.labels" . | nindent 4 }}
+    app.kubernetes.io/component: approval
+  {{- with .Values.approval.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.approval.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.approval.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.approval.ingress.host }}
+      secretName: {{ .Values.approval.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.approval.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "eino-ext.fullname" . }}-approval
+                port:
+                  name: http
+{{- end }}

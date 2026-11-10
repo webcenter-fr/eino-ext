@@ -1,0 +1,23 @@
+{{- $root := . -}}
+{{- range $name, $cfg := .Values.mcpServers }}
+{{- if $cfg.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eino-ext.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "eino-ext.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: {{ $cfg.service.type }}
+  ports:
+    - name: http
+      port: {{ $cfg.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "eino-ext.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+---
+{{- end }}
+{{- end }}
