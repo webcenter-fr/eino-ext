@@ -1,0 +1,12 @@
+.git
+.github
+.kilo
+.opencode
+bin
+ci-out
+coverage.out
+*.test
+github.test
+**/node_modules
+.dagger
+server/approval/ui/dist
