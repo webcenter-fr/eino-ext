@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -36,16 +35,9 @@ jobs:
           args: >-
             ci
             --version ${{ steps.v.outputs.version }}
-            --registry ghcr.io
-            --repository webcenter-fr/eino-ext
-            ${{ github.event_name == 'pull_request' && '--dry-run' || '--publish' }}
-            --registry-username env:REGISTRY_USERNAME
-            --registry-password env:REGISTRY_PASSWORD
             --codecov-token env:CODECOV_TOKEN
             export --path ./ci-out
         env:
-          REGISTRY_USERNAME: ${{ github.actor }}
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - uses: actions/upload-artifact@v4
         if: always()

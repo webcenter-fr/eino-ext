@@ -3,7 +3,7 @@
 > **Scope:** the eino-ext shared libraries in this repository — the safety /
 > approval / mutation machinery, conversation memory (history), context
 > compaction, cost saving & observability, the long-term memory agent, the
-> callbacks, the `libs/` helpers, and the MCP server implementation.
+> callbacks, and the `libs/` helpers.
 >
 > **Companion documents:**
 > - [`01-eino-framework-and-adk.en.md`](./01-eino-framework-and-adk.en.md) — the
@@ -143,7 +143,7 @@ would let an unconfirmed model call bypass the gate.
 
 ## 4. Safety / approval / mutation machinery
 
-Three layers, all reused by the MCP servers (§12). The core invariant:
+Three layers, all reused by the MCP servers in `webcenter-fr/go-mcp-platform`. The core invariant:
 **real execution of a write tool requires host-app authorization carried in
 `context.Context` — never the model-supplied `confirmed=true` argument.**
 
@@ -232,7 +232,7 @@ flowchart TD
 | `context.Context` grant | Server only | Yes — the model cannot write to ctx |
 
 `AllowModelConfirmation` is deliberately **not** used in production paths; the
-MCP servers (§12) do not wire it at all.
+MCP servers in `webcenter-fr/go-mcp-platform` do not wire it at all.
 
 ---
 
@@ -824,133 +824,14 @@ registered on `adk.ChatModelAgentConfig.Handlers`:
 
 ---
 
-## 12. MCP servers — `libs/mcp` + `components/mcp/*`
+## MCP servers
 
-Full implementation plan:
-[`.opencode/plans/mcp-servers-per-tool-family.md`](../../.opencode/plans/mcp-servers-per-tool-family.md).
-
-**Goal:** expose the local tool families as MCP servers (consumable from opencode
-or any MCP client), with provider-based auth (local + OIDC), granular RBAC, and
-the safety approval machinery reproduced on MCP so a write action always requires
-real human approval the LLM cannot bypass.
-
-### 12.1 Layout
-
-```
-libs/mcp/                  — shared generic toolkit (package mcp)
-  config.go  server.go  adapter.go  identity.go
-  auth.go  auth_local.go  auth_oidc.go
-  authz.go  approval.go  transport.go
-components/mcp/            — per-family MCP servers (project-specific extension)
-  kubernetes/  argocd/  prometheus/  grafana/
-```
-
-### 12.2 How the existing machinery is reused
-
-- **Adapter:** each `tool.InvokableTool` → MCP tool (`Info()` → name/description/
-  input schema via `ParamsOneOf.ToJSONSchema()`; annotations from the write set:
-  read tools `readOnlyHint:true`, write tools `readOnlyHint:false, destructiveHint:true`).
-  Handler → `InvokableRun` with the raw JSON arguments.
-- **Gate:** the handler reproduces the safety middleware's preflight —
-  `safety.ShouldGateWithAuthorization` with an `ExecutionAuthorizer` implemented
-  via **MCP elicitation** (`approval.go` — `ElicitationAuthorizer`): on
-  `confirmed=true`, the server sends `elicitation/create` to the client
-  (opencode renders an approval prompt to the human showing the tool name, the
-  target instance, the user, and the **actual arguments of this execution call**);
-  accept → `safety.WithExecutionAuthorized(ctx, toolName)` → the tool's
-  `confirm.RequireConfirmationCtx` passes → executes. Decline/cancel/timeout/
-  client without elicitation → fail closed (write tools are dry-run only).
-  `AllowModelConfirmation` is **not** wired. When `Config.Approval.Service` is
-  set, the default authorizer becomes `ApprovalURLAuthorizer` (out-of-band
-  browser approval with a signed receipt); see
-  [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
-- **Audit:** every call emits a `safety.AuditEvent` (phase read/dry-run/execute/
-  rejected + identity metadata) via `safety.AuditSink`. Write calls also record
-  `argsHash`/`argsTruncated`; the service path emits separate
-  `approval-requested`/`approval-granted`/`approval-denied`/`approval-expired`
-  events with `approvalId`, `approverSub`, `jti`, `decision` and `policy`.
-- **CEL policy:** `safety.Policy` evaluated on every call.
-
-### 12.3 AuthN — provider-based
-
-The HTTP transport is wrapped with the go-sdk's `auth.RequireBearerToken`
-middleware; providers implement `auth.TokenVerifier`:
-
-- **`local`** — static bearer tokens → identity; constant-time comparison
-  (`crypto/subtle`) of SHA-256 digests over all tokens (fixed-length digests →
-  no timing or token-length leak; all tokens always compared → no existence
-  leak).
-- **`oidc`** — verifies OIDC-issued JWT access tokens with
-  `github.com/coreos/go-oidc/v3` (JWKS signature, issuer, audience, expiry);
-  claims → identity (`UserClaim` default `preferred_username`, fallback `sub`;
-  `SubClaim` default `sub`; `GroupsClaim` default `groups`); the `scope` claim →
-  the token's scopes.
-
-Identity = `{User, Sub, Groups}`, carried in `auth.TokenInfo` (`UserID` +
-`Extra`). `Sub` is the stable subject (OIDC `sub`) used for approval/anti-phishing
-binding; `User` stays the display name. Token scopes (`LocalToken.Scopes` for
-local, the `scope` claim for OIDC) are carried in `auth.TokenInfo.Scopes` and
-checked against `AuthConfig.RequiredScopes` by the SDK middleware (403 before any
-handler). Stdio = trusted local process → `Config.LocalIdentity` (still subject
-to RBAC).
-
-### 12.4 AuthZ — RBAC
-
-```go
-type AccessRule struct {
-    Users      []string // match Identity.User (exact); empty = any
-    Groups     []string // match any of Identity.Groups; empty = any
-    Operations []string // "read", "write"; empty = all
-    Instances  []string // cluster/instance names; empty or "*" = all
-    Tools      []string // exact names or "prefix_*" glob; empty = all
-}
-```
-
-Within a rule, `Users` and `Groups` conditions are AND-ed; across rules, the
-union grants. **Fail closed: no match → deny.** Enforced at `tools/list`
-(per-identity `*mcp.Server` via `getServer`, cached — so each identity only sees
-the tools it may call, and SDK pagination stays correct) and at `tools/call`
-(category + instance extracted from the `cluster`/`instance` argument).
-
-### 12.5 Transports
-
-- **stdio:** `Server.ServeStdio(ctx)` (`srv.Run(ctx, &mcpsdk.StdioTransport{})`).
-- **HTTP (streamable):** `Server.HTTPHandler()` —
-  `mcpsdk.NewStreamableHTTPHandler(getServer, …)` wrapped with
-  `auth.RequireBearerToken` when auth is configured; `Server.ListenAndServeHTTP(ctx, addr)`
-  with graceful shutdown. **Stateful mode only** (stateless rejects server→client
-  requests, which would break elicitation).
-
-```mermaid
-flowchart TB
-    subgraph mcp["MCP server (per family)"]
-        AD["adapter: eino tool → MCP tool<br/>(annotations from write set)"]
-        H["handler: RBAC → CEL policy → gate → execute → audit"]
-        AUTHZ["authz: rules (users/groups →<br/>operations + instances + tools)"]
-        GATE["safety.ShouldGateWithAuthorization<br/>+ ElicitationAuthorizer"]
-        AD --> H
-        H --> AUTHZ
-        H --> GATE
-    end
-    CLIENT["MCP client (opencode)"] -->|"stdio | HTTP + Bearer"| TR["transport"]
-    TR --> SRV["per-identity *mcp.Server<br/>(getServer, cached)"]
-    SRV --> mcp
-    AUTH["auth providers<br/>local (static tokens) · oidc (JWT/JWKS)"] -->|"RequireBearerToken"| TR
-    GATE -->|"confirmed=true → elicitation/create"| CLIENT
-    CLIENT -->|"human: accept / decline"| GATE
-```
-
-**Why the LLM cannot self-approve on MCP:** `confirmed=true` is model-supplied and
-only *triggers* the authorizer; the authorizer's only approval source is the
-elicitation response, which is a server→client request the human answers in the
-client UI; the LLM never sees the elicitation request, only the final tool
-result; the ctx grant is per-call and per-tool-name; and the per-tool
-`confirm.RequireConfirmationCtx` re-checks it. Fail closed without
-elicitation-capable clients.
+MCP servers, the approval service and their deployment live in
+[`webcenter-fr/go-mcp-platform`](https://github.com/webcenter-fr/go-mcp-platform).
 
 ---
 
-## 13. Component conventions (checklist)
+## 12. Component conventions (checklist)
 
 Every new component/middleware/lib follows:
 
@@ -971,7 +852,7 @@ Every new component/middleware/lib follows:
 
 ---
 
-## 14. Summary
+## 13. Summary
 
 | Concern | Where | Mechanism |
 |---|---|---|
@@ -982,19 +863,18 @@ Every new component/middleware/lib follows:
 | Long-term memory | `components/agent/memory` | retrieve → enrich → extract → store; maintainer; trace mode |
 | Prompt quality | `components/middleware/promptenhance`, `libs/promptenhance` | small-model rewrite + human confirm interrupt |
 | Agent attribution | `components/middleware/agentattr` | agent/model metadata into callback context |
-| MCP | `libs/mcp`, `components/mcp/*` | eino tools over MCP; local/OIDC auth; RBAC; elicitation approval |
 | Workspace | `libs/toolkit/workspace`, `components/tool/github`, `components/tool/shell` | host clone is the source of truth; container mounts it per exec; opt-in export excludes `.git` |
 
 ---
 
-## 15. Implementation deep-dives
+## 14. Implementation deep-dives
 
 The sections above describe the concepts and the public API. This section
 explains **how the implementation actually works** — the internal code paths and
 algorithms — so a developer can read, modify, and debug the libraries.
 
-### 15.1 Inside the safety gate: the preflight code path
-(`components/middleware/safety/middleware.go`; the MCP handler in `libs/mcp` shares the same logic)
+### 14.1 Inside the safety gate: the preflight code path
+(`components/middleware/safety/middleware.go`; the MCP handler in `webcenter-fr/go-mcp-platform` shares the same logic)
 
 Per tool call:
 
@@ -1024,7 +904,7 @@ The ctx grant mechanism: `WithExecutionAuthorized` stores
 `ExecutionAuthorizedFor` reads it (fail-closed on nil ctx / empty name). The
 model cannot write to the ctx, so prompt injection cannot fabricate a grant.
 
-### 15.2 Inside `SelectWindow`: the binary-search windowing
+### 14.2 Inside `SelectWindow`: the binary-search windowing
 (`components/memory/conversation.go`)
 
 `SelectWindow(msgs, count, budget, maxWindowTokens)` returns
@@ -1044,7 +924,7 @@ model cannot write to the ctx, so prompt injection cannot fabricate a grant.
 
 The binary search makes trimming O(log N) token-count calls instead of O(N).
 
-### 15.3 Inside the runner bridge: proxy + persist
+### 14.3 Inside the runner bridge: proxy + persist
 (`components/memory/runner/runner.go`)
 
 `runner.Run(cfg)` duplicates the adk event stream once (`schema.Pipe` +
@@ -1064,7 +944,7 @@ The binary search makes trimming O(log N) token-count calls instead of O(N).
 The run is driven under `context.Background()` so a client disconnect does not
 abort generation or persistence.
 
-### 15.4 Inside `Optimize`: the compaction pipeline
+### 14.4 Inside `Optimize`: the compaction pipeline
 (`components/middleware/contextopt/optimizer.go`)
 
 `Optimize(ctx, msgs)` (cheapest-first), never mutating the input (clones only
@@ -1093,7 +973,7 @@ changed messages):
 6. `applyVerbositySteer` — append `VerbositySteer` to the end of the first
    system message (append-only, cache-safe).
 
-### 15.5 Inside `jsoncrush`: hoisting `_defaults`
+### 14.5 Inside `jsoncrush`: hoisting `_defaults`
 (`libs/contentcomp/jsoncrush`)
 
 For a JSON array of objects, `Crush` produces a smaller equivalent array:
@@ -1113,7 +993,7 @@ With `WithStore`, near-unique high-entropy columns are offloaded behind
 `contentcomp.Ref` handles (lossy but reversible). `Expand` / `ExpandWithStore`
 reverse the transform.
 
-### 15.6 Inside the activity `Handler`: callback → event
+### 14.6 Inside the activity `Handler`: callback → event
 (`callbacks/activity/handler.go`)
 
 The handler implements `callbacks.Handler` and translates component lifecycle
@@ -1139,7 +1019,7 @@ Session/agent attribution is read from the ctx (`activity.WithSession`,
 `activity.WithAgentMeta` — set by `middleware/agentattr`); a single
 `agent.switched` is emitted per transition.
 
-### 15.7 Inside the pricer: the cost formula (`libs/modelsdev/pricer.go`)
+### 14.7 Inside the pricer: the cost formula (`libs/modelsdev/pricer.go`)
 
 `CatalogPricer.Cost(gatewayModel, tokens)`:
 
@@ -1154,7 +1034,7 @@ Session/agent attribution is read from the ctx (`activity.WithSession`,
 4. `Savings = (cacheRead / 1e6) × max(0, cost.Input − cost.CacheRead)`
    (informational; not subtracted from the total).
 
-### 15.8 Inside the memory agent: extractor + maintainer
+### 14.8 Inside the memory agent: extractor + maintainer
 (`components/agent/memory`)
 
 - **Extractor**: builds a prompt from an embedded template (`prompts/*.md`) with
@@ -1175,47 +1055,3 @@ Session/agent attribution is read from the ctx (`activity.WithSession`,
   `user_id` when scoped, capped at `MaxMemoriesPerRetrieve`; memories are
   injected as a marked system message (`NewMemoryContextMessage`) before the
   first system message (or prepended).
-
-### 15.9 Inside the MCP handler: the request code path
-(`libs/mcp` adapter — see the plan)
-
-Per `tools/call`, the handler (`makeHandler`) runs:
-
-1. **Identity**: `req.Extra.TokenInfo` (HTTP bearer, verified by
-   `auth.RequireBearerToken`) → `Identity{User, Sub, Groups}`; else
-   `Config.LocalIdentity` (stdio).
-2. **AuthZ**: extract the instance arg (`Config.InstanceParam` =
-   `cluster`/`instance`) from the raw args;
-   `Authorizer.Authorize(identity, toolName, instance, isWrite)` — fail closed.
-   Deny → tool error result + audit `rejected`.
-3. **Policy**: `safety.Policy.Evaluate` over the parsed args. Deny → tool error
-   + audit `rejected` (`PolicyPass=false`).
-4. **Gate** (write tools): `safety.ExtractGateParams` →
-   `safety.ShouldGateWithAuthorization` with the `ElicitationAuthorizer` (or a
-   custom `Config.ExecutionAuthorizer`).
-   - `dryRun` → execute the preview, append `safety.DryRunGuidance`, audit
-     `dry-run`.
-   - `confirmed` → the authorizer calls `req.Session.Elicit(...)` with a message
-     built from the **actual args** (tool, target instance, user, complete
-     args); `accept` → `safety.WithExecutionAuthorized(ctx, toolName)`;
-     anything else (decline/cancel/timeout/no-elicitation-capability) → fail
-     closed. There is **no** argument-size rejection limit: the prompt renders
-     up to `ApprovalDisplayBudget` (4000) bytes and, when the payload is larger,
-     discloses `showing N of M bytes — remainder NOT displayed` plus the full
-     `argsHash`. The audit event records `argsHash` and `argsTruncated`.
-   - When `Config.Approval.Service` is set, the default authorizer is
-     `ApprovalURLAuthorizer` instead: it registers the approval with the
-     standalone service, elicits the URL (or returns a tool error carrying the
-     URL + `approvalId`), long-polls the decision, and verifies a signed receipt
-     bound to the canonical `argsHash`. It fails closed and never downgrades to
-     elicitation. See
-     [`03-mcp-hard-approval.en.md`](./03-mcp-hard-approval.en.md).
-   - neither → `ErrGateRequired`.
-5. **Execute**: `tool.InvokableRun(execCtx, args)`; the tool's
-   `confirm.RequireConfirmationCtx` re-checks the grant.
-6. **Audit + result**: a `safety.AuditEvent` (phase + identity) is written; the
-   result is a `CallToolResult` with `TextContent` (or `SetError` →
-   `IsError=true` for tool errors, so the LLM sees and self-corrects).
-
-Tool errors are returned as `IsError=true` results, **not** protocol errors, so
-the model can react.

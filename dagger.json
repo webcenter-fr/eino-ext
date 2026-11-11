@@ -11,16 +11,6 @@
       "pin": "e205189be6eba617e7bcc870db2e73a04171f38e"
     },
     {
-      "name": "image",
-      "source": "github.com/disaster37/dagger-library-go/image@2.0.20",
-      "pin": "e205189be6eba617e7bcc870db2e73a04171f38e"
-    },
-    {
-      "name": "helm",
-      "source": "github.com/disaster37/dagger-library-go/helm@2.0.20",
-      "pin": "e205189be6eba617e7bcc870db2e73a04171f38e"
-    },
-    {
       "name": "codecov",
       "source": "github.com/disaster37/dagger-library-go/codecov@2.0.20",
       "pin": "e205189be6eba617e7bcc870db2e73a04171f38e"

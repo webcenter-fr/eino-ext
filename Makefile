@@ -22,10 +22,6 @@ lint:
 check-components:
 	bash scripts/check_components.sh
 
-.PHONY: ui
-ui: ## Build the approval UI into server/approval/ui/dist (committed for go:embed).
-	cd server/approval/ui && npm ci && npm run build
-
 .PHONY: test
 test: envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./...
@@ -38,42 +34,6 @@ models-dev-refresh: ## Refresh the committed models.dev catalog snapshot.
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
-
-.PHONY: docker-build-mcp
-docker-build-mcp: ## Build the MCP server image.
-	docker build -f Dockerfile.mcp -t eino-ext-mcp:dev .
-
-.PHONY: docker-build-approval
-docker-build-approval: ## Build the approval server image.
-	docker build -f Dockerfile.approval -t eino-ext-approval:dev .
-
-.PHONY: helm-lint
-helm-lint: ## Lint the Helm chart.
-	helm lint helm/eino-ext
-
-.PHONY: helm-template
-helm-template: ## Render the chart and every fixture; assert the guards.
-	helm template t helm/eino-ext > /dev/null
-	for f in helm/eino-ext/tests/values-*.yaml; do \
-		case "$$(basename "$$f" .yaml)" in \
-			values-memory-multi-replica|values-file-no-persistence|values-oidc-no-secret) \
-				if helm template t helm/eino-ext -f "$$f" > /dev/null 2>&1; then \
-					echo "GUARD BROKEN: $$f must fail"; exit 1; \
-				fi; \
-				;; \
-			*) \
-				helm template t helm/eino-ext -f "$$f" > /dev/null; \
-				;; \
-		esac; \
-	done
-
-.PHONY: helm-schema
-helm-schema: ## Regenerate values.schema.json.
-	dagger call helm-schema export --path helm/eino-ext/values.schema.json
-
-.PHONY: helm-docs
-helm-docs: ## Regenerate the chart README.
-	dagger call helm-docs export --path helm/eino-ext/README.md
 
 .PHONY: dagger-ci
 dagger-ci: ## Run the full Dagger pipeline without publishing.
