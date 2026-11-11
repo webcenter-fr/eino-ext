@@ -84,12 +84,6 @@ this project:
   decorators here.
 - `components/memory/` — conversation-history persistence (no eino-ext
   equivalent).
-- `components/mcp/` — MCP servers exposing eino tool families (per-family
-  packages), built on `libs/mcp`.
-- `cmd/` — deployable binaries. `cmd/mcp-server` is the single entrypoint for
-  all MCP families; it reads a YAML config through `libs/mcp/serverconfig`.
-- `helm/` — Helm charts. `helm/eino-ext` deploys the MCP servers and the
-  approval service.
 - `.dagger/` — the Dagger CI module. It is a nested Go module and is
   intentionally invisible to the repository's `go build`/`go vet`/golangci-lint.
 
@@ -129,22 +123,15 @@ When implementing OpenSearch-backed tools:
   strings and indices. Project-specific wrappers (e.g., Kubernetes log search)
   should be built on top of the generic tool.
 
-## Containers, Helm and Dagger
+## Dagger
 
-- **Images**: `Dockerfile.mcp` and `Dockerfile.approval` pin every base image
-  by tag **and** digest. The runtime image is `distroless/static-debian12:nonroot`
-  (UID 65532, no shell), so health probes must be HTTP `httpGet`.
-- **Helm**: `helm/eino-ext` keeps per-family resources in `templates/mcp/` and
-  the approval service in `templates/approval/`. `values.yaml` carries
-  `## @param` annotations for `readme-generator-for-helm`;
-  `values.schema.json` and `README.md` are generated (`make helm-schema`,
-  `make helm-docs`) and checked for drift in CI. Keep RBAC read-only by
-  default; `allowWrite`/`allowExec` are dangerous opt-ins.
-- **Dagger**: the module is pinned to Dagger `v0.21.10` and the
+- The module is pinned to Dagger `v0.21.10` and the
   `disaster37/dagger-library-go@2.0.20` dependencies to commit
-  `e205189be6eba617e7bcc870db2e73a04171f38e`. Never call
-  `dag.Golang().Ci()`: it runs `gofumpt -w` over the whole repository. Use the
-  module's own `lint`/`test` functions instead.
+  `e205189be6eba617e7bcc870db2e73a04171f38e`.
+- It runs the Go gates only (`lint`, `vet`, `build`, `test`, `vulncheck`,
+  `check-components`) plus the opt-in `integration-test`.
+- Never call `dag.Golang().Ci()`: it runs `gofumpt -w` over the whole
+  repository. Use the module's own `lint`/`test` functions instead.
 
 ## Documentation
 

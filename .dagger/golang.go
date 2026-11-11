@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"dagger/eino-ext/internal/dagger"
 )
@@ -79,38 +78,4 @@ func (m *EinoExt) Vulncheck(ctx context.Context) (string, error) {
 // CheckComponents verifies every component package has a test and README.
 func (m *EinoExt) CheckComponents(ctx context.Context) (string, error) {
 	return m.goContainer().WithExec([]string{"bash", "scripts/check_components.sh"}).Stdout(ctx)
-}
-
-// UI builds the approval UI and fails when the committed dist is stale.
-func (m *EinoExt) UI(ctx context.Context) (*dagger.Directory, error) {
-	built := dag.Container().
-		From("node:22.14.0-bookworm-slim").
-		WithDirectory("/ui", m.Src.Directory("server/approval/ui")).
-		WithWorkdir("/ui").
-		WithExec([]string{"npm", "ci"}).
-		WithExec([]string{"npm", "run", "build"}).
-		Directory("/ui/dist")
-
-	if _, err := dag.Container().
-		From("alpine:3.20").
-		WithDirectory("/committed", m.Src.Directory("server/approval/ui/dist")).
-		WithDirectory("/built", built).
-		WithExec([]string{"sh", "-c", "diff -r /committed /built"}).
-		Sync(ctx); err != nil {
-		return nil, fmt.Errorf("committed server/approval/ui/dist is stale; run make ui: %w", err)
-	}
-	return built, nil
-}
-
-// LintImages runs hadolint at the error threshold on both Dockerfiles.
-func (m *EinoExt) LintImages(ctx context.Context) (string, error) {
-	mcp, err := dag.Image().Lint(ctx, m.Src, dagger.ImageLintOpts{Dockerfile: "Dockerfile.mcp", Threshold: "error"})
-	if err != nil {
-		return "", fmt.Errorf("lint Dockerfile.mcp: %w", err)
-	}
-	approval, err := dag.Image().Lint(ctx, m.Src, dagger.ImageLintOpts{Dockerfile: "Dockerfile.approval", Threshold: "error"})
-	if err != nil {
-		return "", fmt.Errorf("lint Dockerfile.approval: %w", err)
-	}
-	return mcp + approval, nil
 }

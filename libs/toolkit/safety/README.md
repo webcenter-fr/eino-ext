@@ -71,8 +71,9 @@ sentinel error signals the LLM to retry with the proper gate parameters.
 `DryRunGuidance` is the exported guidance text appended to dry-run outputs. It
 instructs the LLM to show the preview to the user and ask for confirmation
 before re-calling with `confirmed=true`. The safety middleware
-(`components/middleware/safety`) and the MCP server adapter (`libs/mcp`) both
-append it, so every surface emits the same guidance.
+(`components/middleware/safety`) and the MCP server adapter in
+[`webcenter-fr/go-mcp-platform`](https://github.com/webcenter-fr/go-mcp-platform)
+both append it, so every surface emits the same guidance.
 
 > `ShouldGate` was removed: it trusted the model-supplied `Confirmed` field and
 > was not an authorization boundary. Use `ShouldGateWithAuthorization`.

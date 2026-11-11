@@ -19,6 +19,8 @@
 - Component-level usage docs stay in each package's `README.md`.
 - When you add or change a component covered by a design doc, update the doc
   (both languages) in the same change.
+- MCP servers, the approval service, Helm charts and container images live in
+  `webcenter-fr/go-mcp-platform`.
 
 ## Code Quality Standards
 

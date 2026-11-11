@@ -1,5 +1,32 @@
 # Breaking Changes
 
+## MCP platform extracted into `github.com/webcenter-fr/go-mcp-platform`
+
+`libs/mcp`, `components/mcp`, `cmd/mcp-server`, `server/approval`,
+`libs/toolkit/{logging,secretref}`, `helm/`, and both Dockerfiles moved to
+[`github.com/webcenter-fr/go-mcp-platform`](https://github.com/webcenter-fr/go-mcp-platform).
+eino-ext is now a pure eino library.
+
+Migrate imports mechanically:
+
+| Old import path | New import path |
+|---|---|
+| `github.com/webcenter-fr/eino-ext/libs/mcp/serverconfig` | `github.com/webcenter-fr/go-mcp-platform/internal/serverconfig` |
+| `github.com/webcenter-fr/eino-ext/libs/mcp/approval` | `github.com/webcenter-fr/go-mcp-platform/pkg/mcp/approval` |
+| `github.com/webcenter-fr/eino-ext/libs/mcp` | `github.com/webcenter-fr/go-mcp-platform/pkg/mcp` |
+| `github.com/webcenter-fr/eino-ext/components/mcp` | `github.com/webcenter-fr/go-mcp-platform/pkg/servers` |
+| `github.com/webcenter-fr/eino-ext/server/approval/store` | `github.com/webcenter-fr/go-mcp-platform/internal/approval/store` |
+| `github.com/webcenter-fr/eino-ext/server/approval` | `github.com/webcenter-fr/go-mcp-platform/internal/approval` |
+| `github.com/webcenter-fr/eino-ext/libs/toolkit/logging` | `github.com/webcenter-fr/go-mcp-platform/internal/logging` |
+| `github.com/webcenter-fr/eino-ext/libs/toolkit/secretref` | `github.com/webcenter-fr/go-mcp-platform/internal/secretref` |
+
+The platform also renames its runtime contract: `EINO_MCP_*` ->
+`MCP_PLATFORM_*`, `EINO_APPROVAL_*` -> `MCP_APPROVAL_*`, the config mount path
+`/etc/eino-ext` -> `/etc/go-mcp-platform`, the MCP server identity
+`eino-ext-mcp` -> `go-mcp-platform-mcp`, the Helm chart `eino-ext` ->
+`go-mcp-platform`, and the image repositories `webcenter-fr/eino-ext/{mcp,approval}`
+-> `webcenter-fr/go-mcp-platform/{mcp,approval}`.
+
 ## tool/github: `github_file_write` is local-only; use `github_commit_push` to persist
 
 `github_file_write` no longer checks out a branch, stages, commits, or pushes.

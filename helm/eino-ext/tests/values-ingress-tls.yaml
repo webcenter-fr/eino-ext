@@ -1,8 +1,0 @@
-approval:
-  ingress:
-    enabled: true
-    className: nginx
-    host: approve.example.com
-    tls:
-      enabled: true
-      secretName: approval-tls
