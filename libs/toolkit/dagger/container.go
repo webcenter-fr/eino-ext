@@ -2,6 +2,8 @@ package dagger
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"dagger.io/dagger"
 	"emperror.dev/errors"
@@ -67,7 +69,10 @@ func WithRegistryAuth(auth map[string]RegistryAuth) ContainerOpt {
 
 // Container builds a new Dagger container from the given base image with the provided options.
 func (c *Client) Container(ctx context.Context, baseImage string, opts ...ContainerOpt) (*dagger.Container, error) {
-	if c.client == nil {
+	c.proxyMu.Lock()
+	client := c.client
+	c.proxyMu.Unlock()
+	if client == nil {
 		return nil, errors.New("client not connected")
 	}
 
@@ -76,24 +81,36 @@ func (c *Client) Container(ctx context.Context, baseImage string, opts ...Contai
 		opt(cc)
 	}
 
-	cont := c.client.Container().From(baseImage)
+	cont := client.Container().From(baseImage)
 
 	for host, auth := range cc.registryAuth {
-		password := c.client.SetSecret(host+"-password", auth.Password)
+		password := client.SetSecret(host+"-password", auth.Password)
 		cont = cont.WithRegistryAuth(host, auth.Username, password)
 	}
 
 	for containerPath, cacheKey := range cc.cacheVolumes {
-		cv := c.client.CacheVolume(cacheKey, dagger.CacheVolumeOpts{
+		cv := client.CacheVolume(cacheKey, dagger.CacheVolumeOpts{
 			Sharing: dagger.CacheSharingModeLocked,
 		})
 		cont = cont.WithMountedCache(containerPath, cv)
 	}
 
 	if cc.workspace != "" {
-		hostDir := c.client.Host().Directory(cc.workspace)
+		hostDir := client.Host().Directory(cc.workspace)
 		cont = cont.WithMountedDirectory("/workspace", hostDir)
 		cont = cont.WithWorkdir("/workspace")
+	}
+
+	if cc.egressPolicy != nil {
+		proxySvc, err := c.EgressProxyService(ctx, cc.egressPolicy)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to build egress proxy service")
+		}
+		cont = cont.WithServiceBinding(egressServiceAlias, proxySvc)
+		env := cc.egressPolicy.ProxyEnv(egressProxyURL)
+		for _, key := range slices.Sorted(maps.Keys(env)) {
+			cont = cont.WithEnvVariable(key, env[key])
+		}
 	}
 
 	if cc.user != "" {

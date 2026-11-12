@@ -1,5 +1,23 @@
 # Breaking Changes
 
+## libs/toolkit/egress: working proxy, stricter policy validation
+
+- `NewProxy(pol)` is now `NewProxy(ctx, pol)`. Nothing in this repository called
+  it; external callers add `ctx`.
+- `Policy.AllowHosts` is now validated as RFC1123 hostnames. Wildcards
+  (`*.github.com`), ports (`example.com:443`), and trailing dots are now errors.
+  They previously "worked" only in the sense that they silently never matched
+  and denied all traffic to the intended host.
+- `Policy.Allows` now also denies IPv6 ULA/link-local, unspecified, and CGNAT
+  addresses when `AllowLocalNetwork=false`. Configurations relying on reaching
+  an IPv6 ULA destination must set `AllowLocalNetwork=true` or add an explicit
+  `AllowCIDRs` entry.
+- `Proxy.EnvVars` now returns a populated `NO_PROXY` instead of `""`.
+- Behavioral note (not a compile break): `WithEgressPolicy` now actually
+  enforces. Containers that previously had unrestricted egress despite a policy
+  will now be filtered. This is the intended fix; review allowlists before
+  upgrading.
+
 ## MCP platform extracted into `github.com/webcenter-fr/go-mcp-platform`
 
 `libs/mcp`, `components/mcp`, `cmd/mcp-server`, `server/approval`,
