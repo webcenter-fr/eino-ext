@@ -759,9 +759,9 @@ type SupervisorConfig struct {
 | `strutil` | helpers de chaînes | `Truncate`, `StripMarkdownFences`, `ExtractJSONBlock` |
 | `kretry` | helper de retry pour les erreurs API Kubernetes transitoires | `Retry(ctx, fn)`, `Do(ctx, backoff, fn)`, `IsTransient(err)`, `DefaultBackoff` |
 | `fileutil` | helpers de sûreté filesystem (validation de chemins, rejet de symlinks CWE-59/22, détection de binaires, exclusion `.git`) | `ValidateRelativePath`, `ResolveSymlinkSafe`, `IsWithinPath`, `IsBinary`, `RejectDotGitPath`, `ValidateRootDir`, `CopyDir`, `WalkDirFiles`, `SanitizePathSegment`, `SessionDirName`, `SweepStaleDirs` |
-| `egress` | proxy egress HTTP/HTTPS CONNECT par politique — « réseau local interdit par défaut » (blocs RFC1918/link-local/loopback/cloud-metadata) avec allowlist ; pour les conteneurs Dagger | `Policy{AllowHosts, AllowCIDRs, AllowLocalNetwork, DefaultDeny}`, `Policy.Allows(host, ip)`, `NewProxy(pol)`, `Proxy.Serve(ctx, ln)` |
+| `egress` | proxy egress HTTP/HTTPS par politique — « réseau local interdit par défaut » (blocs RFC1918, ULA IPv6, link-local, loopback, CGNAT, non spécifié et cloud-metadata) avec allowlist ; pour les conteneurs Dagger | `Policy{AllowHosts, AllowCIDRs, AllowLocalNetwork, DefaultDeny}`, `Policy.Allows(host, ip)`, `Policy.ProxyEnv(proxyURL)`, `NewProxy(ctx, pol)`, `Proxy.Serve(ctx, ln)`, `Proxy.Addr`, `Proxy.EnvVars` |
 | `osclient` | constructeur partagé du client OpenSearch v4 entre indexer/retriever/loader/memory | `Config{URLs, Username, Password, TLSSkipVerify}`, `New(ctx, cfg, timeout)` |
-| `dagger` | wrapper du client moteur Dagger (conteneurs OCI, volumes de cache partagés, bindings de proxy egress, montage/export de workspace) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkspace/WithWorkdir/WithCacheVolume/WithEgressPolicy/WithUser/WithRegistryAuth`, `Client.ExportWorkspace(ctx, container, hostPath)`, `CacheKeyForProfile/Tool` |
+| `dagger` | wrapper du client moteur Dagger (conteneurs OCI, volumes de cache partagés, bindings de proxy egress, montage/export de workspace) | `EngineConfig{RegistryAuth, LogOutput, Workdir}`, `NewClient(ctx, cfg)`, `Client.Container(ctx, baseImage, opts...)`, `WithWorkspace/WithWorkdir/WithCacheVolume/WithProfileCaches/WithEgressPolicy/WithUser/WithRegistryAuth`, `Client.EgressProxyService(ctx, pol)`, `ErrEgressProxyUnavailable`, `Client.ExportWorkspace(ctx, container, hostPath)`, `CacheKeyForProfile/Tool`, `CacheMountsForProfile` |
 | `workspace` | layout de workspace de session partagé entre les clones GitHub et les sandboxes shell Dagger : hachage de session, résolution owner/repo, validation de chemins, touch/GC, stat-and-exist | `Layout{Root, SessionKey, RequireSession}`, `NewLayout`, `SessionDir`, `RepoDir`, `Touch`, `StartGC`, `Exists`, `ResolvePath` |
 | `profile` | détection de type de projet + sélection d'image de base pour les sandboxes shell Dagger (fichiers marqueurs : go.mod, package.json, pyproject.toml, pom.xml, Cargo.toml, composer.json, …) | `Profile{Name, BaseImage, SystemPrompt, InstallCmd, ToolPresets, Env}`, `Resolver{ImageMap}`, `NewResolver(opts...)`, `Resolver.Resolve(ctx, workdir)`, `DefaultImageMap`, `WithImageOverrides` |
 
@@ -824,6 +824,70 @@ Autres `libs/` :
 | `otelmetrics` | scope de métriques OTel — §7.5 |
 | `promptenhance` | réécriture de prompt avec un petit modèle (kilocode « Enhance Prompt ») : `NewEnhancer(ctx, *Config)`, `Enhancer.Enhance/EnhanceInContext` ; échappe les délimiteurs `<context>`/`<draft>` et retire les caractères de contrôle du contenu embarqué |
 | `summarizer` | interface `Summarizer` + `SummarizerFunc` — §6.4 |
+
+### 10.2 Application de la politique d'egress (proxy via tunnel hôte)
+
+`WithEgressPolicy(pol)` lie un proxy fonctionnel et définit les variables
+d'environnement du proxy dans le conteneur. Le proxy est le vrai `egress.Proxy`
+exécuté dans le **processus client** (le serveur MCP), pas une image de
+conteneur et pas un second moteur de politique. `EgressProxyService` le démarre
+sur `127.0.0.1:0` et l'expose aux conteneurs via un tunnel hôte Dagger
+(`Host().Service` avec port forwarding) sur le port `3128`, lié sous le nom
+`eino-egress`.
+
+L'application de la politique se fait donc en Go, sur la même valeur `Policy`
+que celle configurée par l'appelant : aucune politique n'est traduite vers un
+dialecte ACL étranger, rien n'est compilé dans le moteur, et aucune image de
+proxy n'est à publier. Les proxys sont mis en cache par empreinte de politique :
+un seul listener et une seule goroutine servent tous les conteneurs qui
+partagent une politique équivalente ; `Client.Close()` les arrête tous.
+
+Une politique nulle est un no-op strict : pas de proxy, pas de binding de
+service, pas de variable d'environnement. Si une politique est définie mais que
+le proxy ne peut pas démarrer, `Container()` renvoie une erreur enveloppant
+`ErrEgressProxyUnavailable` au lieu de retourner silencieusement un conteneur
+sans restriction.
+
+```mermaid
+flowchart LR
+    subgraph client["Processus serveur MCP (hôte)"]
+        POL["egress.Policy<br/>AllowHosts / AllowCIDRs<br/>AllowLocalNetwork / DefaultDeny"]
+        PROXY["egress.Proxy<br/>http.Handler<br/>127.0.0.1:éphémère"]
+        CACHE["Client.proxies<br/>indexé par empreinte de politique"]
+        POL --> PROXY
+        PROXY --> CACHE
+    end
+
+    subgraph engine["Moteur Dagger"]
+        TUNNEL["Host().Service<br/>PortForward 3128 -> éphémère"]
+        subgraph cont["conteneur"]
+            ENV["HTTP_PROXY / HTTPS_PROXY<br/>= http://eino-egress:3128<br/>NO_PROXY = eino-egress,localhost"]
+            TOOL["curl / go / npm / pip"]
+            RAW["nc / psql / kubectl"]
+        end
+    end
+
+    CACHE --> TUNNEL
+    TUNNEL -->|"alias eino-egress"| cont
+    TOOL -->|"respecte HTTP_PROXY"| TUNNEL
+    TUNNEL --> PROXY
+    PROXY -->|"Allows(host, ip) OK<br/>dial sur l'IP épinglée"| NET["destination autorisée"]
+    PROXY -.->|"403 refusé"| TOOL
+    RAW == "CONTOURNE le proxy<br/>(contrôle souple)" ==> NET
+```
+
+Le proxy est un **contrôle souple**. `HTTP_PROXY` est une convention respectée
+par les clients HTTP ; les outils TCP bruts (`nc`, `psql`, `kubectl`, `ssh`,
+les dialers directs) l'ignorent et atteignent le réseau sans filtrage. Cela a
+été vérifié depuis un conteneur soumis à une politique : `nc -z -w 5 github.com
+443` a réussi alors que la politique refusait `github.com`. Une garantie forte
+exige des règles nftables/iptables côté opérateur ou un `NetworkPolicy`
+Kubernetes sur le moteur.
+
+Les presets de cache `dagger` (`CacheMountsForProfile`, `WithProfileCaches`)
+retournent des chemins de toolchain et de gestionnaire de paquets hors de
+`/workspace`, afin qu'un volume de cache n'occulte jamais une partie de
+l'arborescence que `ExportWorkspace` recopie.
 
 ---
 

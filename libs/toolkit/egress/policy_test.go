@@ -160,3 +160,68 @@ func TestPolicy_CloudMetadataDenied(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cloud metadata")
 }
+
+func TestPolicy_Allows_IPv6AndSpecialRanges(t *testing.T) {
+	ips := []struct {
+		name string
+		ip   string
+	}{
+		{name: "IPv6 ULA", ip: "fd00::1"},
+		{name: "IPv6 link-local", ip: "fe80::1"},
+		{name: "IPv6 link-local multicast", ip: "ff02::1"},
+		{name: "IPv6 loopback", ip: "::1"},
+		{name: "IPv4-mapped private", ip: "::ffff:10.0.0.5"},
+		{name: "IPv4-mapped metadata", ip: "::ffff:169.254.169.254"},
+		{name: "IPv4 unspecified", ip: "0.0.0.0"},
+		{name: "IPv6 unspecified", ip: "::"},
+		{name: "CGNAT", ip: "100.64.0.1"},
+		{name: "IPv6 metadata", ip: "fd00:ec2::254"},
+	}
+
+	for _, tt := range ips {
+		t.Run(tt.name+" denied", func(t *testing.T) {
+			pol := &Policy{DefaultDeny: true, AllowHosts: []string{"evil.test"}}
+			require.NoError(t, pol.compile())
+			assert.Error(t, pol.Allows("evil.test", net.ParseIP(tt.ip)))
+		})
+
+		t.Run(tt.name+" allowed with AllowLocalNetwork", func(t *testing.T) {
+			pol := &Policy{DefaultDeny: true, AllowLocalNetwork: true, AllowHosts: []string{"evil.test"}}
+			require.NoError(t, pol.compile())
+			assert.NoError(t, pol.Allows("evil.test", net.ParseIP(tt.ip)))
+		})
+	}
+}
+
+func TestPolicy_Allows_NilIP(t *testing.T) {
+	pol := &Policy{DefaultDeny: true}
+	require.NoError(t, pol.compile())
+
+	assert.Error(t, pol.Allows("example.com", nil))
+	assert.Error(t, pol.Allows("example.com", net.IP{}))
+}
+
+func TestPolicy_ProxyEnv(t *testing.T) {
+	pol := &Policy{DefaultDeny: true}
+	want := map[string]string{
+		"HTTP_PROXY":  "http://eino-egress:3128",
+		"HTTPS_PROXY": "http://eino-egress:3128",
+		"http_proxy":  "http://eino-egress:3128",
+		"https_proxy": "http://eino-egress:3128",
+		"NO_PROXY":    defaultNoProxy,
+		"no_proxy":    defaultNoProxy,
+	}
+
+	assert.Equal(t, want, pol.ProxyEnv("http://eino-egress:3128"))
+	assert.Contains(t, want["NO_PROXY"], "eino-egress")
+	assert.Contains(t, want["NO_PROXY"], "127.0.0.1")
+	assert.Contains(t, want["NO_PROXY"], "::1")
+
+	pol.AllowLocalNetwork = true
+	assert.Equal(t, want, pol.ProxyEnv("http://eino-egress:3128"))
+}
+
+func TestPolicy_ProxyEnv_NoCIDREntries(t *testing.T) {
+	pol := &Policy{DefaultDeny: true, AllowLocalNetwork: true}
+	assert.NotContains(t, pol.ProxyEnv("http://eino-egress:3128")["NO_PROXY"], "/")
+}

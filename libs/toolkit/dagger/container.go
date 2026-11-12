@@ -2,6 +2,8 @@ package dagger
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"dagger.io/dagger"
 	"emperror.dev/errors"
@@ -94,6 +96,18 @@ func (c *Client) Container(ctx context.Context, baseImage string, opts ...Contai
 		hostDir := c.client.Host().Directory(cc.workspace)
 		cont = cont.WithMountedDirectory("/workspace", hostDir)
 		cont = cont.WithWorkdir("/workspace")
+	}
+
+	if cc.egressPolicy != nil {
+		proxySvc, err := c.EgressProxyService(ctx, cc.egressPolicy)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to build egress proxy service")
+		}
+		cont = cont.WithServiceBinding(egressServiceAlias, proxySvc)
+		env := cc.egressPolicy.ProxyEnv(egressProxyURL)
+		for _, key := range slices.Sorted(maps.Keys(env)) {
+			cont = cont.WithEnvVariable(key, env[key])
+		}
 	}
 
 	if cc.user != "" {

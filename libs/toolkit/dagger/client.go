@@ -11,6 +11,7 @@ package dagger
 import (
 	"context"
 	"io"
+	"sync"
 
 	"dagger.io/dagger"
 	"emperror.dev/errors"
@@ -34,6 +35,9 @@ type EngineConfig struct {
 // Client is a wrapper around the Dagger engine client.
 type Client struct {
 	client *dagger.Client
+
+	proxyMu sync.Mutex
+	proxies map[string]*proxyInstance // keyed by policy fingerprint
 }
 
 var _ io.Closer = (*Client)(nil)
@@ -65,12 +69,29 @@ func NewClient(ctx context.Context, cfg *EngineConfig) (*Client, error) {
 	return &Client{client: client}, nil
 }
 
-// Close shuts down the Dagger engine connection.
+// Close stops every egress proxy started by this client and shuts down the
+// Dagger engine connection.
 func (c *Client) Close() error {
-	if c.client != nil {
-		return c.client.Close()
+	c.proxyMu.Lock()
+	proxies := c.proxies
+	c.proxies = nil
+	c.proxyMu.Unlock()
+
+	var errs []error
+	for _, inst := range proxies {
+		errs = append(errs, inst.stop())
 	}
-	return nil
+
+	c.proxyMu.Lock()
+	client := c.client
+	c.client = nil
+	c.proxyMu.Unlock()
+
+	if client != nil {
+		errs = append(errs, client.Close())
+	}
+
+	return errors.Combine(errs...)
 }
 
 // Version returns the Dagger engine version string.
