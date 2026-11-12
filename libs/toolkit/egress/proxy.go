@@ -28,6 +28,9 @@ type Proxy struct {
 	addr     string
 	mu       sync.RWMutex // guards addr
 	lookupIP func(string) ([]net.IP, error)
+
+	connsMu sync.Mutex
+	conns   map[net.Conn]struct{} // hijacked CONNECT tunnels, closed on shutdown
 }
 
 var _ http.Handler = (*Proxy)(nil)
@@ -80,18 +83,53 @@ func (p *Proxy) Serve(ctx context.Context, ln net.Listener) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := p.server.Shutdown(shutdownCtx); err != nil {
-			// Hijacked CONNECT tunnels are not tracked by Shutdown; force the
-			// listener closed so they cannot keep the process alive.
+		err := p.server.Shutdown(shutdownCtx)
+		// Hijacked CONNECT tunnels are not tracked by Shutdown; force them
+		// closed so they cannot keep the process alive.
+		p.closeConns()
+		if err != nil {
 			_ = p.server.Close()
 			return err
 		}
 		return nil
 	case err := <-errCh:
+		// The listener was closed externally (e.g. proxyInstance.stop closes it
+		// directly), bypassing the graceful path above. Force-close hijacked
+		// tunnels and idle connections so nothing leaks.
+		p.closeConns()
+		_ = p.server.Close()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+// trackConn registers a hijacked connection so Serve can force-close it on
+// shutdown. Shutdown does not track hijacked connections.
+func (p *Proxy) trackConn(conn net.Conn) {
+	p.connsMu.Lock()
+	if p.conns == nil {
+		p.conns = make(map[net.Conn]struct{})
+	}
+	p.conns[conn] = struct{}{}
+	p.connsMu.Unlock()
+}
+
+// untrackConn removes a hijacked connection from the shutdown set.
+func (p *Proxy) untrackConn(conn net.Conn) {
+	p.connsMu.Lock()
+	delete(p.conns, conn)
+	p.connsMu.Unlock()
+}
+
+// closeConns force-closes every hijacked connection. Closing a connection
+// unblocks the io.Copy goroutines that own it, which then close their peer.
+func (p *Proxy) closeConns() {
+	p.connsMu.Lock()
+	defer p.connsMu.Unlock()
+	for conn := range p.conns {
+		_ = conn.Close()
 	}
 }
 
@@ -197,12 +235,19 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
+	p.trackConn(clientConn)
+	p.trackConn(destConn)
+
 	go func() {
+		defer p.untrackConn(clientConn)
+		defer p.untrackConn(destConn)
 		_, _ = io.Copy(destConn, clientConn)
 		_ = destConn.Close()
 		_ = clientConn.Close()
 	}()
 	go func() {
+		defer p.untrackConn(clientConn)
+		defer p.untrackConn(destConn)
 		_, _ = io.Copy(clientConn, destConn)
 		_ = clientConn.Close()
 		_ = destConn.Close()
@@ -233,7 +278,11 @@ func (p *Proxy) handleForward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dialAddr, host, err := p.checkDest(r.URL.Host, "80")
+	defaultPort := "80"
+	if r.URL.Scheme == "https" {
+		defaultPort = "443"
+	}
+	dialAddr, _, err := p.checkDest(r.URL.Host, defaultPort)
 	if err != nil {
 		writeDestError(w, err)
 		return
@@ -241,7 +290,9 @@ func (p *Proxy) handleForward(w http.ResponseWriter, r *http.Request) {
 
 	outReq := r.Clone(r.Context())
 	outReq.RequestURI = ""
-	outReq.Host = host
+	// Preserve the full authority (host:port) so non-default ports survive the
+	// forward; checkDest already validated r.URL.Host against the policy.
+	outReq.Host = r.URL.Host
 	removeHopByHopHeaders(outReq.Header)
 
 	transport := &http.Transport{

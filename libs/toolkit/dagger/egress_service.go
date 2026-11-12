@@ -73,7 +73,10 @@ func (p *proxyInstance) stop() error {
 // per policy fingerprint, so repeated calls with an equivalent policy reuse one
 // proxy. Every proxy is stopped by Client.Close.
 func (c *Client) EgressProxyService(ctx context.Context, pol *egress.Policy) (*dagger.Service, error) {
-	if c.client == nil {
+	c.proxyMu.Lock()
+	client := c.client
+	c.proxyMu.Unlock()
+	if client == nil {
 		return nil, errors.New("client not connected")
 	}
 	if pol == nil {
@@ -120,7 +123,7 @@ func (c *Client) EgressProxyService(ctx context.Context, pol *egress.Policy) (*d
 		_ = proxy.Serve(proxyCtx, ln)
 	}()
 
-	svc := c.client.Host().Service(
+	svc := client.Host().Service(
 		[]dagger.PortForward{{
 			Backend:  tcpAddr.Port,
 			Frontend: egressProxyPort,
@@ -138,6 +141,14 @@ func (c *Client) EgressProxyService(ctx context.Context, pol *egress.Policy) (*d
 	}
 
 	c.proxyMu.Lock()
+	// Re-check the client under the lock: a concurrent Close may have cleared
+	// the map and nil'd the client while we were building. In that case stop
+	// our proxy and fail closed rather than leaking it into a fresh map.
+	if c.client == nil {
+		c.proxyMu.Unlock()
+		_ = inst.stop()
+		return nil, errors.New("client not connected")
+	}
 	if c.proxies == nil {
 		c.proxies = make(map[string]*proxyInstance)
 	}

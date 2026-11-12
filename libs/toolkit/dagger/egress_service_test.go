@@ -67,6 +67,16 @@ func TestEgressProxyService_NilPolicy(t *testing.T) {
 	assert.Contains(t, err.Error(), "egress policy is nil")
 }
 
+func TestEgressProxyService_AfterClose(t *testing.T) {
+	c := &Client{client: &dagger.Client{}}
+	require.NoError(t, c.Close())
+
+	_, err := c.EgressProxyService(context.Background(), &egress.Policy{DefaultDeny: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client not connected")
+	assert.Empty(t, c.proxies, "a closed client must not leak a proxy into a fresh map")
+}
+
 func TestContainer_NilPolicyIsNoOp(t *testing.T) {
 	cc := &containerConfig{}
 	WithWorkspace("/tmp")(cc)
@@ -89,6 +99,18 @@ func TestErrEgressProxyUnavailable_Is(t *testing.T) {
 		errors.Append(ErrEgressProxyUnavailable, base),
 		"failed to listen for the egress proxy",
 	)
+	assert.True(t, errors.Is(err, ErrEgressProxyUnavailable))
+}
+
+func TestErrEgressProxyUnavailable_ThroughContainerWrap(t *testing.T) {
+	// Container() wraps the EgressProxyService error with
+	// errors.Wrap(err, "failed to build egress proxy service"); the sentinel
+	// must survive that full chain so callers can branch with errors.Is.
+	listenErr := errors.WithMessage(
+		errors.Append(ErrEgressProxyUnavailable, errors.New("listen failed")),
+		"failed to listen for the egress proxy",
+	)
+	err := errors.Wrap(listenErr, "failed to build egress proxy service")
 	assert.True(t, errors.Is(err, ErrEgressProxyUnavailable))
 }
 

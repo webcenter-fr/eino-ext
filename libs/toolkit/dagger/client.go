@@ -72,20 +72,20 @@ func NewClient(ctx context.Context, cfg *EngineConfig) (*Client, error) {
 // Close stops every egress proxy started by this client and shuts down the
 // Dagger engine connection.
 func (c *Client) Close() error {
+	// Capture and clear the proxy map and the Dagger client atomically so a
+	// concurrent EgressProxyService cannot add a proxy after we have decided
+	// what to stop (which would leak it), nor observe a nil client mid-build.
 	c.proxyMu.Lock()
 	proxies := c.proxies
 	c.proxies = nil
+	client := c.client
+	c.client = nil
 	c.proxyMu.Unlock()
 
 	var errs []error
 	for _, inst := range proxies {
 		errs = append(errs, inst.stop())
 	}
-
-	c.proxyMu.Lock()
-	client := c.client
-	c.client = nil
-	c.proxyMu.Unlock()
 
 	if client != nil {
 		errs = append(errs, client.Close())

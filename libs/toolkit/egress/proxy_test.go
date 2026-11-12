@@ -183,6 +183,88 @@ func TestProxy_DNSFailure(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 }
 
+func TestProxy_PlainHTTP_PreservesHostPort(t *testing.T) {
+	var gotHost string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+		_, _ = fmt.Fprint(w, "ok")
+	}))
+	defer origin.Close()
+
+	originURL, err := url.Parse(origin.URL)
+	require.NoError(t, err)
+	_, port, err := net.SplitHostPort(originURL.Host)
+	require.NoError(t, err)
+
+	pol := &Policy{DefaultDeny: true, AllowLocalNetwork: true, AllowHosts: []string{"allowed.test"}}
+	_, proxyAddr := newTestProxy(t, pol, staticLookup(map[string]string{"allowed.test": "127.0.0.1"}))
+
+	proxyURL, err := url.Parse(fmt.Sprintf("http://%s", proxyAddr))
+	require.NoError(t, err)
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+
+	resp, err := client.Get(fmt.Sprintf("http://allowed.test:%s/", port))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
+
+	assert.Equal(t, "allowed.test:"+port, gotHost, "the forwarded Host header must preserve the non-default port")
+}
+
+func TestProxy_ServeClosesHijackedTunnels(t *testing.T) {
+	// Destination: a raw TCP listener that accepts and holds the connection.
+	dst, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = dst.Close() }()
+	dstPort := dst.Addr().(*net.TCPAddr).Port
+	go func() {
+		conn, err := dst.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = io.ReadAll(conn) // block until the proxy closes the tunnel
+	}()
+
+	pol := &Policy{DefaultDeny: true, AllowLocalNetwork: true, AllowHosts: []string{"allowed.test"}}
+	proxy, err := NewProxy(context.Background(), pol)
+	require.NoError(t, err)
+	proxy.lookupIP = staticLookup(map[string]string{"allowed.test": "127.0.0.1"})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- proxy.Serve(ctx, ln) }()
+	require.Eventually(t, func() bool { return proxy.Addr() != "" }, time.Second, 10*time.Millisecond)
+
+	clientConn, err := net.Dial("tcp", proxy.Addr())
+	require.NoError(t, err)
+	defer func() { _ = clientConn.Close() }()
+
+	_, err = fmt.Fprintf(clientConn, "CONNECT allowed.test:%d HTTP/1.1\r\nHost: allowed.test:%d\r\n\r\n", dstPort, dstPort)
+	require.NoError(t, err)
+
+	br := bufio.NewReader(clientConn)
+	status, err := br.ReadString('\n')
+	require.NoError(t, err)
+	assert.Contains(t, status, "200")
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return after context cancellation")
+	}
+
+	// The hijacked tunnel must be force-closed on shutdown; otherwise the
+	// io.Copy goroutines and both connections leak.
+	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err = clientConn.Read(make([]byte, 1))
+	assert.Error(t, err, "hijacked tunnel connection must be closed on shutdown")
+}
+
 func TestProxy_Addr(t *testing.T) {
 	proxy, err := NewProxy(context.Background(), &Policy{DefaultDeny: true})
 	require.NoError(t, err)
