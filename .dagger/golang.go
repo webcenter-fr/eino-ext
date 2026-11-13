@@ -18,7 +18,7 @@ const (
 func (m *EinoExt) golang() *dagger.Golang {
 	// Use a newer Go toolchain than the go.mod language version so the
 	// govulncheck gate does not fail on standard-library advisories.
-	base := dag.Container().From("golang:1.27.3-bookworm")
+	base := dag.Container().From("golang:1.27.4-bookworm")
 	return dag.Golang(m.Src, dagger.GolangOpts{Base: base})
 }
 
