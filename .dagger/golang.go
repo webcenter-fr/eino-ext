@@ -8,18 +8,17 @@ import (
 
 const (
 	envtestK8sVersion  = "1.34.0"
-	golangciLintTag    = "v2.12.0"
+	golangciLintTag    = "v2.14.0"
 	govulncheckVersion = "v1.9.0"
 )
 
-// golang returns the upstream Golang module with the repository source and a
-// newer Go toolchain. Never call dag.Golang(...).Ci(): it runs gofumpt -w over
-// the whole repository.
+// golang returns the upstream Golang module with the repository source. The
+// module derives its base image from the go.mod language version
+// (golang:<version>), so go 1.27 uses the latest patched 1.27 toolchain.
+// Never call dag.Golang(...).Ci(): it runs gofumpt -w over the whole
+// repository.
 func (m *EinoExt) golang() *dagger.Golang {
-	// Use a newer Go toolchain than the go.mod language version so the
-	// govulncheck gate does not fail on standard-library advisories.
-	base := dag.Container().From("golang:1.27.4-bookworm")
-	return dag.Golang(m.Src, dagger.GolangOpts{Base: base})
+	return dag.Golang(m.Src)
 }
 
 func (m *EinoExt) goContainer() *dagger.Container {
@@ -36,12 +35,10 @@ func (m *EinoExt) Vet(ctx context.Context) (string, error) {
 	return m.goContainer().WithExec([]string{"go", "vet", "./..."}).Stdout(ctx)
 }
 
-// Lint runs golangci-lint pinned to v2.12. It installs to /usr/local/bin,
+// Lint runs golangci-lint pinned to v2.14. It installs to /usr/local/bin,
 // outside the cache-mounted $GOPATH/bin.
 func (m *EinoExt) Lint(ctx context.Context) (string, error) {
-	// golangci-lint v2.12 is built with the go.mod toolchain; use the default
-	// base so its export-data reader matches the compiler.
-	return dag.Golang(m.Src).Container().
+	return m.goContainer().
 		WithExec([]string{"bash", "-c", "GOBIN=/usr/local/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@" + golangciLintTag}).
 		WithExec([]string{"golangci-lint", "run", "--timeout", "10m", "./..."}).
 		Stdout(ctx)

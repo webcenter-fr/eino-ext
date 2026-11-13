@@ -1,6 +1,6 @@
 module github.com/webcenter-fr/eino-ext
 
-go 1.26.3
+go 1.27
 
 require (
 	dagger.io/dagger v0.21.7
